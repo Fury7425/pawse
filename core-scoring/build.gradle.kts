@@ -21,4 +21,12 @@ dependencies {
 
 tasks.test {
     useJUnit()
+    // CI is the only compiler this project has, so a failure has to say what it
+    // was without anyone opening an HTML report on a machine that cannot build.
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showStackTraces = true
+        showCauses = true
+    }
 }

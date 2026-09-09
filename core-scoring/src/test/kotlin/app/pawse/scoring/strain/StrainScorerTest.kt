@@ -184,7 +184,7 @@ class StrainScorerTest {
     @Test
     fun `Banister still wins by default when both models could run`() {
         val session = scorer.sessionLoads(Fixtures.zonedDay, profile).single()
-        session.reserveFraction shouldBe (98.0 / 131.5 plusOrMinus 1e-9)
+        session.reserveFraction!! shouldBe (98.0 / 131.5 plusOrMinus 1e-9)
 
         val edwardsFirst = StrainScorer(config.copy(strain = config.strain.copy(trimpModel = TrimpModel.EDWARDS)))
         edwardsFirst.sessionLoads(Fixtures.zonedDay, profile).single().load shouldBe (163.0 plusOrMinus 1e-9)

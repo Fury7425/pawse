@@ -5,6 +5,12 @@ name: build
 # net over a green local build — for now it *is* the build, and the version pins in
 # gradle/libs.versions.toml are unverified until it runs once.
 #
+# That also drives an unusual choice below. Every Gradle step tees its output to a
+# file, and every failing step copies the compiler errors into the job summary,
+# which is readable through the public checks API without a token. A raw Actions
+# log is not. When CI is your only compiler, the build has to be able to tell you
+# what broke without you having to go and fetch it.
+#
 # There is no Gradle wrapper in the tree yet either. Gradle is provisioned by
 # setup-gradle instead, which is why every step calls `gradle` rather than
 # `./gradlew`. Run the gradle-wrapper workflow (or `gradle wrapper` locally) to
@@ -50,7 +56,13 @@ jobs:
           gradle-version: ${{ env.GRADLE_VERSION }}
 
       - name: Test the scoring engine
-        run: gradle --stacktrace :core-scoring:test
+        run: |
+          set -o pipefail
+          gradle --console=plain --stacktrace :core-scoring:test 2>&1 | tee gradle.log
+
+      - name: Report the failure
+        if: failure()
+        run: bash .github/scripts/summarise-gradle-log.sh gradle.log "scoring engine"
 
       - name: Upload test report
         if: always()
@@ -58,6 +70,7 @@ jobs:
         with:
           name: core-scoring-test-report
           path: |
+            gradle.log
             core-scoring/build/reports/tests/test
             core-scoring/build/test-results/test
           if-no-files-found: warn
@@ -86,7 +99,13 @@ jobs:
           gradle-version: ${{ env.GRADLE_VERSION }}
 
       - name: Assemble debug and run unit tests
-        run: gradle --stacktrace assembleDebug testDebugUnitTest
+        run: |
+          set -o pipefail
+          gradle --console=plain --stacktrace assembleDebug testDebugUnitTest 2>&1 | tee gradle.log
+
+      - name: Report the failure
+        if: failure()
+        run: bash .github/scripts/summarise-gradle-log.sh gradle.log "android build"
 
       - name: Upload debug APK
         if: success()
@@ -101,7 +120,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: android-test-reports
-          path: "**/build/reports/tests/**"
+          path: |
+            gradle.log
+            **/build/reports/tests/**
           if-no-files-found: warn
 
   lint:
@@ -130,12 +151,20 @@ jobs:
           gradle-version: ${{ env.GRADLE_VERSION }}
 
       - name: Lint
-        run: gradle --stacktrace lintDebug
+        run: |
+          set -o pipefail
+          gradle --console=plain --stacktrace lintDebug 2>&1 | tee gradle.log
+
+      - name: Report the failure
+        if: failure()
+        run: bash .github/scripts/summarise-gradle-log.sh gradle.log "android lint"
 
       - name: Upload lint reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: lint-reports
-          path: "**/build/reports/lint-results-*.*"
+          path: |
+            gradle.log
+            **/build/reports/lint-results-*.*
           if-no-files-found: warn
