@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Compose owns the real theming. This exists only so the launch window and the
+      splash do not flash a Material default surface before the first frame.
+      Dark-first: the day theme lives in values-night's mirror image, which is the
+      inverse of the usual arrangement and intentional.
+    -->
+    <style name="Theme.Pawse" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/launch_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
+    </style>
+</resources>

@@ -1,0 +1,13 @@
+# Copy to local.properties. NEVER commit local.properties.
+sdk.dir=C\:\\Users\\<you>\\AppData\\Local\\Android\\Sdk
+
+# Step 5 — food resolver chain. All optional; app builds and runs without them.
+# Providers whose key is blank are disabled at runtime, not compiled out.
+
+# data.go.kr service key (식약처 바코드연계제품정보 15060549 + 식품영양성분DB정보 15127578)
+DATA_GO_KR_SERVICE_KEY=
+
+# USDA FoodData Central
+USDA_FDC_API_KEY=
+
+# Open Food Facts needs no key.

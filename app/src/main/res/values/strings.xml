@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Pawse</string>
+
+    <!--
+      Shown by Health Connect on its own permission screen. This is the only place
+      the app makes its case inside someone else's UI, so it says what is read and
+      what is not, and claims nothing medical.
+    -->
+    <string name="health_permission_rationale">
+        Pawse reads the sleep and heart data your watch or ring already writes to
+        Health Connect, and turns it into Recovery, Sleep, Strain and Energy Bank
+        scores. It writes back only the food you log. Everything stays on this
+        phone. Pawse is not a medical device and does not diagnose anything.
+    </string>
+</resources>

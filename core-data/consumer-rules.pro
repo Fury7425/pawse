@@ -1,0 +1,2 @@
+-keep class net.zetetic.database.** { *; }
+-keep class androidx.health.connect.client.records.** { *; }

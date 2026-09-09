@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Nothing leaves the device, including via backup.
+
+  The database is a continuous record of someone's sleep and heart rate, and the
+  SQLCipher passphrase is wrapped by a hardware-backed key that does not survive a
+  restore anyway. Excluding everything is the honest configuration; the export and
+  import path in settings is the supported way to move data.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="file" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="file" />
+    </device-transfer>
+</data-extraction-rules>
