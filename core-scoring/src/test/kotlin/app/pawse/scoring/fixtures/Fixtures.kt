@@ -1,9 +1,14 @@
 package app.pawse.scoring.fixtures
 
 import app.pawse.scoring.config.BaselineConfig
+import app.pawse.scoring.model.BiologicalSex
 import app.pawse.scoring.model.DailyInputs
+import app.pawse.scoring.model.DailyLoad
+import app.pawse.scoring.model.DayActivity
 import app.pawse.scoring.model.Metric
 import app.pawse.scoring.model.MetricHistory
+import app.pawse.scoring.model.UserProfile
+import app.pawse.scoring.model.WorkoutSample
 import kotlin.math.exp
 import kotlin.math.ln
 
@@ -264,4 +269,99 @@ object Fixtures {
         stagelessNight,
         partialCoverageNight,
     )
+
+    // ======================================================================
+    // Activity fixtures, for Strain / Energy Bank / Load Ratio.
+    // ======================================================================
+
+    /**
+     * A user who told us enough for Banister's published coefficients.
+     * Resting heart rate matches [RHR_MEAN], so the strain and recovery sides of
+     * the engine are describing the same person.
+     */
+    val profile = UserProfile(
+        ageYears = 35,
+        biologicalSex = BiologicalSex.MALE,
+        restingHeartRate = RHR_MEAN,
+    )
+
+    /** The same person, with nothing filled in. Tanaka cannot run without an age. */
+    val anonymousProfile = UserProfile()
+
+    /** Nothing logged. Passive load only, which is still not zero. */
+    val restDay = DayActivity(date = "2026-03-02", workouts = emptyList(), wakingHours = 16.0)
+
+    /** One hard hour. The single-session reference case. */
+    val hardSessionDay = DayActivity(
+        date = "2026-03-03",
+        workouts = listOf(
+            WorkoutSample(
+                id = "w-1",
+                durationMinutes = 60.0,
+                meanHeartRate = 150.0,
+                maxHeartRate = 176.0,
+                title = "Threshold run",
+            ),
+        ),
+        wakingHours = 16.0,
+    )
+
+    /**
+     * Two sessions of identical load. The non-additivity fixture: the day must
+     * score well below twice either session, with no special case in the code.
+     */
+    val doubleSessionDay = DayActivity(
+        date = "2026-03-04",
+        workouts = listOf(
+            WorkoutSample("w-2a", 60.0, 150.0, 176.0, title = "Morning run"),
+            WorkoutSample("w-2b", 60.0, 150.0, 176.0, title = "Evening run"),
+        ),
+        wakingHours = 16.0,
+    )
+
+    /** A writer app that logged a ride and no heart rate. Half the day is invisible. */
+    val heartRatelessDay = DayActivity(
+        date = "2026-03-05",
+        workouts = listOf(
+            WorkoutSample("w-3a", 60.0, 150.0, 176.0, title = "Run with HR"),
+            WorkoutSample("w-3b", 90.0, null, null, title = "Ride, no HR"),
+        ),
+        wakingHours = 16.0,
+    )
+
+    /** A writer app that supplied a heart-rate series we could bin. Edwards applies. */
+    val zonedDay = DayActivity(
+        date = "2026-03-06",
+        workouts = listOf(
+            WorkoutSample(
+                id = "w-4",
+                durationMinutes = 60.0,
+                meanHeartRate = 150.0,
+                maxHeartRate = 176.0,
+                zoneMinutes = mapOf(1 to 10.0, 2 to 15.0, 3 to 20.0, 4 to 12.0, 5 to 3.0),
+                title = "Fartlek",
+            ),
+        ),
+        wakingHours = 16.0,
+    )
+
+    /**
+     * A flat daily-load series. Acute and chronic EWMAs converge on the same
+     * number, so the ratio is exactly 1.0 — the control case for the load ratio.
+     */
+    fun steadyLoads(days: Int = 60, load: Double = 120.0): List<DailyLoad> =
+        (0 until days).map { DailyLoad(daysAgo = it, load = load) }
+
+    /**
+     * A block: [recentDays] at [recentLoad], everything older at [baseLoad].
+     * Ramping up puts the ratio above one, tapering puts it below.
+     */
+    fun blockLoads(
+        days: Int = 60,
+        recentDays: Int = 7,
+        recentLoad: Double = 240.0,
+        baseLoad: Double = 120.0,
+    ): List<DailyLoad> = (0 until days).map {
+        DailyLoad(daysAgo = it, load = if (it < recentDays) recentLoad else baseLoad)
+    }
 }

@@ -26,6 +26,42 @@ enum class Band { LOW, MODERATE, HIGH;
             value < 85 -> MODERATE
             else -> HIGH
         }
+
+        /**
+         * Strain bands are MAGNITUDE, not verdict.
+         *
+         * HIGH strain is not good news and it is not bad news; it is a lot of
+         * load. Whoop's own zone names work the same way — Light, Moderate,
+         * High/Strenuous, All-out (grok.txt §3) — and the boundaries here are
+         * those zones rescaled from 0-21 onto the canonical 0-100 scale.
+         *
+         * The UI must not paint this band with the same red-means-stop palette it
+         * uses for Recovery. Whether today's strain was appropriate is the Target
+         * Strain comparison, not this.
+         */
+        fun ofStrainMagnitude(value: Int): Band = when {
+            value <= 43 -> LOW // Whoop "Light", 0-9 of 21
+            value <= 66 -> MODERATE // Whoop "Moderate", 10-13 of 21
+            else -> HIGH // Whoop "High" and "All-out", 14-21 of 21
+        }
+
+        /**
+         * Load-ratio bands, on a value stored as ratio x 100.
+         *
+         * Only one region is good: inside Gabbett's sweet spot. Both tails are
+         * MODERATE — below it is undertraining, above it is a ramp rate worth
+         * noticing — and only the far end above 1.5 is LOW. That mapping is
+         * deliberately cautious because the ratio itself is contested; see the
+         * critique the scorer ships next to the number.
+         */
+        fun ofLoadRatio(value: Int, sweetSpotLow: Double, sweetSpotHigh: Double, elevatedAbove: Double): Band {
+            val ratio = value / 100.0
+            return when {
+                ratio > elevatedAbove -> LOW
+                ratio in sweetSpotLow..sweetSpotHigh -> HIGH
+                else -> MODERATE
+            }
+        }
     }
 }
 

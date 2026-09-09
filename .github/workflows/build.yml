@@ -1,0 +1,141 @@
+name: build
+
+# Nothing in this repository has been compiled locally: the machine it was written
+# on has no JDK, no Gradle and no Android SDK. So this workflow is not a safety
+# net over a green local build — for now it *is* the build, and the version pins in
+# gradle/libs.versions.toml are unverified until it runs once.
+#
+# There is no Gradle wrapper in the tree yet either. Gradle is provisioned by
+# setup-gradle instead, which is why every step calls `gradle` rather than
+# `./gradlew`. Run the gradle-wrapper workflow (or `gradle wrapper` locally) to
+# generate one, commit it, and this file keeps working unchanged.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GRADLE_VERSION: "8.11.1"
+  JAVA_VERSION: "17"
+
+jobs:
+  engine:
+    # :core-scoring is pure Kotlin/JVM by design, so it needs no Android SDK and
+    # no emulator. It is also where all the arithmetic lives, which makes this the
+    # job worth watching and the one that should stay fast.
+    name: scoring engine
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: Test the scoring engine
+        run: gradle --stacktrace :core-scoring:test
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-scoring-test-report
+          path: |
+            core-scoring/build/reports/tests/test
+            core-scoring/build/test-results/test
+          if-no-files-found: warn
+
+  android:
+    name: android build and unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      # Provides ANDROID_HOME and accepted licences, so AGP can fetch the
+      # platform and build-tools it wants. No local.properties needed.
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: Assemble debug and run unit tests
+        run: gradle --stacktrace assembleDebug testDebugUnitTest
+
+      - name: Upload debug APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pawse-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Upload unit test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-reports
+          path: "**/build/reports/tests/**"
+          if-no-files-found: warn
+
+  lint:
+    # Informational on purpose. Android Lint on a young project reports plenty
+    # that is worth reading and nothing that should block a merge yet, so this
+    # job publishes its report and does not gate.
+    name: android lint (informational)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: Lint
+        run: gradle --stacktrace lintDebug
+
+      - name: Upload lint reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-reports
+          path: "**/build/reports/lint-results-*.*"
+          if-no-files-found: warn

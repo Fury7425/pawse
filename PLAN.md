@@ -126,7 +126,7 @@ Label 13sp, plus a 14sp Delta for signed point contributions.
 
 1. **Skeleton, Health Connect permissions, capability probe, sync** — done
 2. **BaselineEngine + SleepScorer + RecoveryScorer, full tests** — done
-3. StrainScorer + EnergyBank + LoadRatio
+3. **StrainScorer + EnergyBank + LoadRatio** — done
 4. Home, baseline-band component, explainability screens
 5. Barcode scanning and the resolver chain
 6. Trend charts, weight tuning, export/import, widgets
@@ -165,3 +165,44 @@ Label 13sp, plus a 14sp Delta for signed point contributions.
 - **A timezone-crossing night loses its circadian terms rather than failing them.** The
   midpoint moved because the clock did.
 - **Recovery is reported 1-99.** A logistic asymptote should not be printed as certainty.
+- **Strain is computed on 0-100 and displayed on two scales.** Whoop's 21 and Bevel's 100
+  are the same curve with a different ceiling, so `Score.value` is always canonical and the
+  toggle only changes a label. Flipping it never rewrites history or reshapes a chart.
+- **Strain bands are magnitude, not verdict.** HIGH strain is a lot of load, not bad news.
+  Whether today's load was appropriate is the Target Strain comparison. The UI must not
+  paint strain with the Recovery palette.
+- **`k = 260` is the most consequential tunable number in the app.** It alone decides what
+  "a hard day" reads as. Chosen so a hard threshold hour lands near 30 on the Bevel scale.
+  No vendor publishes it.
+- **An unspecified sex takes the midpoint of Banister's two published curves**, tagged
+  OUR_CHOICE, never one sex's curve for everybody. The two diverge by about 18% at 40% of
+  heart-rate reserve and under 5% at maximum, so the cost of not knowing is real at easy
+  intensities and small at hard ones. Health Connect has no sex record type.
+- **An estimated HRmax downgrades the day's provenance.** One session resting on Tanaka
+  makes the whole day's aggregate INFERRED. Weakest link wins; the observed peak can raise
+  an age-based estimate but never lower it.
+- **Strain coverage is the fraction of logged workout minutes that produced a load.** A day
+  holding a two-hour ride we could not score is refused, not quietly reported as a rest day.
+- **Load Ratio stores the ratio times 100.** 1.15 persists as 115. The score table is keyed
+  on integers and a second numeric column for one score type would be worse.
+- **The Impellizzeri critique lives in the engine, not the UI.** `LoadRatioScorer.CRITIQUE`
+  is appended to both contributions' citations, so a UI refactor cannot drop the condition
+  under which the number is honest.
+- **Energy Bank points are exact.** Unlike Recovery and Strain, they are realised deltas
+  after edge compression, so carryover plus three numbers is the closing level.
+- **The Energy Bank integrates in steps.** Applying a large delta at its starting resistance
+  would sail through the ceiling it is meant to respect. Forward Euler, 200 steps, error
+  under a point.
+- **The gauge floors at 5, not 0**, as Garmin's does. The floor is an asymptote, not a clamp.
+
+## Building it
+
+Neither the engine nor the app has been compiled on the machine this was written on: no
+JDK, no Gradle, no Android SDK. CI is therefore the build, not a safety net over one.
+
+- `.github/workflows/build.yml` — three jobs. **engine** runs `:core-scoring:test` on a bare
+  JVM and is the one to watch. **android** assembles debug and runs unit tests. **lint** is
+  informational and does not gate.
+- `.github/workflows/gradle-wrapper.yml` — manual dispatch. Generates the wrapper the repo
+  does not have and uploads it as an artifact to commit by hand. Nothing depends on it;
+  the build workflow provisions Gradle directly and calls `gradle`, not `./gradlew`.

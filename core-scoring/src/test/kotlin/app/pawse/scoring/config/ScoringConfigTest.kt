@@ -82,4 +82,66 @@ class ScoringConfigTest {
         runCatching { BaselineConfig(windowDays = 7) }.isFailure shouldBe true
         runCatching { BaselineConfig(windowDays = 120) }.isFailure shouldBe true
     }
+
+    @Test
+    fun `bevel sleep weights sum to one and are tagged as ours, because Bevel publishes none`() {
+        val weights = ScoringConfig.DEFAULT.sleep.bevelWeights
+        check(abs(weights.values.sumOf { it.weight } - 1.0) < 1e-9)
+        weights.values.forEach { it.provenance shouldBe Provenance.OUR_CHOICE }
+    }
+
+    @Test
+    fun `Edwards zone multipliers are the published one through five`() {
+        val zones = ScoringConfig.DEFAULT.strain.edwardsZoneWeights
+        (1..5).forEach { zones.getValue(it) shouldBe it.toDouble() }
+        zones.size shouldBe 5
+    }
+
+    @Test
+    fun `the strain saturation constant is positive, or the curve inverts`() {
+        ScoringConfig.DEFAULT.strain.saturationK shouldBeGreaterThan 0.0
+    }
+
+    @Test
+    fun `the energy bank recharge shares form a complete unit of weight`() {
+        val bank = ScoringConfig.DEFAULT.energyBank
+        check(abs(bank.recoveryShare + bank.sleepShare - 1.0) < 1e-9)
+        // Recovery leads, as every report has it lead the overnight signal.
+        bank.recoveryShare shouldBeGreaterThan bank.sleepShare
+    }
+
+    @Test
+    fun `the energy bank coverage weights form a complete unit of weight`() {
+        val bank = ScoringConfig.DEFAULT.energyBank
+        val sum = bank.coverageWeightRecharge + bank.coverageWeightStrain + bank.coverageWeightCarryover
+        check(abs(sum - 1.0f) < 1e-6f) { "coverage weights sum to $sum" }
+    }
+
+    @Test
+    fun `the energy bank soft edges sit inside its hard edges`() {
+        val bank = ScoringConfig.DEFAULT.energyBank
+        bank.softFloor shouldBeGreaterThan bank.displayFloor
+        bank.softCeiling shouldBeGreaterThan bank.softFloor
+        bank.displayCeiling shouldBeGreaterThan bank.softCeiling
+    }
+
+    @Test
+    fun `the load ratio thresholds are ordered, and the acute window is inside the chronic one`() {
+        val ratio = ScoringConfig.DEFAULT.loadRatio
+        ratio.sweetSpotHigh shouldBeGreaterThan ratio.sweetSpotLow
+        ratio.elevatedAbove shouldBeGreaterThan ratio.sweetSpotHigh
+        check(ratio.acuteDays < ratio.chronicDays)
+        check(ratio.minimumChronicDays <= ratio.chronicDays)
+    }
+
+    @Test
+    fun `every coverage threshold refuses lower than it degrades`() {
+        // Getting these backwards would mark a score degraded and then print it
+        // anyway, or refuse one it had just called fine.
+        val config = ScoringConfig.DEFAULT
+        check(config.recovery.refuseBelowCoverage < config.recovery.degradedBelowCoverage)
+        check(config.sleep.refuseBelowCoverage < config.sleep.degradedBelowCoverage)
+        check(config.strain.refuseBelowCoverage < config.strain.degradedBelowCoverage)
+        check(config.energyBank.refuseBelowCoverage < config.energyBank.degradedBelowCoverage)
+    }
 }

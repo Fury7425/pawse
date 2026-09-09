@@ -415,6 +415,45 @@ data class StrainConfig(
     val tanakaSlope: Double = 0.7,
     /** Days of typical strain feeding Target Strain. Bevel says ~2 weeks (grok.txt §7). */
     val targetStrainWindowDays: Int = 14,
+    /**
+     * Edwards five-zone multipliers, by %HRmax band: 50-60, 60-70, 70-80, 80-90,
+     * 90-100. PUBLISHED (Edwards, claude.md §10). Used when the writer app
+     * supplied a heart-rate series we could bin, and as the sex-neutral fallback.
+     */
+    val edwardsZoneWeights: Map<Int, Double> = mapOf(
+        1 to 1.0, 2 to 2.0, 3 to 3.0, 4 to 4.0, 5 to 5.0,
+    ),
+    /**
+     * Passive load per waking hour, in TRIMP-equivalent units.
+     *
+     * Bevel splits its Strain into active and passive halves, the passive half
+     * being "movement/HR the rest of the day" (grok.txt §7), and Garmin's Body
+     * Battery drains all day at rest. We have no reliable all-day heart-rate
+     * series through Health Connect, so this is a flat per-hour term rather than
+     * a measurement. OUR_CHOICE. Set to 0.0 to score workouts only, which is what
+     * a user who wants a pure training-load number should do.
+     */
+    val passiveLoadPerWakingHour: Double = 3.0,
+    /**
+     * Sessions shorter than this are dropped. A 40-second "workout" is a
+     * mis-tap or an auto-detection artefact, and Banister's duration term makes
+     * it worthless anyway.
+     */
+    val minSessionMinutes: Double = 3.0,
+    /**
+     * How far Recovery moves Target Strain. Bevel derives its target from about
+     * two weeks of typical strain "plus recent Recovery" (grok.txt §7) without
+     * saying how much. At 0.35, a green 90 lifts the target by 28% and a red 15
+     * cuts it by a quarter. OUR_CHOICE.
+     */
+    val targetStrainRecoveryAdjust: Double = 0.35,
+    /** Below this fraction of workout minutes scored, strain is marked degraded. */
+    val degradedBelowCoverage: Float = 0.9f,
+    /**
+     * Below this we refuse. Printing a rest-day strain for a day that held a
+     * two-hour ride we could not score is worse than printing nothing.
+     */
+    val refuseBelowCoverage: Float = 0.5f,
 )
 
 @Serializable
@@ -428,6 +467,61 @@ data class EnergyBankConfig(
     val compressionExponent: Double = 1.8,
     /** Overnight recharge correlates with Recovery but is explicitly not equal to it. */
     val overnightRechargeGain: Double = 0.55,
+    /**
+     * How the overnight recharge is blended before the gain is applied. Bevel says
+     * the overnight charge is "correlated with, but not 1:1 with, Recovery"
+     * (grok.txt §7) and Garmin parameterises recharge by both the overnight Sleep
+     * Score and nocturnal RMSSD amplitude (gemini.txt). So both go in, Recovery
+     * leading. Shares are OUR_CHOICE and renormalise when one is missing.
+     *
+     * Sanity anchor: at these values a good night adds roughly 40 points and a
+     * great one just over 50, which is the 40-60 range Garmin's own Body Battery
+     * documentation describes (grok.txt §2).
+     */
+    val recoveryShare: Double = 0.6,
+    val sleepShare: Double = 0.4,
+    /**
+     * Points drained per unit of day strain on the canonical 0-100 strain scale.
+     * At 0.85, an all-out day costs 85 points before edge compression. OUR_CHOICE.
+     */
+    val strainDrainGain: Double = 0.85,
+    /** Points added per hour of nap. Naps recharge in Bevel and Garmin both. */
+    val napRechargePerHour: Double = 6.0,
+    /**
+     * The gauge is integrated in steps rather than applied as one jump, so that
+     * edge resistance is felt continuously. Without this a single large delta
+     * would be scaled by the resistance at its starting level and overshoot.
+     *
+     * Forward Euler, so the error falls roughly as one over the step count. Two
+     * hundred steps sits within a point of the continuous solution and costs two
+     * hundred multiplications once a day.
+     */
+    val integrationSteps: Int = 200,
+    /**
+     * Garmin's Body Battery floors at 5, not 0 (grok.txt §2), and for a good
+     * reason: a gauge that reads empty implies a state the sensor cannot confirm.
+     */
+    val displayFloor: Double = 5.0,
+    val displayCeiling: Double = 100.0,
+    /** Day-one seed, before any carryover exists. Flagged as warming up. */
+    val seedLevel: Double = 50.0,
+    /**
+     * Coverage weights across the three input groups. Transparent rather than
+     * principled: they exist so the number next to the gauge means something
+     * specific. OUR_CHOICE.
+     */
+    val coverageWeightRecharge: Float = 0.5f,
+    val coverageWeightStrain: Float = 0.3f,
+    val coverageWeightCarryover: Float = 0.2f,
+    /**
+     * Deliberately not 0.7. A day with the night but no strain scores exactly
+     * 0.5 + 0.2, and a threshold sitting on that sum would decide whether the
+     * gauge reads degraded by float rounding. It also happens to be the right
+     * answer: a gauge that charged but never watched the day being spent is
+     * degraded, whatever the arithmetic says.
+     */
+    val degradedBelowCoverage: Float = 0.75f,
+    val refuseBelowCoverage: Float = 0.3f,
 )
 
 @Serializable
@@ -440,6 +534,17 @@ data class LoadRatioConfig(
     val chronicDays: Int = 28,
     val sweetSpotLow: Double = 0.8,
     val sweetSpotHigh: Double = 1.3,
+    /**
+     * Gabbett's elevated-risk threshold. Reported, not endorsed: see the critique
+     * shipped alongside the number in [app.pawse.scoring.load.LoadRatioScorer].
+     */
+    val elevatedAbove: Double = 1.5,
+    /**
+     * Fewer distinct days than this and there is no chronic load to divide by,
+     * so there is no ratio. A 28-day denominator built from nine days is not a
+     * conservative estimate, it is a different number wearing the same name.
+     */
+    val minimumChronicDays: Int = 14,
 )
 
 @Serializable

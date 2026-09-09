@@ -1,0 +1,59 @@
+name: gradle-wrapper
+
+# Generates the Gradle wrapper this repository does not have yet, and uploads it
+# as an artifact for you to unzip into the repository root and commit.
+#
+# Why a workflow rather than a committed wrapper: `gradle wrapper` needs Gradle to
+# run, and the machine this project was written on has none. Nothing else here
+# depends on the wrapper existing — the build workflow provisions Gradle directly.
+#
+# It does not commit for you. A wrapper is a checked-in binary plus a checksum
+# that everyone who clones the repo will execute, so it should land through a
+# commit you made deliberately rather than one a job pushed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      gradle-version:
+        description: Gradle version to generate the wrapper for
+        required: false
+        default: "8.11.1"
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    name: generate wrapper
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ inputs.gradle-version }}
+
+      - name: Generate wrapper
+        run: gradle wrapper --gradle-version ${{ inputs.gradle-version }} --distribution-type bin
+
+      - name: Show what was produced
+        run: ls -l gradlew gradlew.bat gradle/wrapper
+
+      - name: Upload wrapper
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-wrapper
+          path: |
+            gradlew
+            gradlew.bat
+            gradle/wrapper/gradle-wrapper.jar
+            gradle/wrapper/gradle-wrapper.properties
+          if-no-files-found: error

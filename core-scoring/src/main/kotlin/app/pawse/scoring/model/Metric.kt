@@ -57,6 +57,40 @@ enum class Metric(
     BEDTIME_CONSISTENCY(direction = +1, unit = "pts"),
     SLEEP_INTERRUPTIONS(direction = -1, unit = "count"),
     HEART_RATE_DIP(direction = +1, unit = "%"),
+
+    // --- Derived terms -----------------------------------------------------
+    // Not sensor inputs. These are engine outputs that appear as Contribution
+    // rows so that Strain, Energy Bank and Load Ratio can be explained with the
+    // same machinery, and persisted through the same contributionsJson column, as
+    // Recovery and Sleep.
+    //
+    // [direction] is meaningless for all of them: none is ever z-scored against a
+    // rolling baseline, so nothing reads the sign. It is set to the intuitive
+    // reading where one exists and should not be relied on.
+
+    /** Summed Banister or Edwards TRIMP across the day's scored sessions. */
+    WORKOUT_LOAD(direction = -1, unit = "TRIMP"),
+
+    /** Flat per-waking-hour term standing in for Bevel's passive strain. */
+    PASSIVE_LOAD(direction = -1, unit = "TRIMP"),
+
+    /** Yesterday's leftover Energy Bank level. */
+    CARRYOVER(direction = +1, unit = "pts"),
+
+    /** Points the night put back into the Energy Bank. */
+    OVERNIGHT_RECHARGE(direction = +1, unit = "pts"),
+
+    /** Points the day took out of the Energy Bank. */
+    STRAIN_DRAIN(direction = -1, unit = "pts"),
+
+    /** Points a nap put back during the day. */
+    NAP_CREDIT(direction = +1, unit = "pts"),
+
+    /** 7-day EWMA of daily load. */
+    ACUTE_LOAD(direction = -1, unit = "TRIMP"),
+
+    /** 28-day EWMA of daily load. */
+    CHRONIC_LOAD(direction = +1, unit = "TRIMP"),
     ;
 
     val key: String get() = name
