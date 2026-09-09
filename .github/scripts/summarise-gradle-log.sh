@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 #
-# Put the readable part of a Gradle failure into the GitHub job summary.
+# Make a Gradle failure readable from outside the runner.
 #
-# Why this exists: this project is written on a machine with no JDK, no Gradle
-# and no Android SDK, so CI is the only compiler it has. A red tick with the
-# detail locked inside an Actions log is close to useless there — fetching a raw
-# job log needs an authenticated client, while a job summary is readable through
-# the public checks API. So the compiler errors are copied somewhere they can
-# actually be read, and the artifact upload stays as the full-fidelity fallback.
+# Why this exists: this project is written on a machine with no JDK, no Gradle and
+# no Android SDK, so CI is the only compiler it has. A red tick whose detail is
+# locked inside the Actions log is close to useless there — fetching a raw job log
+# needs an authenticated client, and a job summary turns out not to be exposed by
+# the checks API either. Workflow annotations are, so every compiler error is
+# emitted as one, and the same text is written to the job summary for a human
+# reading the run in a browser. The uploaded log artifact stays as the
+# full-fidelity fallback.
 #
 # Usage: summarise-gradle-log.sh <logfile> <label>
 
@@ -15,44 +17,51 @@ set -uo pipefail
 
 log="${1:?usage: summarise-gradle-log.sh <logfile> <label>}"
 label="${2:-build}"
-summary="${GITHUB_STEP_SUMMARY:-/dev/stdout}"
+summary="${GITHUB_STEP_SUMMARY:-/dev/null}"
 
-{
-  echo "## ${label} failed"
-  echo
-} >>"$summary"
+echo "## ${label} failed" >>"$summary"
+echo >>"$summary"
 
 if [ ! -s "$log" ]; then
-  echo "No log was captured. The step probably failed before Gradle started." >>"$summary"
+  echo "::error title=${label}::No Gradle output was captured; the step failed before Gradle started."
+  echo "No log was captured." >>"$summary"
   exit 0
 fi
 
-emit_section() {
-  local title="$1"
-  local body="$2"
-  [ -z "$body" ] && return 0
+# Kotlin reports "e: file:line:col message"; javac, KSP and Room use "error:";
+# Gradle marks the failing task and explains itself under "What went wrong".
+# Between them these catch every failure this build can produce.
+errors="$(
   {
-    echo "### ${title}"
+    grep -E '^e: |^w: .*error|error: |^> Task .* FAILED' "$log"
+    sed -n '/^\* What went wrong:/,/^\* Try:/p' "$log"
+    grep -E 'FAILED$|expected:|actual:|AssertionError|Caused by:' "$log"
+  } | grep -v '^\* Try:$' | awk '!seen[$0]++' | head -n 60
+)"
+
+if [ -n "$errors" ]; then
+  {
     echo '```'
-    printf '%s\n' "$body"
+    printf '%s\n' "$errors"
     echo '```'
     echo
   } >>"$summary"
-}
 
-# Kotlin reports errors as "e: file:line:col message"; javac, KSP and Room use
-# "error:"; Gradle marks the task itself. Between them these three patterns catch
-# every compile failure this build can produce.
-emit_section "Compiler errors" \
-  "$(grep -E '^e: |error: |^> Task .* FAILED' "$log" | head -n 150)"
-
-# Test failures, when the tests compiled but did not pass. The build file turns
-# on FULL exception format so the expected/actual pair lands here too.
-emit_section "Test failures" \
-  "$(grep -E 'FAILED$|^\s+[A-Za-z0-9_.]+ > |expected:|actual:|AssertionError' "$log" | head -n 120)"
-
-emit_section "What went wrong" \
-  "$(sed -n '/^\* What went wrong:/,/^\* Try:/p' "$log" | head -n 60)"
+  # One annotation per line. Annotations are the only part of a run the public
+  # checks API returns without a token, so this is the channel that actually
+  # carries the diagnosis off the runner.
+  n=0
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    n=$((n + 1))
+    [ "$n" -gt 40 ] && break
+    line="${line//$'\r'/}"
+    line="${line//'%'/%25}"
+    echo "::error title=${label}::${line}"
+  done <<<"$errors"
+else
+  echo "::error title=${label}::Gradle failed with no recognisable error line; see the uploaded log."
+fi
 
 {
   echo "<details><summary>Last 250 lines of the build log</summary>"

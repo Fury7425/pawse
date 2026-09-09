@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <!--
       Compose owns the real theming. This exists only so the launch window and the
       splash do not flash a Material default surface before the first frame.
@@ -10,6 +10,11 @@
         <item name="android:windowBackground">@color/launch_background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:enforceNavigationBarContrast">false</item>
+        <!--
+          API 29 and minSdk is 28, so this is annotated rather than moved into a
+          values-v29 fork: older platforms ignore an unknown style item, and one
+          attribute does not justify a second copy of the theme to keep in step.
+        -->
+        <item name="android:enforceNavigationBarContrast" tools:targetApi="q">false</item>
     </style>
 </resources>
