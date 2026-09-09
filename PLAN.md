@@ -221,7 +221,10 @@ GET /repos/{owner}/{repo}/check-runs/{id}/annotations
 Job summaries were the first attempt and turn out not to be exposed that way. The full log
 is uploaded as an artifact either way.
 
-First green build corrected two version assumptions that could not have been checked
-locally: `connect-client` was pinned at `1.1.0-alpha07`, which has no `SkinTemperatureRecord`
-and keeps `DEFAULT_PROVIDER_PACKAGE_NAME` internal, and the two health-data permission
-constants live on `HealthPermission`, not `HealthConnectClient`.
+Getting to a first green build corrected several version assumptions that could not have
+been checked locally. `connect-client` was pinned at `1.1.0-alpha07`, which has no
+`SkinTemperatureRecord` and keeps `DEFAULT_PROVIDER_PACKAGE_NAME` internal; the two
+health-data permission constants live on `HealthPermission`, not `HealthConnectClient`; and
+the 1.1.0 release declares `minCompileSdk=36` and `minAndroidGradlePluginVersion=8.9.1`, so
+every module compiles against 36 and AGP moved to 8.9.3. AGP 8.9 pairs with Gradle 8.11.1,
+which the workflow already provisions, so nothing else in the toolchain had to move.
