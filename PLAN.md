@@ -206,3 +206,22 @@ JDK, no Gradle, no Android SDK. CI is therefore the build, not a safety net over
 - `.github/workflows/gradle-wrapper.yml` — manual dispatch. Generates the wrapper the repo
   does not have and uploads it as an artifact to commit by hand. Nothing depends on it;
   the build workflow provisions Gradle directly and calls `gradle`, not `./gradlew`.
+
+Because a raw Actions log needs an authenticated client to fetch, every Gradle step tees to
+a file and every failing step re-emits the compiler errors, test failures and Gradle's own
+diagnosis as **workflow annotations**. Annotations are the one part of a run the public
+checks API hands back anonymously, which makes them the channel that actually carries a
+failure off the runner:
+
+```
+GET /repos/{owner}/{repo}/commits/{sha}/check-runs
+GET /repos/{owner}/{repo}/check-runs/{id}/annotations
+```
+
+Job summaries were the first attempt and turn out not to be exposed that way. The full log
+is uploaded as an artifact either way.
+
+First green build corrected two version assumptions that could not have been checked
+locally: `connect-client` was pinned at `1.1.0-alpha07`, which has no `SkinTemperatureRecord`
+and keeps `DEFAULT_PROVIDER_PACKAGE_NAME` internal, and the two health-data permission
+constants live on `HealthPermission`, not `HealthConnectClient`.

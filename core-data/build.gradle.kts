@@ -8,7 +8,7 @@ plugins {
 
 android {
     namespace = "app.pawse.core.data"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 28
