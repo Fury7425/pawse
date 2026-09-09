@@ -14,6 +14,18 @@ enum class Band { LOW, MODERATE, HIGH;
             value <= 66 -> MODERATE
             else -> HIGH
         }
+
+        /**
+         * Sleep bands. Oura publishes four: 85-100 Optimal, 70-84 Good, 60-69 Fair,
+         * 0-59 Pay Attention (grok.txt §8). We collapse Good and Fair into MODERATE
+         * because the app only ever paints three states, and because the 69/70
+         * boundary is not one any report claims is meaningful.
+         */
+        fun ofSleep(value: Int): Band = when {
+            value < 60 -> LOW
+            value < 85 -> MODERATE
+            else -> HIGH
+        }
     }
 }
 

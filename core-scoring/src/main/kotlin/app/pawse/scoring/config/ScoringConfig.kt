@@ -141,6 +141,24 @@ data class RecoveryConfig(
     val degradedBelowCoverage: Float = 0.7f,
     /** Below this coverage we refuse to print a number at all. */
     val refuseBelowCoverage: Float = 0.4f,
+    /**
+     * Windows for [RecoveryCombiner.MOVING_AVERAGE_DELTA]. Whoop's patent language
+     * is "the magnitude of the differences between 7-day moving averages and
+     * 3-day moving averages" (claude.md §2), so these two numbers are PUBLISHED
+     * even though what Whoop then does with the difference is not.
+     */
+    val maFastDays: Int = 3,
+    val maSlowDays: Int = 7,
+    /** A moving-average term with fewer real samples than this in either window is dropped. */
+    val maMinFastSamples: Int = 2,
+    val maMinSlowSamples: Int = 4,
+    /**
+     * Recovery is reported 1-99, never 0 or 100. Whoop's own scale stops at those
+     * bounds (grok.txt §3, gemini.txt) and for the same reason: a logistic
+     * asymptote should not be printed as certainty.
+     */
+    val displayFloor: Int = 1,
+    val displayCeiling: Int = 99,
 )
 
 /**
@@ -199,6 +217,7 @@ data class SleepConfig(
     val stagelessFallback: SleepProfile = SleepProfile.APPLE_PUBLISHED,
     val ouraWeights: Map<Metric, Weight> = ouraRecoveredWeights,
     val appleWeights: Map<Metric, Weight> = applePublishedWeights,
+    val bevelWeights: Map<Metric, Weight> = bevelStyleWeights,
     /**
      * Whoop Sleep Need, patent US 9,538,923 (claude.md §2):
      *   SleepNeed = Baseline + f1(strain) + f2(debt) - Naps
@@ -210,6 +229,133 @@ data class SleepConfig(
     val strainAdderSteepness: Double = 3.5,
     /** Debt carryover is capped in the patent; cap value is ours. */
     val debtCarryoverCapHours: Double = 2.0,
+    /**
+     * Fraction of accumulated debt repaid tonight rather than all at once.
+     * OUR_CHOICE: the patent says carryover is capped but not how it is split,
+     * and demanding a full 3-hour repayment in one night is not a target anyone
+     * can hit, which would peg Sleep Performance at "failed" for a week.
+     */
+    val debtCarryoverFraction: Double = 0.5,
+    /**
+     * Personal rest-day need before any adder. The patent learns this from
+     * physiology, age, sex, height and weight; we start every user at the middle
+     * of the AASM 7-9 h adult range and let the adders move it nightly. This is
+     * the *starting* baseline, not a fixed 8-hour target: the moment a user has
+     * history, the caller passes their own learned baseline instead.
+     */
+    val baselineNeedHours: Double = 8.0,
+    /** Floor after nap credit, so a long nap cannot drive tonight's need to zero. */
+    val minimumNeedHours: Double = 4.0,
+    /** Below this contributor coverage the sleep score is marked degraded. */
+    val degradedBelowCoverage: Float = 0.8f,
+    /**
+     * Below this we refuse. Set so that duration alone is never enough: 0.50 under
+     * Apple's split and 0.35 under Oura's both fall through, and a single-number
+     * "sleep score" built only on hours is precisely the thing this app exists to
+     * not be.
+     */
+    val refuseBelowCoverage: Float = 0.55f,
+    val targets: SleepTargets = SleepTargets(),
+)
+
+/**
+ * Absolute targets for the sleep sub-scores.
+ *
+ * Both shipping profiles are *absolute-target* combiners, not baseline-relative
+ * ones: Oura and Apple both score a night against a physiological target rather
+ * than against your own last sixty nights. So these are the only numbers in the
+ * engine that are not z-scores, and every one of them is written down here rather
+ * than inlined in a scorer.
+ *
+ * Provenance is mixed and is called out per field. Where a report states a range,
+ * the range is the field; where no report states anything, the field is ours.
+ */
+@Serializable
+data class SleepTargets(
+    // --- Duration vs need -------------------------------------------------
+    /** Ratio of asleep-to-need that earns full duration credit. */
+    val durationFullCreditRatio: Double = 1.0,
+    /** Ratio at which duration credit reaches zero. */
+    val durationZeroRatio: Double = 0.5,
+    /**
+     * Exponent on the normalised shortfall, so the penalty accelerates.
+     * OUR_CHOICE, tuned to Apple's described shape: "~2 hours short is about
+     * -13 of 50 points; one hour short is milder; another lost hour costs more"
+     * (grok.txt §4). At exponent 2.0 and an 8 h need, 7 h scores 94 and 6 h
+     * scores 75 — the same accelerating shape.
+     */
+    val durationExponent: Double = 2.0,
+
+    // --- Efficiency (asleep / time in bed) --------------------------------
+    val efficiencyFullCredit: Double = 95.0,
+    /** Oura's stated "peaceful" mark (grok.txt §8). */
+    val efficiencyKnee: Double = 85.0,
+    val efficiencyKneeScore: Double = 80.0,
+    val efficiencyZero: Double = 65.0,
+
+    // --- Stage shares, percent of total sleep time ------------------------
+    /** REM 20-25% of TST, gemini.txt "Sleep Quality / Stage Composition". */
+    val remTargetLowPct: Double = 20.0,
+    val remTargetHighPct: Double = 25.0,
+    /** Oura allows a very wide 5-50% before zeroing the contributor (grok.txt §8). */
+    val remZeroLowPct: Double = 5.0,
+    val remZeroHighPct: Double = 50.0,
+    /** Deep 13-23% of TST, gemini.txt; grok.txt §8 gives 15-20% for adults. */
+    val deepTargetLowPct: Double = 13.0,
+    val deepTargetHighPct: Double = 23.0,
+    val deepZeroLowPct: Double = 2.0,
+    val deepZeroHighPct: Double = 40.0,
+
+    // --- Latency ----------------------------------------------------------
+    /** Oura: latency above 20 minutes hurts (grok.txt §8). */
+    val latencyIdealLowMinutes: Double = 8.0,
+    val latencyIdealHighMinutes: Double = 20.0,
+    val latencyZeroMinutes: Double = 60.0,
+    /**
+     * Falling asleep instantly is a sleep-pressure signal, not a triumph, so a
+     * zero-minute latency scores below full credit rather than at it. OUR_CHOICE.
+     */
+    val latencyInstantScore: Double = 70.0,
+
+    // --- Restfulness ------------------------------------------------------
+    val restfulnessWasoZeroMinutes: Double = 90.0,
+    val restfulnessAwakeningsZero: Double = 8.0,
+    val restfulnessWasoShare: Double = 0.6,
+
+    // --- Timing and consistency ------------------------------------------
+    /** Sleep-midpoint drift from your own habitual midpoint that zeroes timing. */
+    val timingZeroDriftMinutes: Double = 180.0,
+    /** Bedtime SD over the trailing window that zeroes Apple's consistency term. */
+    val consistencyZeroSdMinutes: Double = 120.0,
+
+    // --- Apple interruptions ---------------------------------------------
+    /**
+     * Apple's 20-point bucket counts memorable wake periods, not micro-arousals
+     * (grok.txt §4). Points per interruption is ours.
+     */
+    val interruptionPenaltyPoints: Double = 15.0,
+
+    // --- Bevel heart-rate dip --------------------------------------------
+    /** Percent drop from daytime resting HR to sleeping HR earning full credit. */
+    val hrDipFullCreditPct: Double = 15.0,
+    val hrDipZeroPct: Double = 0.0,
+)
+
+/**
+ * Bevel-style sleep weights. OUR_CHOICE throughout.
+ *
+ * Bevel names its contributors — time asleep vs goal, stage balance, heart-rate
+ * dip, efficiency, continuity (grok.txt §7; claude.md §9) — and publishes no
+ * weights at all. So this profile exists because the heart-rate dip is a real
+ * signal the other two profiles throw away, not because anyone reproduced Bevel.
+ */
+val bevelStyleWeights: Map<Metric, Weight> = mapOf(
+    Metric.TIME_ASLEEP to Weight(0.35, Provenance.OUR_CHOICE, "Our default. Bevel lists time asleep vs goal first (grok.txt §7)."),
+    Metric.SLEEP_EFFICIENCY to Weight(0.15, Provenance.OUR_CHOICE, "Our default. Bevel lists efficiency as a contributor; weight unpublished."),
+    Metric.HEART_RATE_DIP to Weight(0.15, Provenance.OUR_CHOICE, "Our default. The dip from daytime resting HR to sleeping HR, Bevel's distinctive term."),
+    Metric.RESTFULNESS to Weight(0.15, Provenance.OUR_CHOICE, "Our default. Stands in for Bevel's 'continuity'."),
+    Metric.REM_MINUTES to Weight(0.10, Provenance.OUR_CHOICE, "Our default. Half of Bevel's 'stage balance'."),
+    Metric.DEEP_MINUTES to Weight(0.10, Provenance.OUR_CHOICE, "Our default. Half of Bevel's 'stage balance'."),
 )
 
 /**

@@ -125,7 +125,7 @@ Label 13sp, plus a 14sp Delta for signed point contributions.
 ## Delivery order
 
 1. **Skeleton, Health Connect permissions, capability probe, sync** — done
-2. BaselineEngine + SleepScorer + RecoveryScorer, full tests
+2. **BaselineEngine + SleepScorer + RecoveryScorer, full tests** — done
 3. StrainScorer + EnergyBank + LoadRatio
 4. Home, baseline-band component, explainability screens
 5. Barcode scanning and the resolver chain
@@ -146,3 +146,22 @@ Label 13sp, plus a 14sp Delta for signed point contributions.
   WorkManager scheduling is inexact by design, so on-demand sync is what makes it feel current.
 - **Duplicate sources resolve by priority, not averaging.** The probe reports contested
   record types; the default order is the order they were seen; the user can reorder it.
+- **Tonight is excluded from its own baseline.** Only `daysAgo >= 1` forms the window.
+  Including tonight drags the mean toward the value being judged and shrinks the z-score
+  on exactly the nights that matter.
+- **Recovery points are marginal, sleep points are additive.** A logistic is not a sum, so
+  a Recovery contribution's `points` is the leave-one-out marginal — how far removing that
+  term alone moves the score — and the terms deliberately do not add to the total. Sleep is
+  a weighted sum of 0-100 sub-scores, so its terms do add up exactly, and the
+  explainability copy differs between the two screens for that reason.
+- **Sleep is an absolute-target combiner.** Both shipping profiles score a night against a
+  physiological target rather than the user's own history, which is how Oura and Apple both
+  work. Sleep contributions therefore report a null baseline rather than a plausible-looking
+  fake one, and Sleep is never `warmingUp`.
+- **Sleep contributors measured in "pts" arrive pre-normalised.** Restfulness, timing and
+  bedtime consistency cannot be computed from one night in isolation, so the caller builds
+  them with the public helpers in `SleepSubScores` and passes 0-100 in. Everything else is
+  scored in the engine from its raw unit.
+- **A timezone-crossing night loses its circadian terms rather than failing them.** The
+  midpoint moved because the clock did.
+- **Recovery is reported 1-99.** A logistic asymptote should not be printed as certainty.
