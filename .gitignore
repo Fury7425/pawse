@@ -11,3 +11,7 @@ captures/
 *.aab
 *.keystore
 !debug.keystore
+
+# Scratch files from CI log inspection.
+cr.json
+runs.json
