@@ -30,7 +30,16 @@ class HealthConnectGateway @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
 
-    val providerPackage: String = HealthConnectClient.DEFAULT_PROVIDER_PACKAGE_NAME
+    /**
+     * The Health Connect provider package.
+     *
+     * Spelled out rather than read from [HealthConnectClient.DEFAULT_PROVIDER_PACKAGE_NAME],
+     * which is internal to the library and so is not ours to depend on. The app
+     * manifest already has to name the same package in its <queries> block for
+     * getSdkStatus to see it at all, so this is the second of two places it is
+     * written down, not the first.
+     */
+    val providerPackage: String = HEALTH_CONNECT_PACKAGE
 
     fun availability(): HealthConnectAvailability =
         when (HealthConnectClient.getSdkStatus(context, providerPackage)) {
@@ -97,4 +106,8 @@ class HealthConnectGateway @Inject constructor(
         start: Instant,
         end: Instant,
     ): List<T> = runCatching { read(type, start, end) }.getOrDefault(emptyList())
+
+    companion object {
+        const val HEALTH_CONNECT_PACKAGE = "com.google.android.apps.healthdata"
+    }
 }

@@ -58,6 +58,14 @@ enum class Metric(
     SLEEP_INTERRUPTIONS(direction = -1, unit = "count"),
     HEART_RATE_DIP(direction = +1, unit = "%"),
 
+    /**
+     * Raw beat-to-beat heart rate, as written by the watch. Distinct from
+     * [HEART_RATE_DIP], which is a derived percentage: storing bpm under the dip's
+     * key would put two different quantities in one column and make the sleep
+     * profile that consumes the dip read heart rates instead.
+     */
+    HEART_RATE(direction = -1, unit = "bpm"),
+
     // --- Derived terms -----------------------------------------------------
     // Not sensor inputs. These are engine outputs that appear as Contribution
     // rows so that Strain, Energy Bank and Load Ratio can be explained with the

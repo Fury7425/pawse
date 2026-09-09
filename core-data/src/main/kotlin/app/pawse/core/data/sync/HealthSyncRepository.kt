@@ -189,7 +189,7 @@ class HealthSyncRepository @Inject constructor(
                 )
                 is HeartRateRecord -> samples += record.samples.map {
                     MetricSampleEntity(
-                        metric = Metric.HEART_RATE_DIP.key,
+                        metric = Metric.HEART_RATE.key,
                         value = it.beatsPerMinute.toDouble(),
                         startEpochMs = it.time.toEpochMilli(),
                         endEpochMs = it.time.toEpochMilli(),

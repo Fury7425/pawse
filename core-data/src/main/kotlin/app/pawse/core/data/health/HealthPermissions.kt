@@ -1,6 +1,5 @@
 package app.pawse.core.data.health
 
-import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
 import androidx.health.connect.client.records.BodyFatRecord
@@ -66,10 +65,10 @@ object HealthPermissions {
      * history window boundary on some platform versions, so history access is
      * requested alongside the read grants.
      */
-    const val READ_HISTORY: String = HealthConnectClient.PERMISSION_READ_HEALTH_DATA_HISTORY
+    val READ_HISTORY: String = HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY
 
     /** Nightly recompute fires after the sleep session closes, often in background. */
-    const val READ_IN_BACKGROUND: String = HealthConnectClient.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND
+    val READ_IN_BACKGROUND: String = HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND
 
     /** Everything requested at onboarding. Partial grants are expected and handled. */
     val ALL: Set<String> = READ + WRITE + setOf(READ_HISTORY, READ_IN_BACKGROUND)

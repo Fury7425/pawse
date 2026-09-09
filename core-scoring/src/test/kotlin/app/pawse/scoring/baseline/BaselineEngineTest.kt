@@ -21,6 +21,15 @@ class BaselineEngineTest {
         warmupSamples = 3,
     )
 
+    /**
+     * "Effectively flat" is not "flat". A billion-day half-life still leaves each
+     * weight about 7e-10 below its predecessor, which moves a mean by roughly 1e-8.
+     * These tests are about the arithmetic being the textbook arithmetic, not about
+     * the last bit of a double, so they compare at 1e-6 rather than pretending to
+     * an exactness the weighting does not offer.
+     */
+    private val flat = 1e-6
+
     private fun samples(vararg values: Double) = MetricHistory(
         metric = Metric.HRV_RMSSD,
         samples = values.mapIndexed { i, v -> MetricHistory.Sample(daysAgo = i + 1, value = v) },
@@ -30,8 +39,8 @@ class BaselineEngineTest {
     fun `unweighted mean and unbiased sample SD, computed by hand`() {
         val baseline = BaselineEngine(unweighted).baseline(samples(10.0, 12.0, 14.0, 16.0, 18.0))!!
         // mean 14; sum of squared deviations 40; /(n-1) = 10; sd = sqrt(10)
-        baseline.mean shouldBe (14.0 plusOrMinus 1e-9)
-        baseline.sigma shouldBe (3.1622776601 plusOrMinus 1e-6)
+        baseline.mean shouldBe (14.0 plusOrMinus flat)
+        baseline.sigma shouldBe (3.1622776601 plusOrMinus flat)
         baseline.sampleCount shouldBe 5
         baseline.warmingUp shouldBe false
     }
@@ -49,7 +58,7 @@ class BaselineEngineTest {
                 MetricHistory.Sample(3, 14.0),
             ),
         )
-        BaselineEngine(unweighted).baseline(history)!!.mean shouldBe (12.0 plusOrMinus 1e-9)
+        BaselineEngine(unweighted).baseline(history)!!.mean shouldBe (12.0 plusOrMinus flat)
     }
 
     @Test
@@ -75,7 +84,7 @@ class BaselineEngineTest {
         )
         val baseline = BaselineEngine(unweighted).baseline(history)!!
         baseline.sampleCount shouldBe 2
-        baseline.mean shouldBe (15.0 plusOrMinus 1e-9)
+        baseline.mean shouldBe (15.0 plusOrMinus flat)
     }
 
     @Test
@@ -85,13 +94,13 @@ class BaselineEngineTest {
             Metric.HRV_RMSSD,
             (1..60).map { MetricHistory.Sample(it, if (it <= 30) 70.0 else 50.0) },
         )
-        val flat = BaselineEngine(unweighted).baseline(history)!!
+        val flatWeighted = BaselineEngine(unweighted).baseline(history)!!
         val decayed = BaselineEngine(BaselineConfig()).baseline(history)!!
-        flat.mean shouldBe (60.0 plusOrMinus 1e-9)
+        flatWeighted.mean shouldBe (60.0 plusOrMinus flat)
         // A 14-day half-life over a 60-day window puts about 82% of the weight on
         // the recent block, which lands the baseline near 66 rather than 60.
         decayed.mean shouldBeGreaterThan 65.0
-        decayed.mean shouldBeGreaterThan flat.mean
+        decayed.mean shouldBeGreaterThan flatWeighted.mean
     }
 
     @Test
@@ -111,10 +120,10 @@ class BaselineEngineTest {
     @Test
     fun `a sensor stuck on one value produces no z-score rather than an infinite one`() {
         val engine = BaselineEngine(unweighted)
-        val flat = engine.baseline(samples(60.0, 60.0, 60.0, 60.0, 60.0))!!
-        flat.sigma shouldBe (0.0 plusOrMinus 1e-12)
-        engine.z(flat, 45.0).shouldBeNull()
-        engine.deviationSigma(flat, 45.0).shouldBeNull()
+        val stuck = engine.baseline(samples(60.0, 60.0, 60.0, 60.0, 60.0))!!
+        stuck.sigma shouldBe (0.0 plusOrMinus 1e-12)
+        engine.z(stuck, 45.0).shouldBeNull()
+        engine.deviationSigma(stuck, 45.0).shouldBeNull()
     }
 
     @Test
@@ -144,7 +153,7 @@ class BaselineEngineTest {
         val temp = engine.baseline(history)!!
         engine.z(temp, 0.6)!! shouldBeLessThan 0.0
         engine.z(temp, -0.6)!! shouldBeLessThan 0.0
-        engine.deviationSigma(temp, 0.6)!! shouldBe (engine.deviationSigma(temp, -0.6)!! plusOrMinus 1e-9)
+        engine.deviationSigma(temp, 0.6)!! shouldBe (engine.deviationSigma(temp, -0.6)!! plusOrMinus flat)
     }
 
     @Test
@@ -182,7 +191,7 @@ class BaselineEngineTest {
         // The fixtures depend on this: "8 bpm above baseline" has to mean 8 bpm.
         val engine = BaselineEngine(Fixtures.BASELINE)
         val hrv = engine.baseline(Fixtures.history(Metric.HRV_RMSSD, Fixtures.HRV_MEAN, Fixtures.HRV_SD))!!
-        hrv.mean shouldBe (Fixtures.HRV_MEAN plusOrMinus 1e-9)
+        hrv.mean shouldBe (Fixtures.HRV_MEAN plusOrMinus flat)
         // And sigma should land close to the stated SD, not wander off it.
         hrv.sigma shouldBeGreaterThan Fixtures.HRV_SD * 0.75
         hrv.sigma shouldBeLessThan Fixtures.HRV_SD * 1.35

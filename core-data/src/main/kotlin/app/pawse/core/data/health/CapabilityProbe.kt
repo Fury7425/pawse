@@ -83,10 +83,10 @@ class CapabilityProbe @Inject constructor(
             capability(Metric.SPO2, spo2, days, zone) { it.time },
             capability(Metric.SKIN_TEMPERATURE, temp, days, zone) { it.startTime },
             capability(Metric.TIME_ASLEEP, sleep, days, zone) { it.endTime },
-            // HEART_RATE_DIP stands in for "continuous heart rate is available at
-            // all", which is what Strain and the Energy Bank actually need. The dip
-            // itself is derived later, in step 3.
-            capability(Metric.HEART_RATE_DIP, hr, days, zone) { it.startTime },
+            // Raw continuous heart rate, which is what Strain and the Energy Bank
+            // need. The sleep heart-rate dip is derived from it rather than being
+            // the same quantity, so the two have separate metrics.
+            capability(Metric.HEART_RATE, hr, days, zone) { it.startTime },
         )
 
         val writerApps = buildSet {
@@ -195,7 +195,7 @@ class CapabilityProbe @Inject constructor(
             ),
             ScoreCapability(
                 type = ScoreType.STRAIN,
-                computable = present(Metric.HEART_RATE_DIP) || exerciseSessions > 0,
+                computable = present(Metric.HEART_RATE) || exerciseSessions > 0,
                 expectedCoverage = if (exerciseSessions > 0) 1f else 0.5f,
                 degraded = exerciseSessions == 0,
                 explanation = if (exerciseSessions > 0) {
@@ -207,10 +207,10 @@ class CapabilityProbe @Inject constructor(
             ),
             ScoreCapability(
                 type = ScoreType.ENERGY_BANK,
-                computable = present(Metric.HEART_RATE_DIP) && nightsWithSleep > 0,
-                expectedCoverage = if (present(Metric.HEART_RATE_DIP)) 1f else 0f,
-                degraded = !present(Metric.HEART_RATE_DIP),
-                explanation = if (present(Metric.HEART_RATE_DIP) && nightsWithSleep > 0) {
+                computable = present(Metric.HEART_RATE) && nightsWithSleep > 0,
+                expectedCoverage = if (present(Metric.HEART_RATE)) 1f else 0f,
+                degraded = !present(Metric.HEART_RATE),
+                explanation = if (present(Metric.HEART_RATE) && nightsWithSleep > 0) {
                     "Continuous heart rate is available, so the Energy Bank can run through the day."
                 } else {
                     "The Energy Bank needs all-day heart rate, which your device is not writing."
