@@ -11,10 +11,11 @@ Not a medical device. No illness prediction. Temperature and SpO₂ excursions a
 ```
 :app                     Compose host, nav, Hilt entry, WorkManager config
  ├── :feature-onboarding permission flow, capability probe report
- ├── :feature-home       (step 4) hero score, baseline-band rows, explainability
+ ├── :feature-home       hero score, baseline-band rows, explainability
  ├── :feature-food       (step 5) scanner, resolver chain, food log
  ├── :core-ui            fixed palette, Pretendard type, baseline-band component
- ├── :core-data          Health Connect gateway, probe, Room + SQLCipher, sync
+ ├── :core-data          Health Connect gateway, probe, Room + SQLCipher, sync,
+ │                       input assembly and the scoring pipeline
  │    └── :core-scoring
  └── :core-scoring       pure Kotlin/JVM. No Android dependency, ever.
 ```
@@ -127,7 +128,8 @@ Label 13sp, plus a 14sp Delta for signed point contributions.
 1. **Skeleton, Health Connect permissions, capability probe, sync** — done
 2. **BaselineEngine + SleepScorer + RecoveryScorer, full tests** — done
 3. **StrainScorer + EnergyBank + LoadRatio** — done
-4. Home, baseline-band component, explainability screens
+4. **Home, baseline-band component, explainability screens** — done, together with the
+   pipeline that turns stored samples into scores
 5. Barcode scanning and the resolver chain
 6. Trend charts, weight tuning, export/import, widgets
 
@@ -194,11 +196,47 @@ Label 13sp, plus a 14sp Delta for signed point contributions.
   would sail through the ceiling it is meant to respect. Forward Euler, 200 steps, error
   under a point.
 - **The gauge floors at 5, not 0**, as Garmin's does. The floor is an asymptote, not a clamp.
+- **Scores are recomputed on demand and persisted afterwards, never read back as a cache.**
+  The score table is a record of what was shown, stamped with the engine version and config
+  hash that produced it. What the screen shows is the engine run against the samples we hold
+  now. Ninety days costs a few milliseconds; a stale number costs trust. Derived detail —
+  sleep need, target strain, the per-session breakdown — is not persisted at all, because a
+  second copy of a derivable thing is a copy that can disagree with it.
+- **Split sleep is one night with a hole in it.** Time in bed spans first bedtime to final
+  wake and the gap counts as time awake. Summing the two sessions instead would report 96%
+  efficiency for a night the user remembers as broken.
+- **Stages are believed only when they cover the night.** Below half the session envelope,
+  staged minutes are partial reporting rather than the night's sleep time, and the night is
+  scored as unstaged — which is what Apple's stage-free profile is in the app for.
+- **An overnight metric has to have been measured overnight.** HRV, breathing rate and SpO₂
+  are read from inside the sleep window, or failing that from the night hours around it
+  because many apps stamp the night's aggregate at wake time. A midday spot reading is
+  dropped rather than fed to a score that claims to be about your night.
+- **Bedtimes are angles, not numbers.** 23:50 and 00:10 are twenty minutes apart; their
+  arithmetic mean is midday. Consistency and timing use circular statistics, so a night-shift
+  worker with a rigid schedule reads as consistent instead of chaotic.
+- **Workout heart rate is fetched per session, on demand.** Health Connect stores the
+  exercise envelope and the heart-rate series separately, so a synced workout has no mean
+  heart rate and no scoreable load. Syncing all heart rate to fix that would drain hundreds
+  of thousands of samples a month through change tokens.
+- **Age and sex are the only things the app ever asks for**, because Tanaka and Banister
+  divide by them and Health Connect has no record type for either. Declining stays
+  first-class: `UNSPECIFIED` takes the midpoint of Banister's two curves and says so.
+- **Strain is never painted with the Recovery palette.** Its bands are magnitude, so on Home
+  it is neutral and the verdict is left to the Target Strain sentence.
+- **The explainability screen recomputes nothing.** Every figure it renders was computed once
+  by the engine and carried in `Contribution`. A screen that recomputes is a second engine
+  that will eventually disagree with the first — about the number the user was shown.
 
 ## Building it
 
-Neither the engine nor the app has been compiled on the machine this was written on: no
-JDK, no Gradle, no Android SDK. CI is therefore the build, not a safety net over one.
+Steps 1 to 3 were written on a machine with no JDK, no Gradle and no Android SDK, which is
+why CI was the build rather than a safety net over one, and why the workflows below go to
+such lengths to carry a failure off the runner. Step 4 was built on a machine where a
+toolchain could be installed, so the tree now compiles and tests green locally — JDK 17,
+Gradle 8.14.3, Android SDK 36 — with `assembleDebug testDebugUnitTest` and
+`:core-scoring:test`. CI is still the authority: it is the only place the pinned versions
+are exercised from a clean checkout.
 
 - `.github/workflows/build.yml` — three jobs. **engine** runs `:core-scoring:test` on a bare
   JVM and is the one to watch. **android** assembles debug and runs unit tests. **lint** is
