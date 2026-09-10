@@ -3,6 +3,8 @@ package app.pawse.core.data.di
 import android.content.Context
 import androidx.work.WorkManager
 import app.pawse.core.data.db.ExerciseDao
+import app.pawse.core.data.db.FoodLogDao
+import app.pawse.core.data.db.FoodProductDao
 import app.pawse.core.data.db.MetricSampleDao
 import app.pawse.core.data.db.PawseDatabase
 import app.pawse.core.data.db.ScoreDao
@@ -30,6 +32,8 @@ object DataModule {
     @Provides fun sleepDao(db: PawseDatabase): SleepDao = db.sleepDao()
     @Provides fun exerciseDao(db: PawseDatabase): ExerciseDao = db.exerciseDao()
     @Provides fun scoreDao(db: PawseDatabase): ScoreDao = db.scoreDao()
+    @Provides fun foodProductDao(db: PawseDatabase): FoodProductDao = db.foodProductDao()
+    @Provides fun foodLogDao(db: PawseDatabase): FoodLogDao = db.foodLogDao()
 
     @Provides
     @Singleton

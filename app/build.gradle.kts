@@ -48,6 +48,7 @@ dependencies {
     implementation(project(":core-ui"))
     implementation(project(":feature-onboarding"))
     implementation(project(":feature-home"))
+    implementation(project(":feature-food"))
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

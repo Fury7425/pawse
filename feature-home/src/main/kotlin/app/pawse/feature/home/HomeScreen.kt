@@ -62,6 +62,7 @@ import kotlin.math.roundToInt
 @Composable
 fun HomeScreen(
     onOpenExplain: (ScoreType) -> Unit,
+    onOpenFood: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
@@ -96,6 +97,7 @@ fun HomeScreen(
                 syncError = error,
                 contentPadding = padding,
                 onOpenExplain = onOpenExplain,
+                onOpenFood = onOpenFood,
                 onSyncNow = viewModel::syncNow,
                 onEditProfile = { editingProfile = true },
                 onDismissError = viewModel::dismissError,
@@ -142,6 +144,7 @@ private fun HomeContent(
     syncError: String?,
     contentPadding: PaddingValues,
     onOpenExplain: (ScoreType) -> Unit,
+    onOpenFood: () -> Unit,
     onSyncNow: () -> Unit,
     onEditProfile: () -> Unit,
     onDismissError: () -> Unit,
@@ -161,6 +164,7 @@ private fun HomeContent(
                 date = snapshot.date,
                 syncing = syncing,
                 onSyncNow = onSyncNow,
+                onOpenFood = onOpenFood,
                 modifier = Modifier.padding(horizontal = 24.dp),
             )
             Spacer(Modifier.height(20.dp))
@@ -284,6 +288,7 @@ private fun Header(
     date: LocalDate,
     syncing: Boolean,
     onSyncNow: () -> Unit,
+    onOpenFood: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -293,6 +298,9 @@ private fun Header(
             color = MaterialTheme.colorScheme.onSurface,
         )
         Spacer(Modifier.weight(1f))
+        // The food log is one tap from the number, not buried in a menu: it is the
+        // other half of the app, and the only part the user actively feeds.
+        TextButton(onClick = onOpenFood) { Text("Food") }
         if (syncing) {
             CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
         } else {

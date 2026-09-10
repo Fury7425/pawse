@@ -90,7 +90,7 @@ fun ExplainScreen(
                 Spacer(Modifier.height(16.dp))
             }
 
-            if (score == null || snapshot == null) {
+            if (snapshot == null || score == null) {
                 item {
                     Text(
                         text = snapshot?.unavailable?.get(type)

@@ -12,7 +12,7 @@ Not a medical device. No illness prediction. Temperature and SpO₂ excursions a
 :app                     Compose host, nav, Hilt entry, WorkManager config
  ├── :feature-onboarding permission flow, capability probe report
  ├── :feature-home       hero score, baseline-band rows, explainability
- ├── :feature-food       (step 5) scanner, resolver chain, food log
+ ├── :feature-food       scanner, resolver chain, food log
  ├── :core-ui            fixed palette, Pretendard type, baseline-band component
  ├── :core-data          Health Connect gateway, probe, Room + SQLCipher, sync,
  │                       input assembly and the scoring pipeline
@@ -130,7 +130,7 @@ Label 13sp, plus a 14sp Delta for signed point contributions.
 3. **StrainScorer + EnergyBank + LoadRatio** — done
 4. **Home, baseline-band component, explainability screens** — done, together with the
    pipeline that turns stored samples into scores
-5. Barcode scanning and the resolver chain
+5. **Barcode scanning and the resolver chain** — done
 6. Trend charts, weight tuning, export/import, widgets
 
 ## Assumptions taken
@@ -219,14 +219,45 @@ Label 13sp, plus a 14sp Delta for signed point contributions.
   exercise envelope and the heart-rate series separately, so a synced workout has no mean
   heart rate and no scoreable load. Syncing all heart rate to fix that would drain hundreds
   of thousands of samples a month through change tokens.
-- **Age and sex are the only things the app ever asks for**, because Tanaka and Banister
-  divide by them and Health Connect has no record type for either. Declining stays
+- **Age and sex are the only things the app ever asks about the user**, because Tanaka and
+  Banister divide by them and Health Connect has no record type for either. Declining stays
   first-class: `UNSPECIFIED` takes the midpoint of Banister's two curves and says so.
+  (Food is typed in too, but that is a record of a meal, not a fact about a person.)
 - **Strain is never painted with the Recovery palette.** Its bands are magnitude, so on Home
   it is neutral and the verdict is left to the Target Strain sentence.
 - **The explainability screen recomputes nothing.** Every figure it renders was computed once
   by the engine and carried in `Contribution`. A screen that recomputes is a second engine
   that will eventually disagree with the first — about the number the user was shown.
+- **The food log is the one place this app can reach the network, and it asks first.**
+  A barcode lookup sends the barcode to Open Food Facts and nothing else — no identifier, no
+  history, nothing about health data. It is off until the user reads what it does and turns it
+  on, the question is put at the one useful moment (a scan we could not answer, product in
+  hand), and every result is cached so a product is fetched once and then never again.
+- **The resolver chain is cache, then network, and that is the whole chain.** Photographing
+  the label and typing it in are not links in it: they cannot answer "what is barcode
+  8801234567890". They are what the failure reason offers instead, which is why "not found",
+  "you have not allowed me to ask" and "the request failed" are three different answers.
+- **Nutrition figures are per 100 g in storage, whatever the label said.** It is the only
+  basis every source converts to. Getting the label's own basis wrong is a factor-of-two error
+  in someone's day, so when a panel does not state what its figures are per, the app asks
+  rather than assuming a hundred grams — Korean packaging states per serving or per package
+  at least as often.
+- **A logged entry freezes its figures.** Open Food Facts is a wiki and OCR can be re-run, so
+  a product record is a live thing and Tuesday's lunch is not. Same reason a score row keeps
+  the config hash that produced it.
+- **Health Connect is a mirror, never the source.** Food is written back as a manual-entry
+  NutritionRecord, after the local row exists and without gating it, and the returned id is
+  kept so deleting a meal here deletes it there. A denied grant loses nothing.
+- **A day's calorie total is printed with the number of items it could not price.** Same rule
+  as `dataCoverage` on a score: a total that silently drops three unknown items is a worse
+  number than no total. There are no targets and no ring to close — whether 1,900 kcal was
+  right for this person today is not something this app knows.
+- **Nothing is required except a name.** An entry that records only "porridge, breakfast" is
+  a true record of the day; refusing it because the calories are unknown would refuse the part
+  the user actually knows.
+- **No frame is ever captured.** The scanner binds `Preview` and `ImageAnalysis` and no
+  `ImageCapture` use case exists in the tree, which is the structural reason no photograph of
+  anyone's kitchen can reach disk. Both models — barcode and Korean text — run on-device.
 
 ## Building it
 
