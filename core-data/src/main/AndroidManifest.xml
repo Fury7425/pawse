@@ -33,4 +33,12 @@
     <!-- Nightly recompute runs after the sleep session closes, often while backgrounded. -->
     <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND" />
 
+    <!--
+      The app's only network permission, and it does exactly one thing: send a
+      scanned barcode to Open Food Facts and read the product back. It is off until
+      the user turns it on, and every other feature works without it.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
 </manifest>

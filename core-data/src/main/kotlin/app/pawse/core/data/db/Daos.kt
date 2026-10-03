@@ -86,6 +86,25 @@ interface ExerciseDao {
     @Query("SELECT * FROM exercise_session WHERE localDate BETWEEN :from AND :to ORDER BY startEpochMs")
     suspend fun between(from: String, to: String): List<ExerciseSessionEntity>
 
+    /**
+     * Sessions we have not yet been able to attach a heart rate to.
+     *
+     * Health Connect writes the exercise envelope and the heart-rate series as
+     * separate records, so a freshly synced session has no mean heart rate and
+     * cannot be scored. These are the rows the enricher goes back for.
+     */
+    @Query(
+        """
+        SELECT * FROM exercise_session
+        WHERE meanHeartRate IS NULL AND localDate BETWEEN :from AND :to
+        ORDER BY startEpochMs
+        """,
+    )
+    suspend fun withoutHeartRate(from: String, to: String): List<ExerciseSessionEntity>
+
+    @Query("UPDATE exercise_session SET meanHeartRate = :mean, maxHeartRate = :max WHERE id = :id")
+    suspend fun setHeartRate(id: Long, mean: Double?, max: Double?)
+
     @Query("DELETE FROM exercise_session WHERE originId IN (:originIds)")
     suspend fun deleteByOriginIds(originIds: List<String>)
 }
@@ -125,4 +144,18 @@ interface ScoreDao {
     /** Every stored variant of one day, including ones computed under older weights. */
     @Query("SELECT * FROM score WHERE type = :type AND localDate = :date ORDER BY computedAtEpochMs DESC")
     suspend fun allVariants(type: String, date: String): List<ScoreEntity>
+
+    /** Every type at once, for the Home screen's one read. */
+    @Query(
+        """
+        SELECT * FROM score
+        WHERE scoringVersion = :version AND configHash = :configHash
+          AND localDate BETWEEN :from AND :to
+        ORDER BY localDate
+        """,
+    )
+    fun between(from: String, to: String, version: String, configHash: String): Flow<List<ScoreEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(scores: List<ScoreEntity>)
 }

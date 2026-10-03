@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      The camera is used for two things, both on-device: reading a barcode, and
+      reading the nutrition panel. No frame is stored and no frame leaves the phone.
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- Declared optional so a phone without a camera can still install and log food by hand. -->
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.camera.autofocus"
+        android:required="false" />
+
+</manifest>

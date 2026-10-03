@@ -10,6 +10,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import app.pawse.core.data.scoring.ScoringRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.time.Duration
@@ -21,17 +22,26 @@ import javax.inject.Singleton
 
 /**
  * Nightly recompute. Runs after the sleep session has closed and the watch has had
- * time to upload, plus on demand from the pull-to-refresh on Home.
+ * time to upload, plus on demand from the refresh control on Home.
+ *
+ * Sync and scoring are one job rather than two. A sync that lands new samples and
+ * leaves the scores untouched would put the app in a state where the data is
+ * current and the number on the home screen is not, which is worse than either
+ * being stale.
  */
 @HiltWorker
 class NightlySyncWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
     private val repository: HealthSyncRepository,
+    private val scoring: ScoringRepository,
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result = when (repository.sync()) {
-        is SyncResult.Success -> Result.success()
+        is SyncResult.Success -> {
+            scoring.refresh()
+            Result.success()
+        }
         // Nothing to retry against: Health Connect is missing or out of date.
         SyncResult.Unavailable -> Result.success()
         is SyncResult.Failed -> if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else Result.failure()

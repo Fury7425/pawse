@@ -13,8 +13,10 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
         SleepStageEntity::class,
         ExerciseSessionEntity::class,
         ScoreEntity::class,
+        FoodProductEntity::class,
+        FoodLogEntryEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class PawseDatabase : RoomDatabase() {
@@ -22,6 +24,8 @@ abstract class PawseDatabase : RoomDatabase() {
     abstract fun sleepDao(): SleepDao
     abstract fun exerciseDao(): ExerciseDao
     abstract fun scoreDao(): ScoreDao
+    abstract fun foodProductDao(): FoodProductDao
+    abstract fun foodLogDao(): FoodLogDao
 
     companion object {
         const val NAME = "pawse.db"
@@ -38,6 +42,10 @@ abstract class PawseDatabase : RoomDatabase() {
             System.loadLibrary("sqlcipher")
             return Room.databaseBuilder(context, PawseDatabase::class.java, NAME)
                 .openHelperFactory(SupportOpenHelperFactory(passphrase))
+                // No fallbackToDestructiveMigration, deliberately. This file is the
+                // only copy of the user's history; a failed migration must announce
+                // itself, not quietly empty the baselines every score rests on.
+                .addMigrations(*Migrations.ALL)
                 .build()
         }
     }
