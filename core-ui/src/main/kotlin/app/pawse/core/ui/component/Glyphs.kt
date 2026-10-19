@@ -50,6 +50,19 @@ object Glyphs {
     const val ARROW = "M5 12h14M13 6l6 6l-6 6"
     const val LOCK = "M7 11h10a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2zM8 11V8a4 4 0 0 1 8 0v3"
 
+    const val CHEVRON_DOWN = "M6 9l6 6l6-6"
+    const val PACKAGE = "M8 3h8v3l2 3v12H6V9l2-3zM6 13h12"
+    const val SHIELD = "M12 3l7 3v5c0 5-3.5 8.5-7 10c-3.5-1.5-7-5-7-10V6z"
+    const val INFO = "M3 12a9 9 0 1 0 18 0a9 9 0 1 0-18 0M12 11v5M12 8h.01"
+
+    /** What onboarding says it reads, one glyph per record type. */
+    const val HEART = "M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"
+    const val BREATH = "M3 8h10a3 3 0 1 0-3-3M3 12h15a3 3 0 1 1-3 3M3 16h7"
+    const val TEMPERATURE = "M10 14V4a2 2 0 0 1 4 0v10a4 4 0 1 1-4 0z"
+    const val OXYGEN = "M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"
+    const val FLAME = "M12 21a6 6 0 0 0 6-6c0-4-3-6-4-9c-1 2-2 3-3 3c0-2-1-4-1-6c-3 3-4 7-4 12a6 6 0 0 0 6 6z"
+    const val GAUGE = "M4 15a8 8 0 0 1 16 0M12 15l3-4M12 4v2M5.6 7.6l1.4 1.4M18.4 7.6L17 9"
+
     /** In Health Connect: the refresh circle closed by a tick. */
     const val IN_HEALTH_CONNECT = "M20 12a8 8 0 1 1-2.34-5.66M9 12l2 2l4-4"
 

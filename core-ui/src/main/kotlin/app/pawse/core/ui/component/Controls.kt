@@ -16,7 +16,9 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -46,6 +48,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -199,6 +202,41 @@ fun PrimaryButton(
     }
 }
 
+/**
+ * The screen's one way forward, floating at the bottom over a fade into the
+ * background: 64 dp, full width, labelled with the result ("Add 204 kcal to Snack").
+ */
+@Composable
+fun BoxScope.BottomAction(
+    text: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    note: String? = null,
+) {
+    val background = MaterialTheme.colorScheme.background
+    Column(
+        Modifier
+            .align(Alignment.BottomCenter)
+            .fillMaxWidth()
+            .background(Brush.verticalGradient(0f to Color.Transparent, 0.45f to background))
+            .navigationBarsPadding()
+            .padding(start = 16.dp, end = 16.dp, top = 48.dp, bottom = 20.dp),
+    ) {
+        note?.let {
+            Text(
+                it,
+                style = PawseType.Label,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 8.dp, end = 8.dp, bottom = 12.dp),
+            )
+        }
+        PrimaryButton(text, onClick, Modifier.fillMaxWidth(), height = 64.dp, enabled = enabled)
+    }
+}
+
 /** Outlined pill on the container surface: the second way forward. */
 @Composable
 fun SecondaryButton(
@@ -279,6 +317,7 @@ fun Segmented(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
     height: Dp = 40.dp,
+    glyphs: List<String>? = null,
 ) {
     val shape = RoundedCornerShape(12.dp)
     BoxWithConstraints(
@@ -312,15 +351,18 @@ fun Segmented(
                         .selectable(selected = index == selected, role = Role.RadioButton) { onSelect(index) },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text = label,
-                        style = PawseType.Action,
-                        color = if (index == selected) {
-                            MaterialTheme.colorScheme.onSurface
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
+                    val tint = if (index == selected) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        glyphs?.getOrNull(index)?.let {
+                            Glyph(it, size = 14.dp, tint = tint, strokeWidth = 2f)
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        Text(text = label, style = PawseType.Action, color = tint)
+                    }
                 }
             }
         }
