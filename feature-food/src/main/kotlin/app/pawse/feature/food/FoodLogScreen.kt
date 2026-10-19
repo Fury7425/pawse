@@ -1,33 +1,41 @@
 package app.pawse.feature.food
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,13 +43,28 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pawse.core.data.food.FoodDay
 import app.pawse.core.data.food.FoodLogEntry
-import app.pawse.core.ui.component.Chip
+import app.pawse.core.data.food.FoodSource
+import app.pawse.core.data.food.Nutrients
+import app.pawse.core.ui.component.GhostButton
+import app.pawse.core.ui.component.Glyph
+import app.pawse.core.ui.component.GlyphButton
+import app.pawse.core.ui.component.Glyphs
+import app.pawse.core.ui.component.KeySwatch
+import app.pawse.core.ui.component.PawseCard
+import app.pawse.core.ui.component.PawseSheet
+import app.pawse.core.ui.component.SecondaryButton
+import app.pawse.core.ui.component.SplitBar
+import app.pawse.core.ui.component.UndoToast
+import app.pawse.core.ui.component.cardSurface
+import app.pawse.core.ui.component.pressable
 import app.pawse.core.ui.theme.PawseType
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -77,198 +100,145 @@ fun FoodLogScreen(
     val networkEnabled by viewModel.networkEnabled.collectAsStateWithLifecycle()
     val mirroring by viewModel.mirroring.collectAsStateWithLifecycle()
     var showSettings by remember { mutableStateOf(false) }
+    var open by remember { mutableStateOf<Long?>(null) }
     val isToday = date == LocalDate.now()
+    val pad = Modifier.padding(horizontal = 24.dp)
 
-    Scaffold(
-        modifier = modifier,
-        snackbarHost = { undo?.let { UndoBarView(it, Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) } },
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                top = padding.calculateTopPadding() + 16.dp,
-                bottom = padding.calculateBottomPadding() + 120.dp,
-            ),
-        ) {
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 24.dp, end = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("Food", style = MaterialTheme.typography.headlineSmall)
-                    Spacer(Modifier.weight(1f))
-                    TextButton(onClick = { showSettings = !showSettings }) { Text("Settings") }
+    Scaffold(modifier = modifier, containerColor = MaterialTheme.colorScheme.background) { padding ->
+        Box(Modifier.fillMaxSize()) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    top = padding.calculateTopPadding() + 12.dp,
+                    bottom = padding.calculateBottomPadding() + 140.dp,
+                ),
+            ) {
+                item {
+                    Row(pad.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Food", style = PawseType.Title, modifier = Modifier.weight(1f))
+                        GlyphButton(Glyphs.Sliders, "Food settings", onClick = { showSettings = true })
+                    }
+                    WeekStrip(
+                        week = week,
+                        selected = date,
+                        onPick = { viewModel.showDay(it); open = null },
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp),
+                    )
+                    DayHeader(date = date, modifier = pad.padding(top = 16.dp))
                 }
-            }
 
-            item {
-                WeekStrip(
-                    week = week,
-                    selected = date,
-                    onPick = viewModel::showDay,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-                DayHeader(date = date, modifier = Modifier.padding(horizontal = 24.dp))
-                Spacer(Modifier.height(8.dp))
-            }
+                item {
+                    DayTotal(day = day, modifier = pad.padding(top = 8.dp))
+                }
 
-            item {
-                val totals = day?.totals
-                Column(Modifier.padding(horizontal = 24.dp)) {
-                    Text(
-                        text = totals?.kcalRounded?.toString() ?: "—",
-                        style = PawseType.Hero,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        text = "kcal",
-                        style = PawseType.Label,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = totals?.let { FoodCopy.totalsNote(it) } ?: "Nothing logged yet.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    day?.totals?.totals?.let { nutrients ->
-                        if (!nutrients.isEmpty) {
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                text = FoodCopy.summary(nutrients),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
+                if (isToday) {
+                    energy?.burnedKcal?.let { burned ->
+                        item {
+                            BurnedCard(
+                                burnedKcal = burned,
+                                differenceKcal = energy?.differenceKcal ?: 0.0,
+                                onClick = onOpenBody,
+                                modifier = pad.padding(top = 10.dp),
                             )
                         }
                     }
-                }
-                Spacer(Modifier.height(20.dp))
-            }
-
-            if (isToday) {
-                energy?.burnedKcal?.let { burned ->
-                    item {
-                        BurnedCard(
-                            burnedKcal = burned,
-                            differenceKcal = energy?.differenceKcal ?: 0.0,
-                            onClick = onOpenBody,
-                            modifier = Modifier.padding(horizontal = 24.dp),
-                        )
-                        Spacer(Modifier.height(20.dp))
-                    }
-                }
-                if (again.isNotEmpty()) {
-                    item {
-                        Text(
-                            text = "Again · one tap logs it as a snack",
-                            style = PawseType.Label,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 24.dp),
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier
-                                .horizontalScroll(rememberScrollState())
-                                .padding(horizontal = 24.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            again.forEach { entry ->
-                                AssistChip(
-                                    onClick = { viewModel.logAgain(entry) },
-                                    label = { Text("${entry.name} · ${FoodCopy.energy(entry.nutrients)}") },
-                                )
+                    if (again.isNotEmpty()) {
+                        item {
+                            Text(
+                                text = "Again · one tap logs it as a snack",
+                                style = PawseType.Label,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = pad.padding(top = 24.dp, bottom = 8.dp),
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .horizontalScroll(rememberScrollState())
+                                    .padding(horizontal = 24.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                again.forEach { entry -> AgainChip(entry, onClick = { viewModel.logAgain(entry) }) }
                             }
                         }
-                        Spacer(Modifier.height(20.dp))
                     }
                 }
-            }
 
-            if (showSettings) {
-                item {
-                    SettingsPanel(
-                        networkEnabled = networkEnabled,
-                        mirroring = mirroring,
-                        onNetworkChange = viewModel::setNetworkLookup,
-                        onMirroringChange = viewModel::setMirroring,
-                        modifier = Modifier.padding(horizontal = 24.dp),
-                    )
-                    Spacer(Modifier.height(20.dp))
+                val meals = day?.byMeal.orEmpty()
+                if (meals.isEmpty()) {
+                    item { EmptyDay(isToday = isToday, date = date, modifier = pad.padding(top = 24.dp)) }
                 }
-            }
 
-            val meals = day?.byMeal.orEmpty()
-            if (meals.isEmpty()) {
-                item {
-                    Column(Modifier.padding(horizontal = 24.dp)) {
-                        Text(
-                            text = if (isToday) {
-                                "Scan a barcode, photograph a nutrition panel, or type it in. " +
-                                    "Everything you scan is saved on this phone, so the second time is instant."
-                            } else {
-                                "A gap is a true record too. Add what you remember, or leave it."
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                meals.forEach { (meal, entries) ->
+                    item(key = "meal-$meal") {
+                        Row(pad.padding(top = 24.dp, bottom = 2.dp)) {
+                            Text(FoodCopy.meal(meal), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                            Text(
+                                "${"%,d".format(entries.sumOf { it.nutrients.kcal ?: 0.0 }.roundToInt())} kcal",
+                                style = PawseType.Label,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    items(entries, key = { it.id }) { entry ->
+                        EntryRow(
+                            entry = entry,
+                            expanded = open == entry.id,
+                            onToggle = { open = if (open == entry.id) null else entry.id },
+                            onDelete = { open = null; viewModel.delete(entry) },
+                            modifier = pad,
                         )
-                        Spacer(Modifier.height(16.dp))
-                        Button(onClick = onManualEntry) { Text("Type something in") }
                     }
                 }
-            }
 
-            meals.forEach { (meal, entries) ->
                 item {
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = FoodCopy.meal(meal),
-                        style = PawseType.Label,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 24.dp),
-                    )
-                }
-                items(entries) { entry ->
-                    EntryRow(entry = entry, onDelete = { viewModel.delete(entry) })
-                    HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant,
-                        modifier = Modifier.padding(horizontal = 24.dp),
-                    )
-                }
-            }
-
-            if (meals.isNotEmpty()) {
-                item {
-                    Spacer(Modifier.height(20.dp))
-                    TextButton(
+                    GhostButton(
+                        "Add something without a barcode",
                         onClick = onManualEntry,
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                    ) { Text("Add something without a barcode") }
+                        glyph = Glyphs.Pencil,
+                        modifier = pad.padding(top = 16.dp),
+                    )
                 }
+            }
+
+            undo?.let {
+                UndoToast(
+                    text = it.text,
+                    onUndo = it.undo,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(start = 16.dp, end = 16.dp, bottom = 100.dp),
+                )
             }
         }
+    }
+
+    if (showSettings) {
+        FoodSettingsSheet(
+            networkEnabled = networkEnabled,
+            mirroring = mirroring,
+            onNetworkChange = viewModel::setNetworkLookup,
+            onMirroringChange = viewModel::setMirroring,
+            onDismiss = { showSettings = false },
+        )
     }
 }
 
 @Composable
 private fun DayHeader(date: LocalDate, modifier: Modifier = Modifier) {
     Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-        Text(
-            text = when (date) {
-                LocalDate.now() -> "Today"
-                LocalDate.now().minusDays(1) -> "Yesterday"
-                else -> date.format(DateTimeFormatter.ofPattern("EEEE", Locale.getDefault()))
-            },
-            style = MaterialTheme.typography.titleMedium,
-        )
-        Spacer(Modifier.weight(1f))
+        Text(dayTitle(date), style = PawseType.Heading, modifier = Modifier.weight(1f))
         Text(
             text = date.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.getDefault())),
             style = PawseType.Label,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+}
+
+private fun dayTitle(date: LocalDate): String = when (date) {
+    LocalDate.now() -> "Today"
+    LocalDate.now().minusDays(1) -> "Yesterday"
+    else -> date.format(DateTimeFormatter.ofPattern("EEEE", Locale.getDefault()))
 }
 
 /** Seven days, a dot under each one that has anything logged. */
@@ -282,36 +252,104 @@ private fun WeekStrip(
     Row(modifier = modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         week.forEach { foodDay ->
             val isSelected = foodDay.date == selected
-            Surface(
-                onClick = { onPick(foodDay.date) },
-                shape = RoundedCornerShape(12.dp),
-                color = if (isSelected) MaterialTheme.colorScheme.surfaceContainer else Color.Transparent,
+            val logged = foodDay.entries.isNotEmpty()
+            Column(
                 modifier = Modifier
                     .weight(1f)
-                    .height(64.dp),
+                    .height(64.dp)
+                    .pressable { onPick(foodDay.date) }
+                    .then(if (isSelected) Modifier.cardSurface(RoundedCornerShape(12.dp), 12.dp) else Modifier)
+                    .padding(top = 8.dp)
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = foodDay.date.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.getDefault())) +
+                            if (logged) "" else ", nothing logged"
+                    },
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Text(
-                        text = foodDay.date.format(DateTimeFormatter.ofPattern("EEE", Locale.getDefault())),
-                        style = PawseType.Label,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(foodDay.date.dayOfMonth.toString(), style = MaterialTheme.typography.titleMedium)
-                    Box(
-                        Modifier
-                            .size(4.dp)
-                            .background(
-                                color = if (foodDay.entries.isNotEmpty()) {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                } else {
-                                    Color.Transparent
-                                },
-                                shape = CircleShape,
-                            ),
-                    )
+                Text(
+                    text = foodDay.date.format(DateTimeFormatter.ofPattern("EEE", Locale.getDefault())),
+                    style = PawseType.Label,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(foodDay.date.dayOfMonth.toString(), style = PawseType.Heading)
+                Box(
+                    Modifier
+                        .size(4.dp)
+                        .alpha(if (logged) 1f else 0f)
+                        .background(MaterialTheme.colorScheme.onSurfaceVariant, CircleShape),
+                )
+            }
+        }
+    }
+}
+
+/** The day's kcal, the caveat attached to it, and the protein / carbs / fat split. */
+@Composable
+private fun DayTotal(day: FoodDay?, modifier: Modifier = Modifier) {
+    val totals = day?.totals
+    Column(modifier) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(totals?.kcalRounded?.let { "%,d".format(it) } ?: "—", style = PawseType.Hero)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "kcal",
+                style = PawseType.Heading.copy(fontWeight = PawseType.Body.fontWeight),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 12.dp),
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = totals?.let { FoodCopy.totalsNote(it) } ?: "Nothing logged yet.",
+            style = PawseType.Label,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        val n = totals?.totals
+        if (n != null && (n.proteinGrams != null || n.carbsGrams != null || n.fatGrams != null)) {
+            Spacer(Modifier.height(16.dp))
+            MacroCard(n)
+        }
+    }
+}
+
+@Composable
+private fun MacroCard(n: Nutrients) {
+    val p = n.proteinGrams ?: 0.0
+    val c = n.carbsGrams ?: 0.0
+    val f = n.fatGrams ?: 0.0
+    val energy = p * 4 + c * 4 + f * 9
+    val ps = if (energy > 0) (p * 4 / energy * 100).roundToInt() else 0
+    val cs = if (energy > 0) (c * 4 / energy * 100).roundToInt() else 0
+    val fs = if (energy > 0) 100 - ps - cs else 0
+    val on = MaterialTheme.colorScheme.onSurface
+    val onv = MaterialTheme.colorScheme.onSurfaceVariant
+    val ol = MaterialTheme.colorScheme.outline
+    PawseCard(padding = PaddingValues(vertical = 14.dp)) {
+        Row(Modifier.height(IntrinsicSize.Min)) {
+            listOf("Protein" to p, "Carbs" to c, "Fat" to f).forEachIndexed { i, (name, grams) ->
+                if (i > 0) VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.fillMaxHeight())
+                Column(Modifier.weight(1f).padding(horizontal = 16.dp)) {
+                    Text("${grams.roundToInt()} g", style = PawseType.MetricValue)
+                    Spacer(Modifier.height(2.dp))
+                    Text(name, style = PawseType.Label, color = onv)
+                }
+            }
+        }
+        if (energy > 0) {
+            Column(
+                Modifier
+                    .padding(start = 16.dp, end = 16.dp, top = 14.dp)
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = "Share of energy: protein $ps%, carbs $cs%, fat $fs%"
+                    },
+            ) {
+                SplitBar(listOf(ps.toFloat() to on, cs.toFloat() to onv, fs.toFloat() to ol))
+                Spacer(Modifier.height(8.dp))
+                Row {
+                    KeySwatch(on, "$ps% of energy", Modifier.weight(1f))
+                    KeySwatch(onv, "$cs%", Modifier.weight(1f).padding(start = 16.dp))
+                    KeySwatch(ol, "$fs%", Modifier.weight(1f).padding(start = 16.dp))
                 }
             }
         }
@@ -325,127 +363,195 @@ private fun BurnedCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = modifier.fillMaxWidth(),
-    ) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-            Text("Burned so far", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(
-                text = "${"%,d".format(burnedKcal.roundToInt())} kcal · " + when {
-                    differenceKcal >= 0.5 -> "${"%,d".format(differenceKcal.roundToInt())} more than eaten"
-                    differenceKcal <= -0.5 -> "${"%,d".format((-differenceKcal).roundToInt())} less than eaten"
-                    else -> "the same as eaten"
-                },
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
-    }
-}
-
-@Composable
-private fun UndoBarView(bar: UndoBar, modifier: Modifier = Modifier) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.onSurface,
-        contentColor = MaterialTheme.colorScheme.surface,
-        modifier = modifier.fillMaxWidth(),
-    ) {
-        Row(
-            modifier = Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(bar.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            TextButton(onClick = bar.undo) {
-                Text("Undo", color = MaterialTheme.colorScheme.surface)
-            }
-        }
-    }
-}
-
-@Composable
-private fun EntryRow(entry: FoodLogEntry, onDelete: () -> Unit) {
-    var confirming by remember { mutableStateOf(false) }
-
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clickable { confirming = !confirming }
-            .padding(horizontal = 24.dp, vertical = 12.dp),
-    ) {
+    PawseCard(modifier = modifier, onClick = onClick, padding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
+                Text("Burned so far", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
-                    text = entry.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    text = "${"%,d".format(burnedKcal.roundToInt())} kcal · " + when {
+                        differenceKcal >= 0.5 -> "${"%,d".format(differenceKcal.roundToInt())} more than eaten"
+                        differenceKcal <= -0.5 -> "${"%,d".format((-differenceKcal).roundToInt())} less than eaten"
+                        else -> "the same as eaten"
+                    },
+                    style = PawseType.BodyStrong,
                 )
+            }
+            Glyph(Glyphs.ChevronRight, size = 18.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun AgainChip(entry: FoodLogEntry, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .height(44.dp)
+            .pressable(onClick = onClick)
+            .cardSurface(RoundedCornerShape(12.dp), 12.dp)
+            .padding(start = 10.dp, end = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Glyph(Glyphs.Plus, size = 16.dp, strokeWidth = 2f, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.width(6.dp))
+        Text(entry.name, style = PawseType.BodyStrong, maxLines = 1)
+        Spacer(Modifier.width(6.dp))
+        Text(FoodCopy.energy(entry.nutrients), style = PawseType.Body, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+    }
+}
+
+@Composable
+private fun EmptyDay(isToday: Boolean, date: LocalDate, modifier: Modifier = Modifier) {
+    PawseCard(modifier = modifier, padding = PaddingValues(20.dp)) {
+        Box(
+            Modifier
+                .size(width = 72.dp, height = 40.dp)
+                .background(MaterialTheme.colorScheme.background, RoundedCornerShape(12.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                repeat(7) {
+                    Box(Modifier.size(width = 4.dp, height = 4.dp).background(MaterialTheme.colorScheme.outline, RoundedCornerShape(2.dp)))
+                }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Text(
+            if (isToday) "Nothing logged yet" else "Nothing logged on ${dayTitle(date)}",
+            style = PawseType.Heading,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = if (isToday) {
+                "Scan a barcode, photograph a nutrition panel, or type it in. " +
+                    "Everything you scan is saved on this phone, so the second time is instant."
+            } else {
+                "A gap is a true record too. Add what you remember, or leave it."
+            },
+            style = PawseType.Label,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+private fun sourceGlyph(source: FoodSource): String = when (source) {
+    FoodSource.OPEN_FOOD_FACTS -> Glyphs.Globe
+    FoodSource.LABEL_OCR -> Glyphs.Panel
+    FoodSource.MANUAL -> Glyphs.Pencil
+}
+
+@Composable
+private fun EntryRow(
+    entry: FoodLogEntry,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val inHc = entry.healthConnectId != null
+    val onv = MaterialTheme.colorScheme.onSurfaceVariant
+    Column(modifier) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onToggle)
+                .padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier
+                    .size(40.dp)
+                    .cardSurface(RoundedCornerShape(12.dp), 12.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Glyph(sourceGlyph(entry.source), size = 18.dp, color = onv)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(entry.name, style = PawseType.Body)
                 Spacer(Modifier.height(2.dp))
-                Text(
-                    text = listOfNotNull(entry.brand, FoodCopy.grams(entry.quantityGrams))
-                        .joinToString(" · "),
-                    style = PawseType.Label,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = listOfNotNull(entry.brand, FoodCopy.grams(entry.quantityGrams)).joinToString(" · "),
+                        style = PawseType.Label,
+                        color = onv,
+                    )
+                    if (inHc) {
+                        Spacer(Modifier.width(6.dp))
+                        Glyph(
+                            Glyphs.Synced,
+                            size = 13.dp,
+                            strokeWidth = 2f,
+                            color = onv,
+                            modifier = Modifier.semantics { contentDescription = "In Health Connect" },
+                        )
+                    }
+                }
             }
             Text(
                 text = FoodCopy.energy(entry.nutrients),
                 style = PawseType.MetricValue,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = if (entry.nutrients.kcal == null) onv else MaterialTheme.colorScheme.onSurface,
             )
         }
 
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Chip(text = FoodCopy.source(entry.source))
-            if (entry.healthConnectId != null) Chip(text = "In Health Connect")
-        }
-
-        if (confirming) {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = FoodCopy.summary(entry.nutrients),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(4.dp))
-            TextButton(onClick = onDelete, contentPadding = PaddingValues(0.dp)) {
+        AnimatedVisibility(expanded, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+            Column(Modifier.padding(start = 52.dp, bottom = 16.dp)) {
                 Text(
-                    text = if (entry.healthConnectId != null) {
-                        "Remove, here and from Health Connect"
-                    } else {
-                        "Remove"
-                    },
+                    FoodCopy.source(entry.source) + if (inHc) " · in Health Connect" else " · only on this phone",
+                    style = PawseType.Label,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(FoodCopy.summary(entry.nutrients), style = PawseType.Label, color = onv)
+                Spacer(Modifier.height(12.dp))
+                SecondaryButton(
+                    text = if (inHc) "Remove · also from Health Connect" else "Remove",
+                    onClick = onDelete,
+                    height = 44.dp,
+                    radius = 12.dp,
+                    glyph = Glyphs.Trash,
+                    textStyle = PawseType.BodyStrong,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
     }
 }
 
+/** Two switches that apply at once. No Save button, nothing to forget. */
 @Composable
-private fun SettingsPanel(
+private fun FoodSettingsSheet(
     networkEnabled: Boolean,
     mirroring: Boolean,
     onNetworkChange: (Boolean) -> Unit,
     onMirroringChange: (Boolean) -> Unit,
-    modifier: Modifier = Modifier,
+    onDismiss: () -> Unit,
 ) {
-    Column(modifier = modifier.fillMaxWidth()) {
+    PawseSheet(onDismiss = onDismiss) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Food settings", style = PawseType.Title, modifier = Modifier.weight(1f))
+            GlyphButton(Glyphs.Close, "Close", onClick = onDismiss)
+        }
         SettingRow(
             title = "Look barcodes up online",
             body = "Sends the barcode to Open Food Facts and nothing else. Off by default. " +
                 "Reading the label with the camera works either way.",
+            now = if (networkEnabled) "Unknown barcodes are looked up once, then saved" else "Unknown barcodes ask you first",
             checked = networkEnabled,
             onCheckedChange = onNetworkChange,
         )
-        Spacer(Modifier.height(16.dp))
         SettingRow(
             title = "Copy food into Health Connect",
             body = "The only thing this app ever writes. Removing an entry here removes it there too.",
+            now = if (mirroring) "New entries are copied as you log them" else "Entries stay only on this phone",
             checked = mirroring,
             onCheckedChange = onMirroringChange,
+        )
+        Spacer(Modifier.height(14.dp))
+        Text(
+            "Your health data never leaves this phone, with either switch on or off.",
+            style = PawseType.Label,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -454,20 +560,37 @@ private fun SettingsPanel(
 private fun SettingRow(
     title: String,
     body: String,
+    now: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
 ) {
-    Row(verticalAlignment = Alignment.Top) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyMedium)
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = body,
-                style = PawseType.Label,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+    Column {
+        Row(Modifier.padding(vertical = 16.dp), verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f)) {
+                Text(title, style = PawseType.Heading)
+                Spacer(Modifier.height(4.dp))
+                Text(body, style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Glyph(Glyphs.Arrow, size = 14.dp, strokeWidth = 2f, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.width(6.dp))
+                    Text(now, style = PawseType.Label)
+                }
+            }
+            Spacer(Modifier.width(16.dp))
+            Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange,
+                colors = SwitchDefaults.colors(
+                    checkedTrackColor = MaterialTheme.colorScheme.onSurface,
+                    checkedThumbColor = MaterialTheme.colorScheme.background,
+                    checkedBorderColor = MaterialTheme.colorScheme.onSurface,
+                    uncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    uncheckedBorderColor = MaterialTheme.colorScheme.outline,
+                ),
             )
         }
-        Spacer(Modifier.padding(horizontal = 8.dp))
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
     }
 }

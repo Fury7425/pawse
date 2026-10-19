@@ -2,6 +2,7 @@ package app.pawse.feature.home
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,15 +12,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -31,6 +31,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -43,7 +46,15 @@ import app.pawse.core.data.body.BodySnapshot
 import app.pawse.core.data.body.EnergyToday
 import app.pawse.core.ui.component.BaselineBandRow
 import app.pawse.core.ui.component.BaselineRowState
+import app.pawse.core.ui.component.Chip
 import app.pawse.core.ui.component.DeviationDirection
+import app.pawse.core.ui.component.Glyph
+import app.pawse.core.ui.component.Glyphs
+import app.pawse.core.ui.component.KeySwatch
+import app.pawse.core.ui.component.PawseCard
+import app.pawse.core.ui.component.Segmented
+import app.pawse.core.ui.component.SplitBar
+import app.pawse.core.ui.component.UsualRangeKey
 import app.pawse.core.ui.theme.PawseTheme
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.scoring.body.BmrResult
@@ -52,6 +63,7 @@ import app.pawse.scoring.model.Metric
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
@@ -68,35 +80,49 @@ fun BodyScreen(
     val snapshot by viewModel.snapshot.collectAsStateWithLifecycle()
     val range by viewModel.range.collectAsStateWithLifecycle()
 
-    Scaffold(modifier = modifier) { padding ->
+    Scaffold(modifier = modifier, containerColor = MaterialTheme.colorScheme.background) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
                 start = 24.dp,
                 end = 24.dp,
-                top = padding.calculateTopPadding() + 16.dp,
-                bottom = padding.calculateBottomPadding() + 120.dp,
+                top = padding.calculateTopPadding() + 12.dp,
+                bottom = padding.calculateBottomPadding() + 140.dp,
             ),
         ) {
             item {
-                Text("Body", style = MaterialTheme.typography.headlineSmall)
-                Text(
-                    text = snapshot?.let(::statusLine) ?: "Reading your scale",
-                    style = PawseType.Label,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Box(Modifier.heightIn(min = 48.dp), contentAlignment = Alignment.CenterStart) {
+                    Text("Body", style = PawseType.Title)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Glyph(
+                        if (snapshot?.weighedToday == true) Glyphs.Check else Glyphs.Clock,
+                        size = 14.dp,
+                        strokeWidth = 2f,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = snapshot?.let(::statusLine) ?: "Reading your scale",
+                        style = PawseType.Label,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Spacer(Modifier.height(24.dp))
             }
 
             val s = snapshot ?: return@LazyColumn
             if (!s.hasAnyData) {
                 item {
-                    Text(
-                        "No scale readings yet. When a scale writes weight to Health Connect, " +
-                            "it shows here on its own.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    PawseCard {
+                        Text("No scale readings yet", style = PawseType.Heading)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "When a scale writes weight to Health Connect, it shows here on its own.",
+                            style = PawseType.Label,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     Spacer(Modifier.height(24.dp))
                 }
             }
@@ -117,11 +143,15 @@ fun BodyScreen(
 
             if (s.rows.isNotEmpty()) {
                 item {
-                    Text(
-                        "Against your usual · ${s.weighInsLast30Days} weigh-ins in 30 days",
-                        style = PawseType.Label,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Row(Modifier.padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Against your usual · ${s.weighInsLast30Days} weigh-ins",
+                            style = PawseType.Label,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                        UsualRangeKey("Usual range")
+                    }
                 }
                 s.rows.forEach { row ->
                     item {
@@ -181,46 +211,31 @@ private fun statusLine(s: BodySnapshot): String {
 private fun WeightSection(s: BodySnapshot, range: BodyRange, onRange: (BodyRange) -> Unit) {
     val weight = s.weight ?: return
     Text("Weight", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Spacer(Modifier.height(4.dp))
     Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.alpha(if (s.weighedToday) 1f else 0.6f)) {
         Text(oneDecimal(weight.value), style = PawseType.Hero)
         Spacer(Modifier.width(6.dp))
         Text(
             "kg",
-            style = MaterialTheme.typography.bodyLarge,
+            style = PawseType.Heading.copy(fontWeight = PawseType.Body.fontWeight),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 12.dp),
         )
     }
-    Text(weightLine(s), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Spacer(Modifier.height(8.dp))
+    Text(weightLine(s), style = PawseType.Body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Spacer(Modifier.height(10.dp))
+    val days = s.daysSinceWeighIn ?: 0L
+    Chip(if (days == 0L) "Measured" else if (days == 1L) "A day old" else "$days days old")
     Spacer(Modifier.height(20.dp))
 
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(Modifier.padding(4.dp)) {
-            BodyRange.entries.forEach { option ->
-                val selected = option == range
-                Surface(
-                    onClick = { onRange(option) },
-                    shape = RoundedCornerShape(9.dp),
-                    color = if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(36.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            option.label,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-        }
-    }
+    Segmented(
+        options = BodyRange.entries,
+        selected = range,
+        onSelect = onRange,
+        label = { it.label },
+        height = 36.dp,
+    )
     Spacer(Modifier.height(16.dp))
     WeightChart(s, range)
 }
@@ -248,6 +263,7 @@ private fun WeightChart(s: BodySnapshot, range: BodyRange) {
     val band = PawseTheme.semantics.baselineBand
     val line = MaterialTheme.colorScheme.onSurfaceVariant
     val last = MaterialTheme.colorScheme.onSurface
+    val ring = MaterialTheme.colorScheme.background
     val usual = s.weightUsual
     val values = points.map { it.value } + listOfNotNull(usual?.let { it.mean - it.sigma }, usual?.let { it.mean + it.sigma })
     val lo = (values.minOrNull() ?: weight.value) - 0.3
@@ -260,30 +276,30 @@ private fun WeightChart(s: BodySnapshot, range: BodyRange) {
             .height(120.dp)
             .semantics { contentDescription = description },
     ) {
-        fun y(v: Double) = (size.height - (v - lo) / (hi - lo) * size.height).toFloat()
+        val pad = 6.dp.toPx()
+        fun y(v: Double) = ((size.height - pad) - (v - lo) / (hi - lo) * (size.height - 2 * pad)).toFloat()
         val first = s.today.minusDays(range.days)
         fun x(date: java.time.LocalDate) =
             (java.time.temporal.ChronoUnit.DAYS.between(first, date).toFloat() / range.days) * size.width
 
         usual?.let {
             val top = y(it.mean + it.sigma)
-            drawRoundRect(
-                color = band,
-                topLeft = Offset(0f, top),
-                size = Size(size.width, y(it.mean - it.sigma) - top),
-                cornerRadius = CornerRadius(4.dp.toPx()),
-            )
+            drawRoundRect(band, Offset(0f, top), Size(size.width, y(it.mean - it.sigma) - top), CornerRadius(4.dp.toPx()))
         }
         if (points.size > 1) {
             val path = Path()
             points.forEachIndexed { i, p -> if (i == 0) path.moveTo(x(p.date), y(p.value)) else path.lineTo(x(p.date), y(p.value)) }
-            drawPath(path, color = line, style = Stroke(width = 1.5.dp.toPx()))
+            drawPath(path, color = line, style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
         }
         points.dropLast(1).forEach { drawCircle(color = line, radius = 2.5.dp.toPx(), center = Offset(x(it.date), y(it.value))) }
-        points.lastOrNull()?.let { drawCircle(color = last, radius = 5.dp.toPx(), center = Offset(x(it.date), y(it.value))) }
+        points.lastOrNull()?.let {
+            val c = Offset(x(it.date), y(it.value))
+            drawCircle(color = ring, radius = 8.dp.toPx(), center = c)
+            drawCircle(color = last, radius = 5.dp.toPx(), center = c)
+        }
     }
     Spacer(Modifier.height(8.dp))
-    Row {
+    Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
             when (range) {
                 BodyRange.DAYS_30 -> "30 days ago"
@@ -295,7 +311,7 @@ private fun WeightChart(s: BodySnapshot, range: BodyRange) {
         )
         Spacer(Modifier.weight(1f))
         if (usual != null) {
-            Text("Shaded: your usual range", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            UsualRangeKey()
             Spacer(Modifier.weight(1f))
         }
         Text("Today", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -316,42 +332,25 @@ private fun CompositionCard(c: BodyComposition) {
         MaterialTheme.colorScheme.outline,
         PawseTheme.semantics.baselineBand,
     )
-    Card {
+    PawseCard {
         Row {
-            Text("What the ${oneDecimal(c.weightKg)} kg is made of", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.weight(1f))
+            Text("What the ${oneDecimal(c.weightKg)} kg is made of", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
             Text("From your scale", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.height(12.dp))
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .height(10.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            parts.forEachIndexed { i, (_, kg) ->
-                Box(
-                    Modifier
-                        .weight(kg.toFloat().coerceAtLeast(0.01f))
-                        .fillMaxSize()
-                        .background(fills[i], RoundedCornerShape(3.dp)),
-                )
-            }
-        }
+        SplitBar(parts.mapIndexed { i, (_, kg) -> kg.toFloat() to fills[i] }, height = 10.dp)
         Spacer(Modifier.height(14.dp))
-        parts.chunked(2).forEach { pair ->
-            Row(Modifier.fillMaxWidth()) {
-                pair.forEach { (name, kg) ->
+        parts.chunked(2).forEachIndexed { row, pair ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                pair.forEachIndexed { col, (name, kg) ->
                     Column(Modifier.weight(1f).padding(bottom = 12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(8.dp).background(fills[parts.indexOfFirst { it.first == name }], RoundedCornerShape(2.dp)))
-                            Spacer(Modifier.width(6.dp))
-                            Text(name, style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        KeySwatch(fills[row * 2 + col], name)
+                        Spacer(Modifier.height(2.dp))
+                        Row(verticalAlignment = Alignment.Bottom) {
+                            Text("${oneDecimal(kg)} kg", style = PawseType.MetricValue)
+                            Spacer(Modifier.width(4.dp))
+                            Text("${(kg / c.weightKg * 100).roundToInt()}%", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Text(
-                            "${oneDecimal(kg)} kg  ${(kg / c.weightKg * 100).roundToInt()}%",
-                            style = PawseType.MetricValue,
-                        )
                     }
                 }
                 if (pair.size == 1) Spacer(Modifier.weight(1f))
@@ -370,69 +369,128 @@ private fun CompositionCard(c: BodyComposition) {
 
 @Composable
 private fun EnergyCard(e: EnergyToday) {
-    Card {
+    val scaleTo = max(e.eatenKcal, e.burnedKcal ?: 0.0).takeIf { it > 0.0 } ?: 1.0
+    val on = MaterialTheme.colorScheme.onSurface
+    val onv = MaterialTheme.colorScheme.onSurfaceVariant
+    PawseCard {
         Row {
-            Text("Energy today", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.weight(1f))
-            Text("So far, ${ScoreCopy.clock(e.asOfEpochMs)}", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Energy today", style = PawseType.Label, color = onv, modifier = Modifier.weight(1f))
+            Text("So far, ${ScoreCopy.clock(e.asOfEpochMs)}", style = PawseType.Label, color = onv)
         }
         Spacer(Modifier.height(14.dp))
         LabelledValue("Eaten", "${kcal(e.eatenKcal)} kcal")
+        Spacer(Modifier.height(6.dp))
+        Bars(listOf((e.eatenKcal / scaleTo).toFloat() to on))
         if (e.itemsWithoutEnergy > 0) {
+            Spacer(Modifier.height(4.dp))
             Text(
                 "${e.itemsWithoutEnergy} ${if (e.itemsWithoutEnergy == 1) "item has" else "items have"} no energy figure, so this is short.",
                 style = PawseType.Label,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = onv,
             )
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(14.dp))
         LabelledValue("Burned", e.burnedKcal?.let { "${kcal(it)} kcal" } ?: "—")
-        Text(
-            listOfNotNull(
-                e.restingKcal?.let { "Resting ${kcal(it)}" },
-                e.activeKcal?.let { "Active ${kcal(it)}" },
-            ).joinToString(" · ").ifEmpty { "Needs a BMR or active energy from your watch" },
-            style = PawseType.Label,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Spacer(Modifier.height(6.dp))
+        Bars(
+            listOf(
+                ((e.restingKcal ?: 0.0) / scaleTo).toFloat() to onv,
+                ((e.activeKcal ?: 0.0) / scaleTo).toFloat() to on,
+            ),
         )
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            e.restingKcal?.let { KeySwatch(onv, "Resting ${kcal(it)}") }
+            e.activeKcal?.let { KeySwatch(on, "Active ${kcal(it)}") }
+            if (e.restingKcal == null && e.activeKcal == null) {
+                Text("Needs a BMR or active energy from your watch", style = PawseType.Label, color = onv)
+            }
+        }
         e.differenceKcal?.let { diff ->
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(16.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Spacer(Modifier.height(12.dp))
-            LabelledValue(
-                "Difference",
-                when {
-                    diff >= 0.5 -> "${kcal(diff)} kcal more burned than eaten"
-                    diff <= -0.5 -> "${kcal(-diff)} kcal more eaten than burned"
-                    else -> "Even"
-                },
-            )
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text("Difference", style = PawseType.Label, color = onv, modifier = Modifier.weight(1f))
+                Text(
+                    when {
+                        diff >= 0.5 -> "${kcal(diff)} kcal more burned than eaten"
+                        diff <= -0.5 -> "${kcal(-diff)} kcal more eaten than burned"
+                        else -> "Even"
+                    },
+                    style = PawseType.BodyStrong,
+                )
+            }
             Spacer(Modifier.height(8.dp))
             Text(
                 "A plain number, not a target. Pawse doesn't know what your day should look like, so it never says.",
                 style = PawseType.Label,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = onv,
             )
         }
     }
 }
 
+/** Segments laid end to end from the left, each a fraction of the full width. */
+@Composable
+private fun Bars(segments: List<Pair<Float, Color>>) {
+    Canvas(
+        Modifier
+            .fillMaxWidth()
+            .height(10.dp),
+    ) {
+        var x = 0f
+        val gap = 2.dp.toPx()
+        val shown = segments.filter { it.first > 0f }
+        shown.forEachIndexed { i, (fraction, color) ->
+            val w = (fraction.coerceIn(0f, 1f) * size.width - if (i < shown.lastIndex) gap else 0f).coerceAtLeast(0f)
+            roundedSegment(color, x, w, first = i == 0, last = i == shown.lastIndex)
+            x += w + gap
+        }
+    }
+}
+
+private fun DrawScope.roundedSegment(color: Color, x: Float, w: Float, first: Boolean, last: Boolean) {
+    val r = size.height / 2f
+    when {
+        first && last -> drawRoundRect(color, Offset(x, 0f), Size(w, size.height), CornerRadius(r))
+        first -> {
+            drawRoundRect(color, Offset(x, 0f), Size(w, size.height), CornerRadius(r))
+            drawRect(color, Offset(x + w - r, 0f), Size(r.coerceAtMost(w), size.height))
+        }
+        last -> {
+            drawRoundRect(color, Offset(x, 0f), Size(w, size.height), CornerRadius(r))
+            drawRect(color, Offset(x, 0f), Size(r.coerceAtMost(w), size.height))
+        }
+        else -> drawRect(color, Offset(x, 0f), Size(w, size.height))
+    }
+}
+
 @Composable
 private fun BmrCard(bmr: BmrResult, leanKg: Double?) {
-    Card {
-        Row {
-            Text("Basal metabolic rate", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.weight(1f))
+    PawseCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Basal metabolic rate", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
             Text(
                 if (bmr.source == BmrSource.MEASURED) "Measured" else "Estimated",
                 style = PawseType.Label,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .background(MaterialTheme.colorScheme.background, RoundedCornerShape(6.dp))
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(6.dp))
+                    .padding(horizontal = 8.dp),
             )
         }
+        Spacer(Modifier.height(4.dp))
         Row(verticalAlignment = Alignment.Bottom) {
-            Text(kcal(bmr.kcalPerDay), style = MaterialTheme.typography.displaySmall)
+            Text(kcal(bmr.kcalPerDay), style = PawseType.Numeral)
             Spacer(Modifier.width(6.dp))
-            Text("kcal a day", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "kcal a day",
+                style = PawseType.Heading.copy(fontWeight = PawseType.Body.fontWeight),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 6.dp),
+            )
         }
         Spacer(Modifier.height(6.dp))
         Text(
@@ -441,7 +499,7 @@ private fun BmrCard(bmr: BmrResult, leanKg: Double?) {
                 BmrSource.KATCH_MCARDLE -> "370 + 21.6 × ${leanKg?.let(::oneDecimal) ?: "lean"} kg lean mass = ${kcal(bmr.kcalPerDay)}"
                 BmrSource.MIFFLIN_ST_JEOR -> "Mifflin–St Jeor, from your age, height and weight."
             },
-            style = MaterialTheme.typography.bodyMedium,
+            style = PawseType.Body,
         )
         Spacer(Modifier.height(6.dp))
         Text(
@@ -462,22 +520,11 @@ private fun BmrCard(bmr: BmrResult, leanKg: Double?) {
 }
 
 @Composable
-private fun Card(content: @Composable () -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(Modifier.padding(16.dp)) { content() }
-    }
-}
-
-@Composable
 private fun LabelledValue(label: String, value: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(label, style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.weight(1f))
-        Text(value, style = MaterialTheme.typography.bodyMedium)
+        Text(value, style = PawseType.Label.copy(fontWeight = PawseType.BodyStrong.fontWeight))
     }
 }
 

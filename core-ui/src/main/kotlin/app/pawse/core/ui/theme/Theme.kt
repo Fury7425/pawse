@@ -26,6 +26,11 @@ data class PawseSemantics(
     val neutral: Color,
     val baselineBand: Color,
     val baselineOuter: Color,
+    /** The floating dock and scanner chrome: translucent surface and its hairline. */
+    val glass: Color,
+    val glassLine: Color,
+    /** The one-pixel top highlight on cards. Chrome, not signal. */
+    val highlight: Color,
 )
 
 private val LocalPawseSemantics = staticCompositionLocalOf<PawseSemantics> {
@@ -41,6 +46,9 @@ private val DarkSemantics = PawseSemantics(
     neutral = PawseColors.NeutralDark,
     baselineBand = PawseColors.BaselineBandDark,
     baselineOuter = PawseColors.BaselineOuterDark,
+    glass = PawseColors.DarkSurface.copy(alpha = 0.9f),
+    glassLine = Color.White.copy(alpha = 0.07f),
+    highlight = Color.White.copy(alpha = 0.04f),
 )
 
 private val LightSemantics = PawseSemantics(
@@ -52,6 +60,9 @@ private val LightSemantics = PawseSemantics(
     neutral = PawseColors.NeutralLight,
     baselineBand = PawseColors.BaselineBandLight,
     baselineOuter = PawseColors.BaselineOuterLight,
+    glass = PawseColors.LightSurface.copy(alpha = 0.92f),
+    glassLine = PawseColors.LightOnSurface.copy(alpha = 0.08f),
+    highlight = Color.White.copy(alpha = 0.7f),
 )
 
 private val NightSemantics = PawseSemantics(
@@ -63,6 +74,9 @@ private val NightSemantics = PawseSemantics(
     neutral = PawseColors.NeutralNight,
     baselineBand = PawseColors.BaselineBandNight,
     baselineOuter = PawseColors.BaselineOuterNight,
+    glass = PawseColors.NightSurface.copy(alpha = 0.92f),
+    glassLine = Color.White.copy(alpha = 0.06f),
+    highlight = Color.White.copy(alpha = 0.03f),
 )
 
 private val NightScheme = darkColorScheme(

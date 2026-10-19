@@ -12,16 +12,25 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -37,7 +46,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -54,7 +65,13 @@ import androidx.navigation.navArgument
 import app.pawse.core.data.profile.Appearance
 import app.pawse.core.data.profile.UserProfilePreferences
 import app.pawse.core.data.sync.SyncPreferences
+import app.pawse.core.ui.component.EaseInOut
+import app.pawse.core.ui.component.Glyph
+import app.pawse.core.ui.component.Glyphs
+import app.pawse.core.ui.component.lift
+import app.pawse.core.ui.component.pressable
 import app.pawse.core.ui.theme.PawseTheme
+import app.pawse.core.ui.theme.PawseType
 import app.pawse.feature.food.AddFoodScreen
 import app.pawse.feature.food.FoodDestinations
 import app.pawse.feature.food.FoodLogScreen
@@ -244,7 +261,16 @@ private fun NavController.switchTab(route: String) {
     }
 }
 
-/** Three tabs in a pill, and the scanner beside them, always one tap away. */
+private val TABS = listOf(
+    Triple(HomeDestinations.HOME, "Today", Glyphs.Today),
+    Triple(FoodDestinations.LOG, "Food", Glyphs.Food),
+    Triple(BODY, "Body", Glyphs.Body),
+)
+
+/**
+ * Three tabs in a glass pill whose highlight slides between them, and the scanner
+ * beside them, always one tap away. Content scrolls under a fade into the page.
+ */
 @Composable
 private fun Dock(
     current: String?,
@@ -252,62 +278,69 @@ private fun Dock(
     onScan: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier
+    val background = MaterialTheme.colorScheme.background
+    val semantics = PawseTheme.semantics
+    Box(
+        modifier
             .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .background(Brush.verticalGradient(0f to background.copy(alpha = 0f), 0.7f to background)),
     ) {
-        Surface(
-            shape = RoundedCornerShape(32.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
-            shadowElevation = 8.dp,
+        Row(
             modifier = Modifier
-                .weight(1f)
-                .height(64.dp),
+                .navigationBarsPadding()
+                .padding(start = 16.dp, end = 16.dp, top = 48.dp, bottom = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(Modifier.padding(6.dp)) {
-                listOf(HomeDestinations.HOME to "Today", FoodDestinations.LOG to "Food", BODY to "Body")
-                    .forEach { (route, label) ->
+            BoxWithConstraints(
+                Modifier
+                    .weight(1f)
+                    .height(64.dp)
+                    .lift(RoundedCornerShape(32.dp))
+                    .background(semantics.glass, RoundedCornerShape(32.dp))
+                    .border(1.dp, semantics.glassLine, RoundedCornerShape(32.dp))
+                    .padding(6.dp),
+            ) {
+                val segment = maxWidth / TABS.size
+                val index = TABS.indexOfFirst { it.first == current }.coerceAtLeast(0)
+                val offset by animateDpAsState(segment * index, tween(280, easing = EaseInOut), label = "dock")
+                Box(
+                    Modifier
+                        .offset(x = offset)
+                        .width(segment)
+                        .fillMaxHeight()
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(26.dp)),
+                )
+                Row(Modifier.fillMaxSize()) {
+                    TABS.forEach { (route, label, glyph) ->
                         val selected = current == route
-                        Surface(
-                            onClick = { onTab(route) },
-                            shape = RoundedCornerShape(26.dp),
-                            color = if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else androidx.compose.ui.graphics.Color.Transparent,
+                        val color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                        Row(
                             modifier = Modifier
                                 .weight(1f)
-                                .fillMaxSize()
+                                .fillMaxHeight()
+                                .pressable(role = Role.Tab) { onTab(route) }
                                 .semantics { contentDescription = if (selected) "$label, current tab" else label },
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(
-                                    label,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = if (selected) {
-                                        MaterialTheme.colorScheme.onSurface
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
-                                )
-                            }
+                            Glyph(glyph, color = color)
+                            Spacer(Modifier.width(6.dp))
+                            Text(label, style = PawseType.BodyStrong, color = color)
                         }
                     }
+                }
             }
-        }
-        Surface(
-            onClick = onScan,
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.onSurface,
-            contentColor = MaterialTheme.colorScheme.surface,
-            shadowElevation = 8.dp,
-            modifier = Modifier
-                .size(64.dp)
-                .semantics { contentDescription = "Scan food" },
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Text("Scan", style = MaterialTheme.typography.labelLarge)
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .pressable(onClick = onScan)
+                    .lift(CircleShape)
+                    .background(MaterialTheme.colorScheme.onSurface, CircleShape)
+                    .semantics { contentDescription = "Scan food" },
+                contentAlignment = Alignment.Center,
+            ) {
+                Glyph(Glyphs.Scan, size = 22.dp, color = MaterialTheme.colorScheme.background)
             }
         }
     }
