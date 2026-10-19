@@ -1,18 +1,13 @@
 package app.pawse.feature.home
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -20,12 +15,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import app.pawse.core.data.profile.Appearance
+import app.pawse.core.ui.component.ChoiceRow
+import app.pawse.core.ui.component.GlyphButton
+import app.pawse.core.ui.component.Glyphs
+import app.pawse.core.ui.component.PawseField
+import app.pawse.core.ui.component.PawseSheet
+import app.pawse.core.ui.component.PrimaryButton
+import app.pawse.core.ui.component.Segmented
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.scoring.config.StrainScale
 import app.pawse.scoring.model.BiologicalSex
@@ -67,11 +65,104 @@ fun ProfileDialog(
     }
     var sex by remember { mutableStateOf(initialProfile?.biologicalSex ?: BiologicalSex.UNSPECIFIED) }
     var scale by remember { mutableStateOf(initialScale ?: StrainScale.BEVEL_100) }
+    val estimate = age.toIntOrNull()?.takeIf { it in 10..110 }?.let { (208 - 0.7 * it).toInt() }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            TextButton(
+    PawseSheet(onDismiss = onDismiss) {
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("You and your scales", style = PawseType.Title, modifier = Modifier.weight(1f))
+                GlyphButton(Glyphs.Close, "Close", onClick = onDismiss)
+            }
+            Spacer(Modifier.height(6.dp))
+            Caption(
+                "Strain divides by your heart-rate range, and Health Connect has no record of age or sex. " +
+                    "Leave either out and Pawse says so wherever it matters.",
+                body = true,
+            )
+
+            Spacer(Modifier.height(20.dp))
+            Caption("Age")
+            Spacer(Modifier.height(6.dp))
+            PawseField(
+                value = age,
+                onValueChange = { new -> age = new.filter { it.isDigit() }.take(3) },
+                suffix = "years",
+                numeric = true,
+            )
+
+            Spacer(Modifier.height(16.dp))
+            Caption("Sex, for the strain curve")
+            Spacer(Modifier.height(6.dp))
+            ChoiceRow(
+                options = listOf(BiologicalSex.FEMALE, BiologicalSex.MALE, BiologicalSex.UNSPECIFIED),
+                selected = sex,
+                onSelect = { sex = it },
+                label = {
+                    when (it) {
+                        BiologicalSex.MALE -> "Male"
+                        BiologicalSex.FEMALE -> "Female"
+                        BiologicalSex.UNSPECIFIED -> "Rather not say"
+                    }
+                },
+            )
+            Spacer(Modifier.height(6.dp))
+            Caption(
+                if (sex == BiologicalSex.UNSPECIFIED) {
+                    "Pawse uses the midpoint of the two published curves and labels it as its own choice."
+                } else {
+                    "Banister published TRIMP as two curves; this picks the matching one."
+                },
+            )
+
+            Spacer(Modifier.height(16.dp))
+            Caption("Measured max heart rate · optional")
+            Spacer(Modifier.height(6.dp))
+            PawseField(
+                value = maxHr,
+                onValueChange = { new -> maxHr = new.filter { it.isDigit() }.take(3) },
+                suffix = "bpm",
+                placeholder = estimate?.let { "Estimated $it from your age" },
+                numeric = true,
+                textStyle = PawseType.Body,
+            )
+            Spacer(Modifier.height(6.dp))
+            Caption(
+                "If you have a real figure from a test, it replaces the age estimate. " +
+                    "A true maximum can sit twenty beats either side of the formula.",
+            )
+
+            Spacer(Modifier.height(16.dp))
+            Caption("Show Strain out of")
+            Spacer(Modifier.height(6.dp))
+            Segmented(
+                options = listOf(StrainScale.BEVEL_100, StrainScale.WHOOP_21),
+                selected = scale,
+                onSelect = { scale = it },
+                label = { if (it == StrainScale.BEVEL_100) "100" else "21" },
+            )
+
+            Spacer(Modifier.height(16.dp))
+            Caption("Appearance")
+            Spacer(Modifier.height(6.dp))
+            Segmented(
+                options = Appearance.entries,
+                selected = appearance,
+                onSelect = { appearance = it },
+                label = {
+                    when (it) {
+                        Appearance.SYSTEM -> "Phone"
+                        Appearance.DARK -> "Dark"
+                        Appearance.LIGHT -> "Light"
+                        Appearance.BEDSIDE -> "Bedside"
+                    }
+                },
+            )
+            Spacer(Modifier.height(6.dp))
+            Caption("Bedside is true black and dimmer, for reading before the lights are on.")
+
+            Spacer(Modifier.height(20.dp))
+            PrimaryButton(
+                text = "Save and rescore",
                 onClick = {
                     onSave(
                         age.toIntOrNull()?.takeIf { it in 10..110 },
@@ -81,114 +172,16 @@ fun ProfileDialog(
                         appearance,
                     )
                 },
-            ) { Text("Save") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-        title = { Text("You, and your scales") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text(
-                    "Your watch cannot tell us these, and the load model divides by them.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(16.dp))
-
-                OutlinedTextField(
-                    value = age,
-                    onValueChange = { new -> age = new.filter { it.isDigit() }.take(3) },
-                    label = { Text("Age") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(12.dp))
-
-                OutlinedTextField(
-                    value = maxHr,
-                    onValueChange = { new -> maxHr = new.filter { it.isDigit() }.take(3) },
-                    label = { Text("Measured maximum heart rate (optional)") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "If you have a real figure from a test, it replaces the age estimate. " +
-                        "A true maximum can sit twenty beats either side of the formula.",
-                    style = PawseType.Label,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                Spacer(Modifier.height(16.dp))
-                Text("Biological sex", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Column {
-                    BiologicalSex.entries.forEach { option ->
-                        Choice(
-                            label = when (option) {
-                                BiologicalSex.MALE -> "Male"
-                                BiologicalSex.FEMALE -> "Female"
-                                BiologicalSex.UNSPECIFIED -> "Rather not say"
-                            },
-                            selected = sex == option,
-                            onSelect = { sex = option },
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(16.dp))
-                Text("Strain scale", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Column {
-                    StrainScale.entries.forEach { option ->
-                        Choice(
-                            label = when (option) {
-                                StrainScale.BEVEL_100 -> "0 to 100"
-                                StrainScale.WHOOP_21 -> "0 to 21"
-                            },
-                            selected = scale == option,
-                            onSelect = { scale = option },
-                        )
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "Same curve, different ceiling. Switching relabels the number and never " +
-                        "rewrites your history.",
-                    style = PawseType.Label,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                Spacer(Modifier.height(16.dp))
-                Text("Appearance", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Column {
-                    Appearance.entries.forEach { option ->
-                        Choice(
-                            label = when (option) {
-                                Appearance.SYSTEM -> "Follow the phone"
-                                Appearance.DARK -> "Dark"
-                                Appearance.LIGHT -> "Light"
-                                Appearance.BEDSIDE -> "Bedside, true black and dimmer"
-                            },
-                            selected = appearance == option,
-                            onSelect = { appearance = option },
-                        )
-                    }
-                }
-            }
-        },
-    )
+            )
+        }
+    }
 }
 
 @Composable
-private fun Choice(label: String, selected: Boolean, onSelect: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .selectable(selected = selected, onClick = onSelect),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Start,
-    ) {
-        RadioButton(selected = selected, onClick = onSelect)
-        Text(label, style = MaterialTheme.typography.bodyMedium)
-    }
+private fun Caption(text: String, body: Boolean = false) {
+    Text(
+        text,
+        style = if (body) PawseType.Body else PawseType.Label,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }

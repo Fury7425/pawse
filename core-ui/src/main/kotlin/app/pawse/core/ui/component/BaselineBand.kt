@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -100,10 +102,10 @@ fun BaselineBandRow(
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
                 text = state.label,
-                style = MaterialTheme.typography.bodyMedium,
+                style = PawseType.Body,
                 color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
             )
-            Spacer(Modifier.weight(1f))
             Text(
                 text = state.valueText,
                 style = PawseType.MetricValue,
@@ -115,6 +117,8 @@ fun BaselineBandRow(
                     text = it,
                     style = PawseType.Delta,
                     color = markerColor,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.widthIn(min = 52.dp),
                 )
             }
         }
@@ -128,12 +132,14 @@ fun BaselineBandRow(
                 text = state.deltaText,
                 style = PawseType.Label,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
             )
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.width(12.dp))
             Text(
                 text = state.baselineText,
                 style = PawseType.Label,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.End,
             )
         }
     }
