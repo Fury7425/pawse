@@ -37,16 +37,56 @@ private val tightLineHeight = LineHeightStyle(
 
 object PawseType {
 
-    /** The one hero numeral on Home. Never more than one per screen. */
+    /** The one hero numeral on a screen: a day's kcal, a weight. Never more than one. */
     val Hero = TextStyle(
         fontFamily = PawseFontFamily,
-        fontWeight = FontWeight.Medium,
+        fontWeight = FontWeight.Light,
         fontSize = 84.sp,
         lineHeight = 88.sp,
-        letterSpacing = (-3).sp,
+        letterSpacing = (-4).sp,
         fontFeatureSettings = TABULAR,
         lineHeightStyle = tightLineHeight,
     )
+
+    /** Second-rank numerals: a card's value, the BMR, an Also-today score. */
+    val Display = TextStyle(
+        fontFamily = PawseFontFamily,
+        fontWeight = FontWeight.Light,
+        fontSize = 36.sp,
+        lineHeight = 44.sp,
+        letterSpacing = (-1.2).sp,
+        fontFeatureSettings = TABULAR,
+    )
+
+    /** The warm line at the top of Today, and screen titles. */
+    val Headline = TextStyle(
+        fontFamily = PawseFontFamily,
+        fontWeight = FontWeight.Medium,
+        fontSize = 24.sp,
+        lineHeight = 32.sp,
+        letterSpacing = (-0.2).sp,
+    )
+
+    /** Section heads, the date, sheet rows. */
+    val Title = TextStyle(
+        fontFamily = PawseFontFamily,
+        fontWeight = FontWeight.Medium,
+        fontSize = 16.sp,
+        lineHeight = 24.sp,
+        fontFeatureSettings = TABULAR,
+    )
+
+    /** Running text: the sentence under a score, a row's name. */
+    val Body = TextStyle(
+        fontFamily = PawseFontFamily,
+        fontWeight = FontWeight.Normal,
+        fontSize = 14.sp,
+        lineHeight = 20.sp,
+        fontFeatureSettings = TABULAR,
+    )
+
+    /** Buttons, tabs, choices. */
+    val Action = Body.copy(fontWeight = FontWeight.Medium)
 
     /** Secondary numerals: a metric's raw value on a baseline row. */
     val MetricValue = TextStyle(

@@ -134,6 +134,62 @@ object ScoreCopy {
         return "This week's training load is $ratio times the month behind it."
     }
 
+    /** "4 of 4 inputs": the short form beside a section heading. */
+    fun inputsLine(score: Score): String {
+        val present = score.contributions.count { it.present && !it.anomalyFlag }
+        val total = score.contributions.count { !it.anomalyFlag }
+        return "$present of $total inputs"
+    }
+
+    /** Strain as a bare number on the user's scale, for rings and cards: "41", "8.6". */
+    fun strainNumber(value: Double, scale: StrainScale): String = when (scale) {
+        StrainScale.WHOOP_21 -> String.format(Locale.getDefault(), "%.1f", value)
+        StrainScale.BEVEL_100 -> value.roundToInt().toString()
+    }
+
+    /** Why today's target is where it is, against the user's recent typical day. */
+    fun targetNote(target: Double, typical: Double?, scale: StrainScale): String {
+        val usual = typical ?: return "From your recent weeks and this morning's Recovery"
+        val near = if (scale == StrainScale.WHOOP_21) 0.2 else 1.0
+        return when {
+            target - usual > near -> "A good night moved it up from your usual ${strainNumber(usual, scale)}"
+            usual - target > near -> "This morning's Recovery moved it down from your usual ${strainNumber(usual, scale)}"
+            else -> "Your usual for a day like this"
+        }
+    }
+
+    /**
+     * The short note under a sleep term. Time asleep is told against tonight's
+     * need; the rest against their own target, in words rather than a number.
+     */
+    fun sleepNote(contribution: Contribution, needHours: Double?): String {
+        val raw = contribution.raw
+        if (!contribution.present || raw == null) return "Not recorded"
+        if (contribution.metric == Metric.TIME_ASLEEP && needHours != null) {
+            val gap = (needHours * 60.0 - raw).roundToInt()
+            return when {
+                gap > 0 -> "$gap min short of your need"
+                gap < 0 -> "${-gap} min over your need"
+                else -> "Exactly your need"
+            }
+        }
+        val sub = subScore(contribution) ?: return "Scored against a target"
+        return when {
+            sub >= 85 -> "Near target"
+            sub >= 60 -> "A little under target"
+            else -> "Well under target"
+        }
+    }
+
+    /**
+     * A sleep term's own 0-100, read back out of what the engine stored: its points
+     * are its effective weight times its sub-score.
+     */
+    fun subScore(contribution: Contribution): Int? {
+        if (!contribution.present || contribution.weight <= 0.0) return null
+        return (contribution.points / contribution.weight).roundToInt().coerceIn(0, 100)
+    }
+
     /** Shown under every score, always, degraded or not. */
     fun coverageLine(score: Score): String {
         val present = score.contributions.count { it.present && !it.anomalyFlag }

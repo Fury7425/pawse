@@ -2,6 +2,7 @@ package app.pawse.core.ui.component
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,11 +10,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -60,6 +64,8 @@ data class BaselineRowState(
     /** Direction-applied z, clamped by the engine. Null when there is nothing to place. */
     val z: Float? = null,
     val direction: DeviationDirection = DeviationDirection.UNKNOWN,
+    /** False when the input was not recorded: the band is drawn faded, never hidden. */
+    val present: Boolean = true,
 )
 
 @Composable
@@ -100,10 +106,11 @@ fun BaselineBandRow(
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
                 text = state.label,
-                style = MaterialTheme.typography.bodyMedium,
+                style = PawseType.Body,
                 color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
             )
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.width(12.dp))
             Text(
                 text = state.valueText,
                 style = PawseType.MetricValue,
@@ -115,25 +122,34 @@ fun BaselineBandRow(
                     text = it,
                     style = PawseType.Delta,
                     color = markerColor,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.widthIn(min = 52.dp),
                 )
             }
         }
 
         Spacer(Modifier.height(8.dp))
-        BaselineBand(z = state.z, markerColor = markerColor, modifier = Modifier.fillMaxWidth())
+        BaselineBand(
+            z = state.z,
+            markerColor = markerColor,
+            modifier = Modifier
+                .fillMaxWidth()
+                .alpha(if (state.present) 1f else 0.45f),
+        )
         Spacer(Modifier.height(8.dp))
 
-        Row {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
                 text = state.deltaText,
                 style = PawseType.Label,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
             )
-            Spacer(Modifier.weight(1f))
             Text(
                 text = state.baselineText,
                 style = PawseType.Label,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.End,
             )
         }
     }

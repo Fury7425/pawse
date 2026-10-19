@@ -3,7 +3,6 @@ package app.pawse
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -12,16 +11,28 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -37,10 +48,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import app.pawse.core.ui.component.Glyph
+import app.pawse.core.ui.component.Glyphs
+import app.pawse.core.ui.component.PawseMotion
+import app.pawse.core.ui.component.press
+import app.pawse.core.ui.theme.PawseType
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.navigation.NavController
@@ -92,11 +116,8 @@ class MainActivity : ComponentActivity() {
             // Status-bar icons follow the app's own palette, not the phone's, so a
             // light Pawse on a dark phone does not lose its clock.
             DisposableEffect(dark) {
-                val style = if (dark) {
-                    SystemBarStyle.dark(Color.TRANSPARENT)
-                } else {
-                    SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
-                }
+                val clear = android.graphics.Color.TRANSPARENT
+                val style = if (dark) SystemBarStyle.dark(clear) else SystemBarStyle.light(clear, clear)
                 enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
                 onDispose {}
             }
@@ -163,7 +184,15 @@ private fun PawseNavGraph(initialRoute: String?) {
     }
 
     Box(Modifier.fillMaxSize()) {
-        NavHost(navController = navController, startDestination = HomeDestinations.HOME) {
+        // Screens fade through quickly; the dock's pill is what moves.
+        NavHost(
+            navController = navController,
+            startDestination = HomeDestinations.HOME,
+            enterTransition = { fadeIn(tween(180)) },
+            exitTransition = { fadeOut(tween(180)) },
+            popEnterTransition = { fadeIn(tween(180)) },
+            popExitTransition = { fadeOut(tween(180)) },
+        ) {
             composable(HomeDestinations.HOME) {
                 HomeScreen(onOpenExplain = { type -> navController.navigate(HomeDestinations.explain(type)) })
             }
@@ -244,7 +273,17 @@ private fun NavController.switchTab(route: String) {
     }
 }
 
-/** Three tabs in a pill, and the scanner beside them, always one tap away. */
+private val Tabs = listOf(
+    Triple(HomeDestinations.HOME, "Today", Glyphs.TODAY),
+    Triple(FoodDestinations.LOG, "Food", Glyphs.FOOD),
+    Triple(BODY, "Body", Glyphs.BODY),
+)
+
+/**
+ * Three tabs on a sheet of glass, and the scanner beside them, always one tap
+ * away. The picked tab is a raised graphite pill that slides under its icon and
+ * word; the dock never takes a band colour.
+ */
 @Composable
 private fun Dock(
     current: String?,
@@ -252,62 +291,82 @@ private fun Dock(
     onScan: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier
+    val background = MaterialTheme.colorScheme.background
+    val dark = background.luminance() < 0.5f
+    val pill = RoundedCornerShape(32.dp)
+    val selected = Tabs.indexOfFirst { it.first == current }.coerceAtLeast(0)
+    val haptics = LocalHapticFeedback.current
+    val lift = Color.Black.copy(alpha = if (dark) 0.5f else 0.12f)
+
+    Box(
+        modifier
             .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .background(Brush.verticalGradient(0f to Color.Transparent, 0.6f to background)),
     ) {
-        Surface(
-            shape = RoundedCornerShape(32.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
-            shadowElevation = 8.dp,
+        Row(
             modifier = Modifier
-                .weight(1f)
-                .height(64.dp),
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(start = 16.dp, end = 16.dp, top = 48.dp, bottom = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(Modifier.padding(6.dp)) {
-                listOf(HomeDestinations.HOME to "Today", FoodDestinations.LOG to "Food", BODY to "Body")
-                    .forEach { (route, label) ->
-                        val selected = current == route
-                        Surface(
-                            onClick = { onTab(route) },
-                            shape = RoundedCornerShape(26.dp),
-                            color = if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else androidx.compose.ui.graphics.Color.Transparent,
+            BoxWithConstraints(
+                Modifier
+                    .weight(1f)
+                    .height(64.dp)
+                    .shadow(16.dp, pill, ambientColor = lift, spotColor = lift)
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = if (dark) 0.72f else 0.78f), pill)
+                    .border(1.dp, (if (dark) Color.White else Color.Black).copy(alpha = 0.07f), pill)
+                    .padding(6.dp),
+            ) {
+                val width = maxWidth / Tabs.size
+                val x by animateDpAsState(
+                    targetValue = width * selected,
+                    animationSpec = tween(280, easing = PawseMotion.EaseInOut),
+                    label = "dock",
+                )
+                Box(
+                    Modifier
+                        .offset(x = x)
+                        .width(width)
+                        .fillMaxHeight()
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(26.dp)),
+                )
+                Row(Modifier.fillMaxSize()) {
+                    Tabs.forEachIndexed { index, (route, label, glyph) ->
+                        val on = index == selected
+                        val tint = if (on) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                        Row(
                             modifier = Modifier
                                 .weight(1f)
-                                .fillMaxSize()
-                                .semantics { contentDescription = if (selected) "$label, current tab" else label },
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(26.dp))
+                                .selectable(selected = on, role = Role.Tab) {
+                                    if (!on) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onTab(route)
+                                },
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(
-                                    label,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = if (selected) {
-                                        MaterialTheme.colorScheme.onSurface
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
-                                )
-                            }
+                            Glyph(glyph, size = 20.dp, tint = tint)
+                            Spacer(Modifier.width(6.dp))
+                            Text(label, style = PawseType.Action, color = tint)
                         }
                     }
+                }
             }
-        }
-        Surface(
-            onClick = onScan,
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.onSurface,
-            contentColor = MaterialTheme.colorScheme.surface,
-            shadowElevation = 8.dp,
-            modifier = Modifier
-                .size(64.dp)
-                .semantics { contentDescription = "Scan food" },
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Text("Scan", style = MaterialTheme.typography.labelLarge)
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .shadow(16.dp, CircleShape, ambientColor = lift, spotColor = lift)
+                    .clip(CircleShape)
+                    .press(onScan)
+                    .background(MaterialTheme.colorScheme.onSurface)
+                    .semantics { contentDescription = "Scan food" },
+                contentAlignment = Alignment.Center,
+            ) {
+                Glyph(Glyphs.SCAN, size = 22.dp, tint = background)
             }
         }
     }
