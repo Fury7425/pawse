@@ -11,6 +11,7 @@ import app.pawse.scoring.model.Insight
 import app.pawse.scoring.model.LoadMethod
 import app.pawse.scoring.model.Metric
 import app.pawse.scoring.model.Predictor
+import app.pawse.scoring.model.Provenance
 import app.pawse.scoring.model.ReasonKind
 import app.pawse.scoring.model.ScoreType
 import app.pawse.scoring.model.WeeklyPattern
@@ -211,6 +212,13 @@ object ScoreCopy {
         LoadMethod.EDWARDS -> "Heart-rate zones (Edwards)"
         LoadMethod.RPE -> "Effort × minutes"
         null -> "Not counted"
+    }
+
+    fun provenanceLabel(provenance: Provenance): String = when (provenance) {
+        Provenance.PUBLISHED -> "Published"
+        Provenance.RECOVERED -> "Recovered"
+        Provenance.INFERRED -> "Inferred"
+        Provenance.OUR_CHOICE -> "Our default"
     }
 
     fun metricLabel(metric: Metric): String = when (metric) {

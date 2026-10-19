@@ -101,6 +101,14 @@ fun ProfileDialog(
                     }
                 },
             )
+            Spacer(Modifier.height(6.dp))
+            Caption(
+                if (sex == BiologicalSex.UNSPECIFIED) {
+                    "Pawse uses the midpoint of the two published curves and labels it as its own choice."
+                } else {
+                    "Banister published TRIMP as two curves; this picks the matching one."
+                },
+            )
 
             Spacer(Modifier.height(16.dp))
             Caption("Measured max heart rate · optional")
@@ -113,9 +121,14 @@ fun ProfileDialog(
                 numeric = true,
                 textStyle = PawseType.Body,
             )
+            Spacer(Modifier.height(6.dp))
+            Caption(
+                "If you have a real figure from a test, it replaces the age estimate. " +
+                    "A true maximum can sit twenty beats either side of the formula.",
+            )
 
             Spacer(Modifier.height(16.dp))
-            Caption("Numbers on the cards")
+            Caption("Numbers on Today")
             Spacer(Modifier.height(6.dp))
             Segmented(
                 options = listOf(true, false),
@@ -123,6 +136,8 @@ fun ProfileDialog(
                 onSelect = { showNumbers = it },
                 label = { if (it) "Show" else "Words only" },
             )
+            Spacer(Modifier.height(6.dp))
+            Caption("Words only hides Body's number, the Sleep score and form. The explain screens still show the arithmetic.")
 
             Spacer(Modifier.height(16.dp))
             Caption("Appearance")
@@ -140,6 +155,8 @@ fun ProfileDialog(
                     }
                 },
             )
+            Spacer(Modifier.height(6.dp))
+            Caption("Bedside is true black and dimmer, for reading before the lights are on.")
 
             calibration?.let { c ->
                 Spacer(Modifier.height(24.dp))

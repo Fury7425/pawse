@@ -11,6 +11,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.TypedValue
 import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -70,8 +71,12 @@ class TodayWidget : AppWidgetProvider() {
             val body = today.body
             val load = today.load
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit {
-                putString("body", body?.let { ScoreCopy.bandWord(it.band) } ?: "Settling")
-                putString("guidance", ScoreCopy.guidance(today.guidance))
+                val word = body?.let { ScoreCopy.bandWord(it.band) } ?: "Settling"
+                val number = body?.score?.takeIf { s.showNumbers }
+                // Hidden numbers: the word takes the big line and the guidance stands alone under it.
+                putString("score", number?.toString() ?: word)
+                putBoolean("scoreIsNumber", number != null)
+                putString("body", if (number != null) "$word · ${ScoreCopy.guidance(today.guidance)}" else ScoreCopy.guidance(today.guidance))
                 putString(
                     "level",
                     if (today.illness.level == IllnessLevel.ALERT) ALERT else body?.band?.name,
@@ -104,8 +109,13 @@ class TodayWidget : AppWidgetProvider() {
         private fun render(context: Context, manager: AppWidgetManager, ids: IntArray) {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             val views = RemoteViews(context.packageName, R.layout.widget_today).apply {
-                setTextViewText(R.id.widget_body, prefs.getString("body", "—"))
-                setTextViewText(R.id.widget_guidance, prefs.getString("guidance", "Open Pawse to read last night"))
+                setTextViewText(R.id.widget_score, prefs.getString("score", "—"))
+                setTextViewTextSize(
+                    R.id.widget_score,
+                    TypedValue.COMPLEX_UNIT_SP,
+                    if (prefs.getBoolean("scoreIsNumber", true)) 44f else 24f,
+                )
+                setTextViewText(R.id.widget_body, prefs.getString("body", "Open Pawse to read last night"))
                 setTextColor(R.id.widget_band_dot, dotColor(prefs.getString("level", null)))
                 setTextViewText(R.id.widget_sleep, prefs.getString("sleep", ""))
                 setTextViewText(R.id.widget_load, prefs.getString("load", ""))
