@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Pawse</string>
-    <string name="widget_description">Recovery, Sleep, Strain and Energy from this morning\'s read.</string>
-    <string name="channel_morning">Morning read</string>
-    <string name="channel_morning_description">One calm note a day, after the nightly read.</string>
+    <string name="widget_description">Today\'s guidance, Body, sleep debt and load from this morning\'s read.</string>
+    <string name="channel_weekly">Weekly summary</string>
+    <string name="channel_weekly_description">One calm summary a week. No daily score pushes.</string>
 
     <!--
       Shown by Health Connect on its own permission screen. This is the only place
@@ -11,9 +11,10 @@
       what is not, and claims nothing medical.
     -->
     <string name="health_permission_rationale">
-        Pawse reads the sleep and heart data your watch or ring already writes to
-        Health Connect, and turns it into Recovery, Sleep, Strain and Energy Bank
-        scores. It writes back only the food you log. Everything stays on this
-        phone. Pawse is not a medical device and does not diagnose anything.
+        Pawse reads the sleep, heart and cycle data your watch or ring already
+        writes to Health Connect, and turns it into one line of guidance with Body,
+        Sleep and Load behind it. It writes back only the food and weigh-ins you
+        log. Everything stays on this phone. Pawse is not a medical device and does
+        not diagnose anything.
     </string>
 </resources>

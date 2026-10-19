@@ -24,6 +24,8 @@ data class AddFoodUiState(
     val amountText: String = "100",
     val usingServings: Boolean = false,
     val meal: Meal = Meal.SNACK,
+    /** The product's caffeine figure is shown and counts only while this is on. */
+    val countCaffeine: Boolean = true,
     val logged: Boolean = false,
 ) {
     /** Grams the entry will be logged as, or null while the field is unusable. */
@@ -99,6 +101,10 @@ class AddFoodViewModel @Inject constructor(
         _state.update { it.copy(meal = meal) }
     }
 
+    fun setCountCaffeine(count: Boolean) {
+        _state.update { it.copy(countCaffeine = count) }
+    }
+
     fun log() {
         val current = _state.value
         val product = current.product ?: return
@@ -109,6 +115,7 @@ class AddFoodViewModel @Inject constructor(
                 meal = current.meal,
                 grams = grams,
                 servings = current.servings,
+                countCaffeine = current.countCaffeine,
             )
             _state.update { it.copy(logged = true) }
         }

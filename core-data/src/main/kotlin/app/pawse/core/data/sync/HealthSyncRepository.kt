@@ -12,6 +12,7 @@ import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord
 import androidx.health.connect.client.records.HeightRecord
 import androidx.health.connect.client.records.LeanBodyMassRecord
+import androidx.health.connect.client.records.MenstruationPeriodRecord
 import androidx.health.connect.client.records.OxygenSaturationRecord
 import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.RespiratoryRateRecord
@@ -73,9 +74,9 @@ class HealthSyncRepository @Inject constructor(
      * HeartRateRecord is deliberately absent. A continuously-sampling watch writes
      * hundreds of thousands of heart-rate samples a month, and draining that
      * through change tokens on every sync would cost far more than it returns. It
-     * is instead read on demand over narrow windows — a sleep session, a workout —
-     * by the strain and energy-bank scorers in step 3. [persist] still knows how to
-     * map it, so those reads land in the same table.
+     * is instead read on demand over narrow windows — a night, a workout — by
+     * [NightSignalEnricher] and [WorkoutHeartRateEnricher], which store only what
+     * they derive from it.
      */
     private val trackedTypes: List<KClass<out Record>> = listOf(
         HeartRateVariabilityRmssdRecord::class,
@@ -85,6 +86,7 @@ class HealthSyncRepository @Inject constructor(
         SkinTemperatureRecord::class,
         SleepSessionRecord::class,
         ExerciseSessionRecord::class,
+        MenstruationPeriodRecord::class,
     ) + BODY_TYPES
 
     suspend fun sync(
@@ -202,6 +204,7 @@ class HealthSyncRepository @Inject constructor(
                 is RespiratoryRateRecord -> samples += RecordMapper.respiratoryRate(record, zone)
                 is OxygenSaturationRecord -> samples += RecordMapper.spo2(record, zone)
                 is SkinTemperatureRecord -> RecordMapper.skinTemperature(record, zone)?.let { samples += it }
+                is MenstruationPeriodRecord -> samples += RecordMapper.menstruation(record, zone)
                 is SleepSessionRecord -> {
                     val (session, stages) = RecordMapper.sleepSession(record, zone)
                     sleepDao.insertSessionWithStages(session, stages)
@@ -235,11 +238,10 @@ class HealthSyncRepository @Inject constructor(
 
     companion object {
         /**
-         * 90 days. The default baseline window is 60 and the maximum is 90, so a
-         * first sync must reach far enough back to fill the widest window a user
-         * can configure without a second pass.
+         * 120 days: the dose-response model looks back that far, and the Body
+         * baseline needs 67 (60 days ending a week ago) before it stops borrowing.
          */
-        const val DEFAULT_BACKFILL_DAYS = 90
+        const val DEFAULT_BACKFILL_DAYS = 120
 
         /** A year, so the Body chart's longest range is full after the first sync. */
         const val BODY_BACKFILL_DAYS = 365

@@ -8,6 +8,7 @@ import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord
 import androidx.health.connect.client.records.HeightRecord
 import androidx.health.connect.client.records.LeanBodyMassRecord
+import androidx.health.connect.client.records.MenstruationPeriodRecord
 import androidx.health.connect.client.records.OxygenSaturationRecord
 import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.RespiratoryRateRecord
@@ -135,6 +136,18 @@ object RecordMapper {
         endEpochMs = time.toEpochMilli(),
         localDate = localDate(time, offset, zone),
         zoneOffsetSeconds = offsetSeconds(time, offset, zone),
+        sourceApp = record.metadata.dataOrigin.packageName,
+        originId = record.metadata.id,
+    )
+
+    /** A logged period as one interval row. The cycle model expands it to days. */
+    fun menstruation(record: MenstruationPeriodRecord, zone: ZoneId): MetricSampleEntity = MetricSampleEntity(
+        metric = Metric.MENSTRUATION.key,
+        value = 1.0,
+        startEpochMs = record.startTime.toEpochMilli(),
+        endEpochMs = record.endTime.toEpochMilli(),
+        localDate = localDate(record.startTime, record.startZoneOffset, zone),
+        zoneOffsetSeconds = offsetSeconds(record.startTime, record.startZoneOffset, zone),
         sourceApp = record.metadata.dataOrigin.packageName,
         originId = record.metadata.id,
     )

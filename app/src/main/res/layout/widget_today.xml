@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The morning read without opening the app: Recovery large, the other three small. -->
+<!-- The morning read without opening the app: Body's band word and the guidance line, three facts beside it. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
@@ -23,7 +23,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Recovery"
+                android:text="Body"
                 android:textColor="#FF9BA3AB"
                 android:textSize="13sp" />
 
@@ -34,15 +34,6 @@
                 android:textColor="#FF9BA3AB"
                 android:textSize="13sp" />
         </LinearLayout>
-
-        <TextView
-            android:id="@+id/widget_recovery"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:fontFeatureSettings="tnum"
-            android:text="—"
-            android:textColor="#FFEDEFF1"
-            android:textSize="44sp" />
 
         <LinearLayout
             android:layout_width="wrap_content"
@@ -56,17 +47,27 @@
                 android:layout_height="wrap_content"
                 android:text="●"
                 android:textColor="#FF7E878F"
-                android:textSize="10sp" />
+                android:textSize="12sp" />
 
             <TextView
-                android:id="@+id/widget_band"
+                android:id="@+id/widget_body"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="6dp"
-                android:text="Open Pawse to read last night"
-                android:textColor="#FF9BA3AB"
-                android:textSize="13sp" />
+                android:layout_marginStart="8dp"
+                android:text="—"
+                android:textColor="#FFEDEFF1"
+                android:textSize="24sp" />
         </LinearLayout>
+
+        <TextView
+            android:id="@+id/widget_guidance"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:maxLines="2"
+            android:text="Open Pawse to read last night"
+            android:textColor="#FF9BA3AB"
+            android:textSize="13sp" />
     </LinearLayout>
 
     <LinearLayout
@@ -85,7 +86,7 @@
             android:textSize="13sp" />
 
         <TextView
-            android:id="@+id/widget_strain"
+            android:id="@+id/widget_load"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"

@@ -135,7 +135,7 @@ private fun Busy(step: OnboardingStep) {
         Spacer(Modifier.height(20.dp))
         Text(
             text = when (step) {
-                OnboardingStep.SYNCING -> "Reading your last 90 days"
+                OnboardingStep.SYNCING -> "Reading your last 120 days"
                 OnboardingStep.PROBING -> "Working out what we can measure"
                 else -> "Checking Health Connect"
             },
@@ -222,6 +222,8 @@ private val READS = listOf(
     Triple("Calories burned", "All day", Glyphs.Flame),
     Triple("Weight and body composition", "When you weigh in", Glyphs.Body),
     Triple("Basal metabolic rate", "If your scale writes it", Glyphs.Gauge),
+    Triple("Periods", "If you log them", Glyphs.Clock),
+    Triple("Past history", "So baselines start full", Glyphs.Synced),
 )
 
 @Composable
@@ -335,6 +337,11 @@ private fun Report(report: CapabilityReport, error: String?, onContinue: () -> U
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
+            report.samsungChecklist?.let { items ->
+                Spacer(Modifier.height(20.dp))
+                SamsungChecklist(items)
+            }
+
             if (report.contestedTypes.isNotEmpty()) {
                 Spacer(Modifier.height(20.dp))
                 PawseCard(padding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)) {
@@ -357,7 +364,7 @@ private fun Report(report: CapabilityReport, error: String?, onContinue: () -> U
         }
         BottomAction(text = "Start", onClick = onContinue) {
             Text(
-                "Scores need about two weeks of nights to calibrate against you. Until then they say “still settling”.",
+                "Body needs seven nights before it reads anything, and settles over a few weeks. Until then it says “settling”.",
                 style = PawseType.Label,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -420,17 +427,41 @@ private fun CapabilityRow(name: String, glyph: String, coverage: Float, dot: Col
 }
 
 private fun ScoreType.displayName(): String = when (this) {
-    ScoreType.RECOVERY -> "Recovery"
+    ScoreType.BODY -> "Body"
     ScoreType.SLEEP -> "Sleep"
-    ScoreType.STRAIN -> "Strain"
-    ScoreType.ENERGY_BANK -> "Energy Bank"
-    ScoreType.LOAD_RATIO -> "Training load"
+    ScoreType.LOAD -> "Load"
 }
 
 private fun ScoreType.glyph(): String = when (this) {
-    ScoreType.RECOVERY -> Glyphs.Recovery
+    ScoreType.BODY -> Glyphs.Recovery
     ScoreType.SLEEP -> Glyphs.Sleep
-    ScoreType.STRAIN -> Glyphs.Strain
-    ScoreType.ENERGY_BANK -> Glyphs.Energy
-    ScoreType.LOAD_RATIO -> Glyphs.Load
+    ScoreType.LOAD -> Glyphs.Load
+}
+
+/**
+ * Samsung Health shares HRV, skin temperature, breathing rate and resting HR with
+ * Health Connect only when each is allowed in Samsung Health's own settings, and
+ * Body is noticeably better with all four.
+ */
+@Composable
+private fun SamsungChecklist(items: List<Pair<String, Boolean>>) {
+    PawseCard(padding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)) {
+        Text("Samsung Health checklist", style = PawseType.Heading)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "In Samsung Health, open Settings › Health Connect and allow each of these to be shared. " +
+                "Watch data reaches the phone when the watch reconnects or Samsung Health is opened.",
+            style = PawseType.Label,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        items.forEach { (name, found) ->
+            Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Glyph(if (found) Glyphs.Check else Glyphs.Close, size = 16.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.width(10.dp))
+                Text(name, style = PawseType.Body, modifier = Modifier.weight(1f))
+                Text(if (found) "Shared" else "Not seen yet", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
 }

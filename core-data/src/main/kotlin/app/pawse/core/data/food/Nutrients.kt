@@ -20,12 +20,16 @@ data class Nutrients(
     val sugarGrams: Double? = null,
     val fiberGrams: Double? = null,
     val sodiumMilligrams: Double? = null,
+    /** Read by the energy curve and the dose-response model. */
+    val caffeineMg: Double? = null,
+    /** Grams of ethanol: volume x ABV x 0.789. */
+    val alcoholGrams: Double? = null,
 ) {
 
     val isEmpty: Boolean
         get() = kcal == null && proteinGrams == null && carbsGrams == null && fatGrams == null &&
             saturatedFatGrams == null && sugarGrams == null && fiberGrams == null &&
-            sodiumMilligrams == null
+            sodiumMilligrams == null && caffeineMg == null && alcoholGrams == null
 
     val hasEnergy: Boolean get() = kcal != null
 
@@ -39,6 +43,8 @@ data class Nutrients(
         sugarGrams = sugarGrams?.times(factor),
         fiberGrams = fiberGrams?.times(factor),
         sodiumMilligrams = sodiumMilligrams?.times(factor),
+        caffeineMg = caffeineMg?.times(factor),
+        alcoholGrams = alcoholGrams?.times(factor),
     )
 
     /** What [grams] of a food whose figures are per 100 g contains. */
@@ -61,6 +67,8 @@ data class Nutrients(
         sugarGrams = add(sugarGrams, other.sugarGrams),
         fiberGrams = add(fiberGrams, other.fiberGrams),
         sodiumMilligrams = add(sodiumMilligrams, other.sodiumMilligrams),
+        caffeineMg = add(caffeineMg, other.caffeineMg),
+        alcoholGrams = add(alcoholGrams, other.alcoholGrams),
     )
 
     /**
@@ -99,6 +107,9 @@ data class Nutrients(
          * product is a warning nobody reads.
          */
         const val ATWATER_TOLERANCE = 0.25
+
+        /** Density of ethanol, g/ml: grams = volume x ABV x 0.789. */
+        const val ETHANOL_DENSITY = 0.789
 
         private fun add(a: Double?, b: Double?): Double? = when {
             a == null && b == null -> null

@@ -1,188 +1,60 @@
 package app.pawse.feature.home
 
-import app.pawse.scoring.config.StrainScale
-import app.pawse.scoring.model.Band
-import app.pawse.scoring.model.Contribution
-import app.pawse.scoring.model.Metric
-import app.pawse.scoring.model.Provenance
-import app.pawse.scoring.model.Score
-import app.pawse.scoring.model.ScoreType
-import app.pawse.scoring.model.ScoreUnavailable
+import app.pawse.scoring.model.BodyBand
+import app.pawse.scoring.model.BodyReason
+import app.pawse.scoring.model.Guidance
+import app.pawse.scoring.model.Insight
+import app.pawse.scoring.model.Predictor
+import app.pawse.scoring.model.ReasonKind
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import org.junit.Test
 
-/**
- * The app's voice is a feature, so it gets tests.
- *
- * Two of these are rules rather than preferences: strain must not borrow
- * Recovery's vocabulary, and nothing anywhere may imply a diagnosis.
- */
+/** The app's voice is a feature, so it gets tests. */
 class ScoreCopyTest {
 
-    private fun contribution(
-        metric: Metric,
-        present: Boolean = true,
-        anomalyFlag: Boolean = false,
-    ) = Contribution(
-        metric = metric,
-        raw = if (present) 50.0 else null,
-        baselineMean = if (present) 48.0 else null,
-        baselineSd = if (present) 4.0 else null,
-        baselineWindowDays = 60,
-        baselineSampleCount = 30,
-        z = if (present) 0.5 else null,
-        weight = 0.6,
-        nominalWeight = 0.6,
-        points = 3.0,
-        provenance = Provenance.OUR_CHOICE,
-        citation = "Our default.",
-        present = present,
-        anomalyFlag = anomalyFlag,
-    )
-
-    private fun score(type: ScoreType, contributions: List<Contribution>) = Score(
-        type = type,
-        date = "2026-03-02",
-        value = 62,
-        band = Band.MODERATE,
-        contributions = contributions,
-        dataCoverage = 0.86f,
-        degraded = false,
-        warmingUp = false,
-        scoringVersion = "1.0.0",
-        configHash = "abc",
-    )
-
     @Test
-    fun `strain does not borrow Recovery's vocabulary`() {
-        // Its bands are magnitude, not verdict: a hard day is a lot of load, which
-        // is neither good news nor bad.
-        ScoreCopy.bandWord(ScoreType.STRAIN, Band.HIGH) shouldBe "Hard"
-        ScoreCopy.bandWord(ScoreType.RECOVERY, Band.HIGH) shouldBe "High"
-        ScoreCopy.bandWord(ScoreType.STRAIN, Band.HIGH) shouldNotBe
-            ScoreCopy.bandWord(ScoreType.RECOVERY, Band.HIGH)
-    }
-
-    @Test
-    fun `the load ratio's good state is its middle, not its top`() {
-        ScoreCopy.bandWord(ScoreType.LOAD_RATIO, Band.HIGH) shouldBe "Steady"
-        ScoreCopy.bandWord(ScoreType.LOAD_RATIO, Band.LOW) shouldBe "Ramping fast"
-    }
-
-    @Test
-    fun `coverage counts inputs and weight, and ignores the flags`() {
-        val built = score(
-            ScoreType.RECOVERY,
-            listOf(
-                contribution(Metric.HRV_RMSSD),
-                contribution(Metric.RESTING_HEART_RATE),
-                contribution(Metric.RESPIRATORY_RATE, present = false),
-                contribution(Metric.SKIN_TEMPERATURE, anomalyFlag = true),
-            ),
-        )
-
-        ScoreCopy.coverageLine(built) shouldBe "2 of 3 inputs · 86% of the weight"
-    }
-
-    @Test
-    fun `an excursion is described as unusual, never as illness`() {
-        val built = score(
-            ScoreType.RECOVERY,
-            listOf(
-                contribution(Metric.HRV_RMSSD),
-                contribution(Metric.SKIN_TEMPERATURE, anomalyFlag = true).copy(points = -6.0),
-            ),
-        )
-
-        val sentence = ScoreCopy.sentence(
-            type = ScoreType.RECOVERY,
-            score = built,
-            snapshot = snapshot(),
-        )
-
-        sentence shouldContain "outside your usual range"
-        sentence shouldNotContain "illness"
-        sentence shouldNotContain "sick"
-        sentence shouldNotContain "fever"
-    }
-
-    @Test
-    fun `every refusal explains itself`() {
-        ScoreUnavailable.Reason.entries.forEach { reason ->
-            val sentence = ScoreCopy.unavailableSentence(
-                type = ScoreType.RECOVERY,
-                unavailable = ScoreUnavailable(
-                    type = ScoreType.RECOVERY,
-                    date = "2026-03-02",
-                    reason = reason,
-                    missing = listOf(Metric.HRV_RMSSD),
-                ),
-            )
-            sentence.isNotBlank() shouldBe true
+    fun `never poor or bad`() {
+        (BodyBand.entries.map(ScoreCopy::bandWord) + Guidance.entries.map(ScoreCopy::guidance)).forEach {
+            it.lowercase() shouldNotContain "poor"
+            it.lowercase() shouldNotContain "bad"
         }
+        ScoreCopy.bandWord(BodyBand.BELOW_NORMAL) shouldBe "Below your normal"
     }
 
     @Test
-    fun `durations read as hours and minutes, not as decimals`() {
-        ScoreCopy.formatMinutes(465.0) shouldBe "7 h 45"
-        ScoreCopy.formatMinutes(60.0) shouldBe "1 h 00"
-        ScoreCopy.formatHours(8.5) shouldBe "8 h 30"
+    fun `reasons read like the spec's example`() {
+        val text = ScoreCopy.reasons(
+            listOf(BodyReason(ReasonKind.SLEEPING_HR_ABOVE, 4.2), BodyReason(ReasonKind.DRINKS, 2.0)),
+        )
+        text shouldBe "Sleeping HR 4 bpm above normal; 2 drinks logged"
     }
 
     @Test
-    fun `the same strain is one number on two scales`() {
-        ScoreCopy.formatStrain(48.0, StrainScale.BEVEL_100) shouldBe "48"
-        ScoreCopy.formatStrain(10.1, StrainScale.WHOOP_21) shouldBe "10.1 / 21"
+    fun `sleep debt is said in hours`() {
+        ScoreCopy.debt(3.1667) shouldBe "3 h 10 behind"
+        ScoreCopy.debt(0.1) shouldBe "No sleep debt"
     }
 
     @Test
-    fun `the warm line says what kind of night it was, and the evening says what kind of day`() {
-        val high = score(ScoreType.RECOVERY, emptyList()).copy(band = Band.HIGH)
-        ScoreCopy.warmLine(7, high, null, false, null, null) shouldBe "Morning. You bounced back well."
-        ScoreCopy.warmLine(20, high, null, false, 38.0, 41.0) shouldBe "Evening. A solid day, about on target."
-        ScoreCopy.warmLine(20, high, null, false, 6.0, 41.0) shouldBe "Evening. A lighter day than your target."
-        ScoreCopy.warmLine(
-            7,
-            null,
-            ScoreUnavailable(ScoreType.RECOVERY, "2026-03-02", ScoreUnavailable.Reason.NO_SLEEP_SESSION, emptyList()),
-            false,
-            null,
-            null,
-        ) shouldBe "Morning. No sleep showed up for last night."
-        ScoreCopy.warmLine(7, null, null, true, null, null) shouldBe "Morning. Still getting to know your nights."
+    fun `check-in and Body disagreeing by two bands is called out`() {
+        ScoreCopy.disagrees(1, BodyBand.TYPICAL) shouldBe true
+        ScoreCopy.disagrees(3, BodyBand.TYPICAL) shouldBe false
+        ScoreCopy.disagrees(5, BodyBand.BELOW_NORMAL) shouldBe true
     }
 
     @Test
-    fun `ranking respects which way is better, and refuses where neither is`() {
-        // raw is 50 in the helper.
-        ScoreCopy.rankText(contribution(Metric.HRV_RMSSD), listOf(40.0, 45.0, 55.0)) shouldBe
-            "Better than 2 of 3 earlier nights"
-        ScoreCopy.rankText(contribution(Metric.RESTING_HEART_RATE), listOf(40.0, 45.0, 55.0)) shouldBe
-            "Better than 1 of 3 earlier nights"
-        ScoreCopy.rankText(contribution(Metric.SKIN_TEMPERATURE), listOf(1.0)) shouldBe null
-        ScoreCopy.rankText(contribution(Metric.HRV_RMSSD), emptyList()) shouldBe null
+    fun `insights show size, uncertainty and how often`() {
+        val text = ScoreCopy.insight(Insight(Predictor.ALCOHOL, -0.8, -1.1, -0.5, 11))
+        text shouldContain "0.8 SD lower"
+        text shouldContain "(0.5 to 1.1)"
+        text shouldContain "11 days"
     }
 
-    private fun snapshot() = HomeSnapshot(
-        date = java.time.LocalDate.parse("2026-03-02"),
-        scores = emptyMap(),
-        unavailable = emptyMap(),
-        sleepNeedHours = 8.0,
-        sleepNeedBaselineHours = 8.0,
-        sleepNeedStrainAdderHours = 0.0,
-        sleepNeedDebtAdderHours = 0.0,
-        sleepNeedNapCreditHours = 0.0,
-        strainDisplay = null,
-        strainTargetDisplay = null,
-        strainTypicalDisplay = null,
-        strainScale = StrainScale.BEVEL_100,
-        sessionLoads = emptyList(),
-        profile = app.pawse.scoring.model.UserProfile(),
-        needsProfile = true,
-        nightsInWindow = 30,
-        lastSyncEpochMs = 0L,
-    )
+    @Test
+    fun `clock minutes wrap past midnight`() {
+        ScoreCopy.minuteOfDay(22 * 60 + 30) shouldBe "22:30"
+        ScoreCopy.minuteOfDay(24 * 60 + 15) shouldBe "00:15"
+    }
 }

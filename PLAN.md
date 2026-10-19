@@ -1,105 +1,76 @@
 # Pawse — build plan
 
-Android interpretation layer over Health Connect. Recovery, Sleep, Strain, Energy Bank,
-plus barcode food logging. Local-first, no account, no server, no telemetry.
+Android interpretation layer over Health Connect. One line of guidance each morning, with
+Body, Sleep and Load behind it and an energy forecast under them, plus barcode food logging.
+Local-first, no account, no server, no telemetry.
 
-Not a medical device. No illness prediction. Temperature and SpO₂ excursions are shown as
-"outside your usual range", never as a diagnosis.
+Not a medical device. The overnight heart-rate pattern detector names likely causes from the
+user's own log (drinks, travel, stress), never a disease.
 
 ## Module graph
 
 ```
-:app                     Compose host, nav, Hilt entry, WorkManager config
- ├── :feature-onboarding permission flow, capability probe report
- ├── :feature-home       hero score, baseline-band rows, explainability
- ├── :feature-food       scanner, resolver chain, food log
+:app                     Compose host, nav, Hilt entry, WorkManager config, widget, weekly note
+ ├── :feature-onboarding permission flow, capability probe report, Samsung Health checklist
+ ├── :feature-home       Today (guidance, three cards, energy curve, check-in), explain screens
+ ├── :feature-food       scanner, resolver chain, food log (now with caffeine and alcohol)
  ├── :core-ui            fixed palette, Pretendard type, baseline-band component
- ├── :core-data          Health Connect gateway, probe, Room + SQLCipher, sync,
- │                       input assembly and the scoring pipeline
+ ├── :core-data          Health Connect gateway, probe, Room + SQLCipher, sync, signal
+ │                       enrichers, input assembly
  │    └── :core-scoring
  └── :core-scoring       pure Kotlin/JVM. No Android dependency, ever.
 ```
 
-`:core-scoring` is a `kotlin-jvm` module, not an Android library. That is enforced by the
-plugin choice, not by convention: the engine has to stay runnable against synthetic
-fixtures with no device, no clock, and no I/O.
+`:core-scoring` is a `kotlin-jvm` module, not an Android library. The whole engine,
+`PawseEngine`, runs there over an `EngineInput` with no device, no clock and no I/O, so every
+number can be unit-tested and replayed.
 
-## Score data model
+## Scoring v2
+
+v1 was one readiness number from hand-picked weights, and it counted the same nervous system
+two or three times (HRV and RHR as independent terms, then sleep on top). v2 reports three
+things that mean different things and combines them only in the guidance line.
+
+| Engine | What it reports | Core maths |
+|---|---|---|
+| Signal layer | one nightly value per metric, one definition, one source | HRV = ln(median RMSSD in night), sleeping HR = lowest 30-min rolling mean, quality q |
+| Body | band word, score, range, confidence, top two reasons, weekly reading | Kalman filter per signal and source; z vs 60-day median ending a week ago; ρ-aware combine; 100·Φ(z) |
+| Sleep | debt in hours, regularity, last night, optional score | need from free nights; decayed capped debt; Sleep Regularity Index |
+| Load | form, today's range | Banister TRIMP above 30% HRR or RPE x minutes; 42/7-day fitness and fatigue |
+| Context | illness pattern, cycle offsets, intake | one-sided CUSUM; luteal δ from two cycles; alcohol, caffeine, late meals from the food log |
+| Learning | dose-response insights, check-in calibration | ridge regression with 90% intervals; shrunk w and κ |
+| Energy | curve, focus window, dip, wind-down, caffeine at bed | two-process model with a 12-hour harmonic |
+
+Every default lives in `ScoringConfig` and is a reasoned starting point, not a validated
+value. `SCORING_VERSION` is `2.0.0`; the config hash is shown on every explain screen.
+
+### Body
 
 ```
-Score
-  type            RECOVERY | SLEEP | STRAIN | ENERGY_BANK | LOAD_RATIO
-  date            local date, sleep attributed to the WAKE date
-  value           integer, no fake precision
-  band            LOW 1-33 | MODERATE 34-66 | HIGH 67-100
-  contributions   List<Contribution>
-  dataCoverage    0..1, always printed next to the value
-  degraded        coverage below threshold
-  warmingUp       baselines under ~14 samples
-  scoringVersion  engine structure version
-  configHash      FNV-1a 64 of the serialised config
-
-Contribution
-  metric, raw, baselineMean, baselineSd, baselineWindowDays, baselineSampleCount,
-  z, weight (after renormalisation), nominalWeight, points, provenance, citation,
-  present, anomalyFlag
+P⁻ = P + σw²,  K = P⁻ / (P⁻ + σv²/q),  x̂ += K (y − x̂),  P = (1 − K) P⁻      σw²/σv² = 0.25 → K ≈ 0.39
+z_h = (x̂_h − B_h)/σ_h,   z_r = −(x̂_r − B_r)/σ_r
+z_B = (w z_h + (1−w) z_r) / √(w² + (1−w)² + 2w(1−w)ρ),   w = 0.6
+Body = 100 Φ(z_B), range = 100 Φ(z_B ± 0.674 sd)
 ```
 
-Every number the explainability screen shows is already in `Contribution`. The UI
-recomputes nothing. `scoringVersion` + `configHash` are part of the score table's primary
-key, so retuning weights writes new rows and never rewrites history in place.
+Bands: Above normal 70–100, Typical 31–69, Below normal 16–30, Strained 0–15. No score under
+seven valid nights. A night more than three spreads out counts at half weight; a missed night
+widens the range on its own.
 
-## Weight and provenance table (shipping defaults)
+### Guidance
 
-Recovery — combiner `100 / (1 + e^(−k(Z − z₀)))`, k = 1.1, z₀ = 0.
-
-| Metric | Weight | Dir | Provenance | Basis |
-|---|---|---|---|---|
-| HRV RMSSD | 0.60 | + | OUR_CHOICE | 0.5–0.8 range, grok §11; ~56–60% of Whoop variance, gemini |
-| Resting HR | 0.20 | − | OUR_CHOICE | second-ranked in every report; direction published, weight not |
-| Sleep Score | 0.13 | + | OUR_CHOICE | "a smaller weight", claude.md §2 |
-| Respiratory rate | 0.07 | − | OUR_CHOICE | added later by Whoop; penalty above +1.0 br/min |
-| Skin temperature | flag | ±1.5σ → −6 | OUR_CHOICE | anomaly flag, not a continuous term |
-| SpO₂ | flag | ±1.5σ → −4 | OUR_CHOICE | anomaly flag, not a continuous term |
-
-Alternative combiner, selectable: Whoop's documented 3-day vs 7-day moving-average delta.
-
-Sleep — three profiles.
-
-| Profile | Weights | Provenance |
-|---|---|---|
-| Oura-recovered (default with stages) | 35 total / 15 efficiency / 10 × REM, deep, latency, restfulness, timing | RECOVERED, R² ≈ 0.99 |
-| Apple (default without stages) | 50 duration / 30 bedtime consistency / 20 interruptions | PUBLISHED |
-| Bevel-style | asleep vs need, stage balance, HR dip, efficiency, continuity | OUR_CHOICE |
-
-Sleep Need = baseline + f₁(strain) + f₂(debt) − naps, with
-f₁(i) = 1.7 / (1 + e^((17 − i)/3.5)) — PUBLISHED, patent US 9,538,923. Never a static 8 hours.
-
-Strain.
-
-| Parameter | Value | Provenance |
-|---|---|---|
-| Banister TRIMP, men | 0.64 · e^(1.92x) | PUBLISHED, Banister 1991 |
-| Banister TRIMP, women | 0.86 · e^(1.67x) | PUBLISHED |
-| Edwards zone weights | 1–5 | PUBLISHED, alternative |
-| Saturation, Strain = S_max(1 − e^(−L/k)) | k = 260 | OUR_CHOICE |
-| S_max | 100 (Bevel) or 21 (Whoop), display toggle | — |
-| HRmax fallback | Tanaka 208 − 0.7 × age | PUBLISHED, flagged as an estimate |
-
-Non-additivity across sessions falls out of the saturation curve. There is no special case
-anywhere for "two workouts in one day".
-
-Baselines: 60-day default window (14–90 configurable), exponential recency weighting with a
-14-day half-life, mean/SD or median/MAD, z clamped to ±3, warm-up below 14 samples.
-Temperature scored on |deviation|, not signed z.
-
-Load ratio: ACWR as 7-day EWMA over 28-day EWMA. The Impellizzeri 2021 critique ships as
-inline copy next to the number.
+| Body | Illness | Form | Line |
+|---|---|---|---|
+| any | alert | any | Take it easy today and watch for symptoms |
+| Strained 2+ nights | none | any | An easy or rest day will pay off |
+| Below normal | none | any | Keep it light; tonight's sleep is your best lever |
+| Typical | none | below −30% | Body's fine but fatigue is building; go moderate |
+| Typical or above | none | −30% or higher | Good day for hard training or a big study block |
 
 ## Colour and type tokens
 
-Two Material defaults are switched off. No dynamic color, because a teal wallpaper must not
-repaint the red "do not train" band. Dark-first, because this app is opened in bed.
+Two Material defaults are switched off. No dynamic color, and dark-first, because this app is
+opened in bed.
 
 | Token | Dark | Light |
 |---|---|---|
@@ -109,213 +80,81 @@ repaint the red "do not train" band. Dark-first, because this app is opened in b
 | outline | `#343A40` | `#C6CBD1` |
 | onSurface | `#EDEFF1` | `#15181B` |
 | onSurfaceVariant | `#9BA3AB` | `#515A62` |
-| band low | `#FF7A6B` | `#B3261E` |
+| band low (illness alert only) | `#FF7A6B` | `#B3261E` |
 | band moderate | `#F5C451` | `#8A5A00` |
 | band high | `#5CD6A0` | `#14684A` |
-| baseline band μ±σ | `#2A3036` | `#E3E7EB` |
-| baseline outer ±2σ | `#1C2126` | `#EFF2F5` |
+| baseline band | `#2A3036` | `#E3E7EB` |
+| baseline outer | `#1C2126` | `#EFF2F5` |
 
-Colour appears in exactly two places: score band state, and direction of deviation from
-baseline. Nothing else gets a hue. Band state is never encoded in hue alone — every dot is
-paired with a word.
-
-Type: Pretendard, one family. Tabular figures on every numeric style so a score ticking
-68 → 71 does not shift width. Three sizes on a score screen: Hero 84sp, MetricValue 17sp,
-Label 13sp, plus a 14sp Delta for signed point contributions.
+Red is reserved for an illness alert: no single night is ever painted red. Band state is
+never encoded in hue alone — every dot is paired with a word.
 
 ## Delivery order
 
 1. **Skeleton, Health Connect permissions, capability probe, sync** — done
-2. **BaselineEngine + SleepScorer + RecoveryScorer, full tests** — done
-3. **StrainScorer + EnergyBank + LoadRatio** — done
-4. **Home, baseline-band component, explainability screens** — done, together with the
-   pipeline that turns stored samples into scores
-5. **Barcode scanning and the resolver chain** — done
-6. **Backend for the redesign** — done: Body tab data (scale records, usual range,
-   composition, BMR, energy eaten vs burned), one sync coordinator that names its three
-   steps, seven-day trends and the warm-up countdown in the snapshot, food Undo /
-   "Again" / week strip, bedside palette, a home-screen widget and one morning note.
-   The screens are wired to all of it at a functional level; matching the design board
-   pixel for pixel (rings, sparklines, sheets) is the next step.
-7. Weight tuning, export/import
+2. **v1 engine, Home, explainability, barcode food log, Body tab backend** — done, replaced by v2
+3. **Scoring v2** — done: signal layer, Body, sleep debt and regularity, Load, barcode-log
+   hookup and dose-response, illness detector and cycle offsets, check-in calibration and the
+   energy curve, the Today screen, the weekly summary
+4. **Validation (8–12 weeks, friends and early users).** Replay v1 and v2 on the same stored data.
+
+| Question | Test | What "better" means |
+|---|---|---|
+| Does Body track how people feel? | per-user Spearman r, Body vs check-in | v2's median r above v1's |
+| Is the illness detector useful? | alerts vs self-tagged sick days | under 1 false alert per month |
+| Are dose-response insights stable? | refit first half vs second half | strong effects keep their sign |
+| Does it raise sleep worry? | short survey at weeks 4 and 12 | no increase |
 
 ## Assumptions taken
 
-- **RMSSD only.** Health Connect has no SDNN record type, so the SDNN/RMSSD switch Bevel
-  offers on iOS has no Android equivalent and is absent by design.
-- **Recovery logistic maps baseline to 50, not 58.** Some open clones shift z₀ so baseline
-  reads ~58 to match Whoop's stated population average. A personal baseline should sit in
-  the middle of a personal scale, so z₀ = 0.
-- **Pretendard binaries are not vendored.** Drop the variable font into
-  `core-ui/src/main/res/font/` and flip one line in `Type.kt`. Until then the system face
-  renders, which is correct but not the design reference.
-- **90-day first backfill**, so the widest configurable baseline window fills in one pass.
-- **Nightly work targets 09:00 local**, late enough for most watches to have uploaded.
-  WorkManager scheduling is inexact by design, so on-demand sync is what makes it feel current.
-- **Duplicate sources resolve by priority, not averaging.** The probe reports contested
-  record types; the default order is the order they were seen; the user can reorder it.
-- **Tonight is excluded from its own baseline.** Only `daysAgo >= 1` forms the window.
-  Including tonight drags the mean toward the value being judged and shrinks the z-score
-  on exactly the nights that matter.
-- **Recovery points are marginal, sleep points are additive.** A logistic is not a sum, so
-  a Recovery contribution's `points` is the leave-one-out marginal — how far removing that
-  term alone moves the score — and the terms deliberately do not add to the total. Sleep is
-  a weighted sum of 0-100 sub-scores, so its terms do add up exactly, and the
-  explainability copy differs between the two screens for that reason.
-- **Sleep is an absolute-target combiner.** Both shipping profiles score a night against a
-  physiological target rather than the user's own history, which is how Oura and Apple both
-  work. Sleep contributions therefore report a null baseline rather than a plausible-looking
-  fake one, and Sleep is never `warmingUp`.
-- **Sleep contributors measured in "pts" arrive pre-normalised.** Restfulness, timing and
-  bedtime consistency cannot be computed from one night in isolation, so the caller builds
-  them with the public helpers in `SleepSubScores` and passes 0-100 in. Everything else is
-  scored in the engine from its raw unit.
-- **A timezone-crossing night loses its circadian terms rather than failing them.** The
-  midpoint moved because the clock did.
-- **Recovery is reported 1-99.** A logistic asymptote should not be printed as certainty.
-- **Strain is computed on 0-100 and displayed on two scales.** Whoop's 21 and Bevel's 100
-  are the same curve with a different ceiling, so `Score.value` is always canonical and the
-  toggle only changes a label. Flipping it never rewrites history or reshapes a chart.
-- **Strain bands are magnitude, not verdict.** HIGH strain is a lot of load, not bad news.
-  Whether today's load was appropriate is the Target Strain comparison. The UI must not
-  paint strain with the Recovery palette.
-- **`k = 260` is the most consequential tunable number in the app.** It alone decides what
-  "a hard day" reads as. Chosen so a hard threshold hour lands near 30 on the Bevel scale.
-  No vendor publishes it.
-- **An unspecified sex takes the midpoint of Banister's two published curves**, tagged
-  OUR_CHOICE, never one sex's curve for everybody. The two diverge by about 18% at 40% of
-  heart-rate reserve and under 5% at maximum, so the cost of not knowing is real at easy
-  intensities and small at hard ones. Health Connect has no sex record type.
-- **An estimated HRmax downgrades the day's provenance.** One session resting on Tanaka
-  makes the whole day's aggregate INFERRED. Weakest link wins; the observed peak can raise
-  an age-based estimate but never lower it.
-- **Strain coverage is the fraction of logged workout minutes that produced a load.** A day
-  holding a two-hour ride we could not score is refused, not quietly reported as a rest day.
-- **Load Ratio stores the ratio times 100.** 1.15 persists as 115. The score table is keyed
-  on integers and a second numeric column for one score type would be worse.
-- **The Impellizzeri critique lives in the engine, not the UI.** `LoadRatioScorer.CRITIQUE`
-  is appended to both contributions' citations, so a UI refactor cannot drop the condition
-  under which the number is honest.
-- **Energy Bank points are exact.** Unlike Recovery and Strain, they are realised deltas
-  after edge compression, so carryover plus three numbers is the closing level.
-- **The Energy Bank integrates in steps.** Applying a large delta at its starting resistance
-  would sail through the ceiling it is meant to respect. Forward Euler, 200 steps, error
-  under a point.
-- **The gauge floors at 5, not 0**, as Garmin's does. The floor is an asymptote, not a clamp.
-- **Scores are recomputed on demand and persisted afterwards, never read back as a cache.**
-  The score table is a record of what was shown, stamped with the engine version and config
-  hash that produced it. What the screen shows is the engine run against the samples we hold
-  now. Ninety days costs a few milliseconds; a stale number costs trust. Derived detail —
-  sleep need, target strain, the per-session breakdown — is not persisted at all, because a
-  second copy of a derivable thing is a copy that can disagree with it.
-- **Split sleep is one night with a hole in it.** Time in bed spans first bedtime to final
-  wake and the gap counts as time awake. Summing the two sessions instead would report 96%
-  efficiency for a night the user remembers as broken.
-- **Stages are believed only when they cover the night.** Below half the session envelope,
-  staged minutes are partial reporting rather than the night's sleep time, and the night is
-  scored as unstaged — which is what Apple's stage-free profile is in the app for.
-- **An overnight metric has to have been measured overnight.** HRV, breathing rate and SpO₂
-  are read from inside the sleep window, or failing that from the night hours around it
-  because many apps stamp the night's aggregate at wake time. A midday spot reading is
-  dropped rather than fed to a score that claims to be about your night.
-- **Bedtimes are angles, not numbers.** 23:50 and 00:10 are twenty minutes apart; their
-  arithmetic mean is midday. Consistency and timing use circular statistics, so a night-shift
-  worker with a rigid schedule reads as consistent instead of chaotic.
-- **Workout heart rate is fetched per session, on demand.** Health Connect stores the
-  exercise envelope and the heart-rate series separately, so a synced workout has no mean
-  heart rate and no scoreable load. Syncing all heart rate to fix that would drain hundreds
-  of thousands of samples a month through change tokens.
-- **Age and sex are the only things the app ever asks about the user**, because Tanaka and
-  Banister divide by them and Health Connect has no record type for either. Declining stays
-  first-class: `UNSPECIFIED` takes the midpoint of Banister's two curves and says so.
-  (Food is typed in too, but that is a record of a meal, not a fact about a person.)
-- **Strain is never painted with the Recovery palette.** Its bands are magnitude, so on Home
-  it is neutral and the verdict is left to the Target Strain sentence.
-- **The explainability screen recomputes nothing.** Every figure it renders was computed once
-  by the engine and carried in `Contribution`. A screen that recomputes is a second engine
-  that will eventually disagree with the first — about the number the user was shown.
+- **Filter state is not stored.** The spec lists it for Room; it is a pure function of the
+  stored nightly samples, so the engine replays 120 days on every recompute instead of
+  keeping a second copy that could drift. Same for calibration history: "What changed in your
+  model" is replayed from the check-ins.
+- **Pawse's sleeping HR and the vendor's resting HR are two definitions.** They carry
+  different source keys (`pkg#series`, `pkg#resting`) and never share a baseline.
+- **The signal window is the night envelope** (first bedtime to final wake) rather than the
+  longest single session, so split sleep stays one night with a hole in it.
+- **Night quality without any heart-rate series is 0.5,** not 0, so a watch that never writes
+  raw heart rate still moves the filter.
+- **Breathing rate and SpO₂ need three records in the night**, as specified; a vendor's single
+  nightly aggregate is skipped. Temperature needs one.
+- **A "day off" is a weekend.** Sleep need comes from Saturday and Sunday mornings until the
+  app has a way to mark days off.
+- **TRIMP uses the session's mean heart rate,** so the 30%-of-reserve floor is all-or-nothing
+  per session. Health Connect has no RPE field, so effort is always the default 5.
+- **The energy curve adds a 12-hour harmonic** (after Åkerstedt and Folkard) at a fifth of the
+  circadian amplitude; a single cosine has no afternoon dip to label.
+- **Cycle offsets use every complete cycle in the window,** including ones after an older day
+  being replayed. Today never sees the future.
+- **Alcohol counts toward a night when drunk within 18 hours before bedtime.** One drink is
+  10 g of ethanol (WHO).
+- **Caffeine counts only after the user confirms the product's figure** on the add screen.
+- **The v1 score table was dropped** in migration 2→3. v2 never read it back; raw samples,
+  which every baseline rests on, are untouched.
+- **History permission is requested at onboarding.** Without it Health Connect returns only
+  30 days before the first grant, and the Body baseline needs 67.
+- **120-day first backfill**, which dose-response needs; the baseline needs 67.
+- **Nightly work targets 09:00 local**; WorkManager is inexact, so on-demand sync is what makes
+  it feel current. Samsung watches only upload when they reconnect or Samsung Health opens.
+- **Duplicate sources resolve by priority, not averaging.**
+- **Bedtimes are angles, not numbers.** Habitual bedtime uses a circular mean.
 - **The food log is the one place this app can reach the network, and it asks first.**
-  A barcode lookup sends the barcode to Open Food Facts and nothing else — no identifier, no
-  history, nothing about health data. It is off until the user reads what it does and turns it
-  on, the question is put at the one useful moment (a scan we could not answer, product in
-  hand), and every result is cached so a product is fetched once and then never again.
-- **The resolver chain is cache, then network, and that is the whole chain.** Photographing
-  the label and typing it in are not links in it: they cannot answer "what is barcode
-  8801234567890". They are what the failure reason offers instead, which is why "not found",
-  "you have not allowed me to ask" and "the request failed" are three different answers.
-- **Nutrition figures are per 100 g in storage, whatever the label said.** It is the only
-  basis every source converts to. Getting the label's own basis wrong is a factor-of-two error
-  in someone's day, so when a panel does not state what its figures are per, the app asks
-  rather than assuming a hundred grams — Korean packaging states per serving or per package
-  at least as often.
-- **A logged entry freezes its figures.** Open Food Facts is a wiki and OCR can be re-run, so
-  a product record is a live thing and Tuesday's lunch is not. Same reason a score row keeps
-  the config hash that produced it.
-- **Health Connect is a mirror, never the source.** Food is written back as a manual-entry
-  NutritionRecord, after the local row exists and without gating it, and the returned id is
-  kept so deleting a meal here deletes it there. A denied grant loses nothing.
-- **A day's calorie total is printed with the number of items it could not price.** Same rule
-  as `dataCoverage` on a score: a total that silently drops three unknown items is a worse
-  number than no total. There are no targets and no ring to close — whether 1,900 kcal was
-  right for this person today is not something this app knows.
-- **Nothing is required except a name.** An entry that records only "porridge, breakfast" is
-  a true record of the day; refusing it because the calories are unknown would refuse the part
-  the user actually knows.
-- **Body records ride the same sample table.** Weight, body fat, lean mass, bone, water,
-  height and BMR are `metric_sample` rows like everything else, so no migration, and no
-  score reads them. One reading per day, the day's last; a usual range needs five
-  weigh-ins inside 30 days and never includes the one being judged.
-- **A scale's BMR counts only on the morning it was written.** Otherwise Katch–McArdle
-  from lean mass, then Mifflin–St Jeor; the screen always says which.
-- **Active energy is aggregated by Health Connect, not synced.** It de-duplicates writers
-  by the user's own priority and a watch can write an interval a minute.
-- **A type without its grant is skipped by sync, not attempted.** One declined scale
-  permission must not fail the night's read for everything else.
-- **Undo holds the Health Connect delete, not the local one.** The row goes at once;
-  the mirror's delete waits for the Undo window, persisted so a kill cannot orphan it.
-- **The widget reads a small preferences file, not the encrypted database.** Four
-  numbers that are on the home screen anyway, without a SQLCipher cold start.
-- **One notification a day, only from the nightly read.** A user who tapped refresh is
-  already looking. Low importance: no sound, no heads-up.
-- **No frame is ever captured.** The scanner binds `Preview` and `ImageAnalysis` and no
-  `ImageCapture` use case exists in the tree, which is the structural reason no photograph of
-  anyone's kitchen can reach disk. Both models — barcode and Korean text — run on-device.
+- **Nutrition figures are per 100 g in storage, whatever the label said.** Alcohol is stored
+  as grams of ethanol (ABV × 0.789, 100 ml taken as 100 g).
+- **A logged entry freezes its figures.**
+- **Health Connect is a mirror, never the source** for food and weigh-ins.
+- **Body records ride the same sample table** and no score reads them.
+- **One notification a week, only from the nightly read.** No daily score push.
+- **No frame is ever captured** by the scanner.
 
 ## Building it
 
-Steps 1 to 3 were written on a machine with no JDK, no Gradle and no Android SDK, which is
-why CI was the build rather than a safety net over one, and why the workflows below go to
-such lengths to carry a failure off the runner. Step 4 was built on a machine where a
-toolchain could be installed, so the tree now compiles and tests green locally — JDK 17,
-Gradle 8.14.3, Android SDK 36 — with `assembleDebug testDebugUnitTest` and
-`:core-scoring:test`. CI is still the authority: it is the only place the pinned versions
-are exercised from a clean checkout.
-
-- `.github/workflows/build.yml` — three jobs. **engine** runs `:core-scoring:test` on a bare
-  JVM and is the one to watch. **android** assembles debug and runs unit tests. **lint** is
-  informational and does not gate.
-- `.github/workflows/gradle-wrapper.yml` — manual dispatch. Generates the wrapper the repo
-  does not have and uploads it as an artifact to commit by hand. Nothing depends on it;
-  the build workflow provisions Gradle directly and calls `gradle`, not `./gradlew`.
-
-Because a raw Actions log needs an authenticated client to fetch, every Gradle step tees to
-a file and every failing step re-emits the compiler errors, test failures and Gradle's own
-diagnosis as **workflow annotations**. Annotations are the one part of a run the public
-checks API hands back anonymously, which makes them the channel that actually carries a
-failure off the runner:
-
 ```
-GET /repos/{owner}/{repo}/commits/{sha}/check-runs
-GET /repos/{owner}/{repo}/check-runs/{id}/annotations
+gradle :core-scoring:test
+gradle assembleDebug testDebugUnitTest
 ```
 
-Job summaries were the first attempt and turn out not to be exposed that way. The full log
-is uploaded as an artifact either way.
-
-Getting to a first green build corrected several version assumptions that could not have
-been checked locally. `connect-client` was pinned at `1.1.0-alpha07`, which has no
-`SkinTemperatureRecord` and keeps `DEFAULT_PROVIDER_PACKAGE_NAME` internal; the two
-health-data permission constants live on `HealthPermission`, not `HealthConnectClient`; and
-the 1.1.0 release declares `minCompileSdk=36` and `minAndroidGradlePluginVersion=8.9.1`, so
-every module compiles against 36 and AGP moved to 8.9.3. AGP 8.9 pairs with Gradle 8.11.1,
-which the workflow already provisions, so nothing else in the toolchain had to move.
+CI is the authority: `.github/workflows/build.yml` runs the engine tests on a bare JVM, then
+assembles and runs the Android unit tests. Every failing step re-emits compiler errors and
+test failures as workflow annotations, which the public checks API returns anonymously.

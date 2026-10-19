@@ -1,6 +1,5 @@
 package app.pawse.core.data.health
 
-import app.pawse.scoring.config.SleepProfile
 import app.pawse.scoring.model.Metric
 import app.pawse.scoring.model.ScoreType
 
@@ -24,6 +23,12 @@ data class CapabilityReport(
     val weighIns: Int = 0,
     /** Which body measurements the scale writes besides weight: "body fat", "lean mass"... */
     val bodyParts: List<String> = emptyList(),
+    /**
+     * Samsung Health shares HRV, skin temperature, breathing rate and resting HR
+     * with Health Connect only when each is allowed in Samsung Health's own
+     * settings. Null when Samsung Health is not a writer.
+     */
+    val samsungChecklist: List<Pair<String, Boolean>>? = null,
 ) {
     val usable: Boolean get() = scores.any { it.computable }
 }
@@ -42,32 +47,22 @@ data class MetricCapability(
 data class ScoreCapability(
     val type: ScoreType,
     val computable: Boolean,
-    /** Fraction of nominal weight mass available, from the metrics actually present. */
+    /** Share of what the card reads that was actually found. */
     val expectedCoverage: Float,
     val degraded: Boolean,
-    /** Which sleep profile the probe would select. Null for non-sleep scores. */
-    val selectedProfile: SleepProfile? = null,
     val missing: List<Metric> = emptyList(),
-    /** One sentence, plain language, shown under the score name at onboarding. */
+    /** One sentence, plain language, shown under the card name at onboarding. */
     val explanation: String,
 )
 
 /**
  * How the writer app actually delivers HRV, which varies far more on Android than
- * on iOS. Garmin Connect and Zepp tend to write a nightly overnight value; some
- * apps write only sparse daytime spot readings, which are useless for a
- * sleep-window-only Recovery score and must not be silently substituted.
+ * on iOS. Some apps write only sparse daytime spot readings, which are useless for
+ * an overnight signal and must not be silently substituted.
  */
 enum class HrvShape {
-    /** No HRV records at all. Recovery loses its dominant term. */
     ABSENT,
-
-    /** Values inside sleep windows on most nights. What Recovery needs. */
     OVERNIGHT_SERIES,
-
-    /** Values exist, but mostly outside sleep windows. Not a recovery signal. */
     DAYTIME_SPOT_ONLY,
-
-    /** Some overnight values, but on a minority of nights. Recovery runs degraded. */
     SPARSE_OVERNIGHT,
 }

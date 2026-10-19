@@ -14,8 +14,6 @@ import androidx.health.connect.client.records.RespiratoryRateRecord
 import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.SkinTemperatureRecord
 import androidx.health.connect.client.records.SleepSessionRecord
-import app.pawse.scoring.config.ScoringConfig
-import app.pawse.scoring.config.SleepProfile
 import app.pawse.scoring.model.Metric
 import app.pawse.scoring.model.ScoreType
 import kotlinx.coroutines.Dispatchers
@@ -47,7 +45,6 @@ class CapabilityProbe @Inject constructor(
     suspend fun probe(
         days: Int = DEFAULT_PROBE_DAYS,
         zone: ZoneId = ZoneId.systemDefault(),
-        config: ScoringConfig = ScoringConfig.DEFAULT,
     ): CapabilityReport = withContext(Dispatchers.Default) {
         val end = Instant.now()
         val start = end.minusSeconds(days * 86_400L)
@@ -94,10 +91,7 @@ class CapabilityProbe @Inject constructor(
             capability(Metric.RESPIRATORY_RATE, resp, days, zone) { it.time },
             capability(Metric.SPO2, spo2, days, zone) { it.time },
             capability(Metric.SKIN_TEMPERATURE, temp, days, zone) { it.startTime },
-            capability(Metric.TIME_ASLEEP, sleep, days, zone) { it.endTime },
-            // Raw continuous heart rate, which is what Strain and the Energy Bank
-            // need. The sleep heart-rate dip is derived from it rather than being
-            // the same quantity, so the two have separate metrics.
+            // Raw heart rate, from which Pawse computes its own sleeping HR.
             capability(Metric.HEART_RATE, hr, days, zone) { it.startTime },
         )
 
@@ -124,121 +118,79 @@ class CapabilityProbe @Inject constructor(
             probedDays = days,
             nightsWithSleep = nightsWithSleep,
             metrics = metrics,
-            scores = scoreCapabilities(metrics, stageCoverage, hrvShape, nightsWithSleep, exercise.size, config),
+            scores = scoreCapabilities(metrics, hrvShape, nightsWithSleep, exercise.size),
             writerApps = writerApps,
             contestedTypes = contested,
             sleepStageCoverage = stageCoverage,
             hrvShape = hrvShape,
             weighIns = weight.map { it.time.localDate(zone) }.toSet().size,
             bodyParts = bodyParts,
+            samsungChecklist = if (SAMSUNG_HEALTH in writerApps) {
+                listOf(
+                    "Heart rate variability" to (hrv.isNotEmpty()),
+                    "Skin temperature" to (temp.isNotEmpty()),
+                    "Respiratory rate" to (resp.isNotEmpty()),
+                    "Resting heart rate" to (rhr.isNotEmpty()),
+                )
+            } else {
+                null
+            },
         )
     }
 
     private fun scoreCapabilities(
         metrics: List<MetricCapability>,
-        stageCoverage: Float,
         hrvShape: HrvShape,
         nightsWithSleep: Int,
         exerciseSessions: Int,
-        config: ScoringConfig,
     ): List<ScoreCapability> {
         val byMetric = metrics.associateBy { it.metric }
         fun present(m: Metric) = byMetric[m]?.present == true
-
-        // Recovery coverage is weight mass available, not metric count: losing HRV
-        // costs 0.60 of the score, losing respiratory rate costs 0.07.
-        val nominal = config.recovery.weights
-        val available = nominal.entries.sumOf { (metric, w) ->
-            val ok = when (metric) {
-                Metric.HRV_RMSSD -> hrvShape == HrvShape.OVERNIGHT_SERIES || hrvShape == HrvShape.SPARSE_OVERNIGHT
-                Metric.SLEEP_SCORE -> nightsWithSleep > 0
-                else -> present(metric)
-            }
-            if (ok) w.weight else 0.0
-        }
-        val recoveryCoverage = (available / nominal.values.sumOf { it.weight }).toFloat()
-        val recoveryMissing = nominal.keys.filter { m ->
-            when (m) {
-                Metric.HRV_RMSSD -> hrvShape == HrvShape.ABSENT || hrvShape == HrvShape.DAYTIME_SPOT_ONLY
-                Metric.SLEEP_SCORE -> nightsWithSleep == 0
-                else -> !present(m)
-            }
-        }
-
-        val sleepProfile = when {
-            nightsWithSleep == 0 -> null
-            stageCoverage >= STAGE_COVERAGE_FOR_OURA -> SleepProfile.OURA_RECOVERED
-            else -> SleepProfile.APPLE_PUBLISHED
-        }
+        val hrvOk = hrvShape == HrvShape.OVERNIGHT_SERIES || hrvShape == HrvShape.SPARSE_OVERNIGHT
+        // Body reads two views of one nervous system. Pawse's own sleeping HR needs
+        // the raw series; the watch's resting HR stands in without it.
+        val hrOk = present(Metric.HEART_RATE) || present(Metric.RESTING_HEART_RATE)
 
         return listOf(
             ScoreCapability(
-                type = ScoreType.RECOVERY,
-                computable = recoveryCoverage >= config.recovery.refuseBelowCoverage,
-                expectedCoverage = recoveryCoverage,
-                degraded = recoveryCoverage < config.recovery.degradedBelowCoverage,
-                missing = recoveryMissing,
+                type = ScoreType.BODY,
+                computable = hrvOk || hrOk,
+                expectedCoverage = listOf(hrvOk, hrOk).count { it } / 2f,
+                degraded = !(hrvOk && hrOk),
+                missing = listOfNotNull(
+                    Metric.HRV_RMSSD.takeIf { !hrvOk },
+                    Metric.RESTING_HEART_RATE.takeIf { !hrOk },
+                ),
                 explanation = when {
-                    hrvShape == HrvShape.ABSENT ->
-                        "Your device does not write heart rate variability to Health Connect, " +
-                            "so Recovery would be missing the signal it leans on most."
+                    hrvOk && hrOk -> "Overnight HRV and heart rate are both there, so Body reads both."
                     hrvShape == HrvShape.DAYTIME_SPOT_ONLY ->
-                        "Your device writes heart rate variability only as occasional daytime " +
-                            "readings. Recovery needs overnight values, so we will not fake one."
-                    recoveryCoverage >= config.recovery.degradedBelowCoverage ->
-                        "We can compute Recovery from your overnight data."
-                    else ->
-                        "We can compute Recovery, but from a reduced set of inputs. " +
-                            "The score will be marked as lower confidence."
+                        "Your device writes HRV only as daytime readings. Body needs overnight values, " +
+                            "so it will read your sleeping heart rate alone."
+                    hrOk -> "No overnight HRV, so Body reads your sleeping heart rate alone, with a wider range."
+                    hrvOk -> "No overnight heart rate, so Body reads HRV alone, with a wider range."
+                    else -> "Neither overnight HRV nor heart rate is written to Health Connect, so Body has nothing to read."
                 },
             ),
             ScoreCapability(
                 type = ScoreType.SLEEP,
                 computable = nightsWithSleep > 0,
-                expectedCoverage = if (nightsWithSleep == 0) 0f else maxOf(stageCoverage, 0.6f),
-                degraded = stageCoverage < STAGE_COVERAGE_FOR_OURA && nightsWithSleep > 0,
-                selectedProfile = sleepProfile,
-                explanation = when {
-                    nightsWithSleep == 0 -> "No sleep sessions found, so there is nothing to score yet."
-                    sleepProfile == SleepProfile.OURA_RECOVERED ->
-                        "Your device records sleep stages, so we can use the detailed sleep model."
-                    else ->
-                        "Your device records sleep without stage detail, so we will use the " +
-                            "duration, consistency and interruption model instead."
-                },
-            ),
-            ScoreCapability(
-                type = ScoreType.STRAIN,
-                computable = present(Metric.HEART_RATE) || exerciseSessions > 0,
-                expectedCoverage = if (exerciseSessions > 0) 1f else 0.5f,
-                degraded = exerciseSessions == 0,
-                explanation = if (exerciseSessions > 0) {
-                    "Workouts and continuous heart rate are available, so Strain covers both " +
-                        "training and the rest of your day."
+                expectedCoverage = if (nightsWithSleep == 0) 0f else 1f,
+                degraded = false,
+                explanation = if (nightsWithSleep == 0) {
+                    "No sleep sessions found yet."
                 } else {
-                    "No workouts found yet. Strain will start from your all-day heart rate only."
+                    "Sleep debt in hours and how regular your timing is. Stages are shown, never scored."
                 },
             ),
             ScoreCapability(
-                type = ScoreType.ENERGY_BANK,
-                computable = present(Metric.HEART_RATE) && nightsWithSleep > 0,
-                expectedCoverage = if (present(Metric.HEART_RATE)) 1f else 0f,
-                degraded = !present(Metric.HEART_RATE),
-                explanation = if (present(Metric.HEART_RATE) && nightsWithSleep > 0) {
-                    "Continuous heart rate is available, so the Energy Bank can run through the day."
-                } else {
-                    "The Energy Bank needs all-day heart rate, which your device is not writing."
-                },
-            ),
-            ScoreCapability(
-                type = ScoreType.LOAD_RATIO,
+                type = ScoreType.LOAD,
                 computable = exerciseSessions > 0,
                 expectedCoverage = if (exerciseSessions > 0) 1f else 0f,
                 degraded = false,
                 explanation = if (exerciseSessions > 0) {
-                    "Enough workout history to compare this week against the last month."
+                    "Workouts found, so Load can build fitness and fatigue from your training."
                 } else {
-                    "No workouts recorded, so there is no training load to compare."
+                    "No workouts recorded yet. Load fills in from your first one."
                 },
             ),
         )
@@ -271,7 +223,7 @@ class CapabilityProbe @Inject constructor(
     private fun HrvShape.note(): String = when (this) {
         HrvShape.ABSENT -> "No HRV records from any app."
         HrvShape.OVERNIGHT_SERIES -> "Overnight HRV on most nights."
-        HrvShape.DAYTIME_SPOT_ONLY -> "Daytime spot readings only, not usable for Recovery."
+        HrvShape.DAYTIME_SPOT_ONLY -> "Daytime spot readings only, not usable overnight."
         HrvShape.SPARSE_OVERNIGHT -> "Overnight HRV on some nights only."
     }
 
@@ -283,8 +235,7 @@ class CapabilityProbe @Inject constructor(
     companion object {
         const val DEFAULT_PROBE_DAYS = 30
 
-        /** Below this share of staged nights the Oura-recovered profile is not honest. */
-        const val STAGE_COVERAGE_FOR_OURA = 0.5f
+        const val SAMSUNG_HEALTH = "com.sec.android.app.shealth"
 
         /** Nights with an in-sleep HRV value needed to call it a real overnight series. */
         const val HRV_NIGHTS_FOR_SERIES = 0.5f

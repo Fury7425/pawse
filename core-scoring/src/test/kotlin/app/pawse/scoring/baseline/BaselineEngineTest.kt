@@ -2,7 +2,6 @@ package app.pawse.scoring.baseline
 
 import app.pawse.scoring.config.BaselineConfig
 import app.pawse.scoring.config.BaselineMode
-import app.pawse.scoring.fixtures.Fixtures
 import app.pawse.scoring.model.Metric
 import app.pawse.scoring.model.MetricHistory
 import io.kotest.matchers.doubles.plusOrMinus
@@ -184,16 +183,5 @@ class BaselineEngineTest {
                 BaselineEngine(medianMad).baseline(MetricHistory(Metric.HRV_RMSSD, dirty))!!.mean,
         )
         medianShift shouldBeLessThan meanShift
-    }
-
-    @Test
-    fun `fixture histories are centred, so a fixture baseline is exactly its stated mean`() {
-        // The fixtures depend on this: "8 bpm above baseline" has to mean 8 bpm.
-        val engine = BaselineEngine(Fixtures.BASELINE)
-        val hrv = engine.baseline(Fixtures.history(Metric.HRV_RMSSD, Fixtures.HRV_MEAN, Fixtures.HRV_SD))!!
-        hrv.mean shouldBe (Fixtures.HRV_MEAN plusOrMinus flat)
-        // And sigma should land close to the stated SD, not wander off it.
-        hrv.sigma shouldBeGreaterThan Fixtures.HRV_SD * 0.75
-        hrv.sigma shouldBeLessThan Fixtures.HRV_SD * 1.35
     }
 }

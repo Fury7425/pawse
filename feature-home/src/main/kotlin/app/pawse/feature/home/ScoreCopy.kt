@@ -1,215 +1,229 @@
 package app.pawse.feature.home
 
-import app.pawse.scoring.config.StrainScale
-import app.pawse.scoring.model.Band
-import app.pawse.scoring.model.Contribution
+import app.pawse.scoring.model.BodyBand
+import app.pawse.scoring.model.BodyReason
+import app.pawse.scoring.model.BodyStatus
+import app.pawse.scoring.model.Confidence
+import app.pawse.scoring.model.DayTag
+import app.pawse.scoring.model.FormBand
+import app.pawse.scoring.model.Guidance
+import app.pawse.scoring.model.Insight
+import app.pawse.scoring.model.LoadMethod
 import app.pawse.scoring.model.Metric
-import app.pawse.scoring.model.Provenance
-import app.pawse.scoring.model.Score
+import app.pawse.scoring.model.Predictor
+import app.pawse.scoring.model.ReasonKind
 import app.pawse.scoring.model.ScoreType
-import app.pawse.scoring.model.ScoreUnavailable
+import app.pawse.scoring.model.WeeklyPattern
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
- * Every word and every formatted number the score screens show.
+ * Every word and every formatted number the Today and explain screens show.
  *
- * Kept in one file on purpose. The app's voice is a feature, and three rules run
- * through all of it:
- *
- *  1. **Nothing here is a diagnosis.** A temperature or oxygen excursion is
- *     "outside your usual range", never a sign of anything. This is not a medical
- *     device and the copy never lets a user believe otherwise.
- *  2. **Colour is always paired with a word.** [bandWord] is the other half of
- *     every dot in the app.
- *  3. **A number never appears without its coverage.** [coverageLine] is rendered
- *     next to every score, degraded or not.
+ * Rules against score anxiety run through all of it:
+ *  1. **Band word first.** The exact number can be hidden in settings.
+ *  2. **"Below your normal", never "poor" or "bad".**
+ *  3. **Nothing here is a diagnosis.** The illness card names likely causes, never a disease.
+ *  4. **No streaks, badges or "perfect sleep" goals.**
  */
 object ScoreCopy {
 
     fun name(type: ScoreType): String = when (type) {
-        ScoreType.RECOVERY -> "Recovery"
+        ScoreType.BODY -> "Body"
         ScoreType.SLEEP -> "Sleep"
-        ScoreType.STRAIN -> "Strain"
-        ScoreType.ENERGY_BANK -> "Energy Bank"
-        ScoreType.LOAD_RATIO -> "Training load"
+        ScoreType.LOAD -> "Load"
+    }
+
+    fun guidance(g: Guidance): String = when (g) {
+        Guidance.WATCH_SYMPTOMS -> "Take it easy today and watch for symptoms."
+        Guidance.REST_DAY -> "An easy or rest day will pay off."
+        Guidance.KEEP_LIGHT -> "Keep it light; tonight’s sleep is your best lever."
+        Guidance.GO_MODERATE -> "Body’s fine but fatigue is building; go moderate."
+        Guidance.GOOD_DAY -> "Good day for hard training or a big study block."
+        Guidance.SETTLING -> "Still learning your normal. Here is what last night says."
+    }
+
+    fun bandWord(band: BodyBand): String = when (band) {
+        BodyBand.ABOVE_NORMAL -> "Above normal"
+        BodyBand.TYPICAL -> "Typical"
+        BodyBand.BELOW_NORMAL -> "Below your normal"
+        BodyBand.STRAINED -> "Clearly off your normal"
+    }
+
+    fun bandMeaning(band: BodyBand): String = when (band) {
+        BodyBand.ABOVE_NORMAL -> "Fresher than usual."
+        BodyBand.TYPICAL -> "Inside your normal range."
+        BodyBand.BELOW_NORMAL -> "Something is costing you."
+        BodyBand.STRAINED -> "Clearly off your normal."
+    }
+
+    fun confidence(c: Confidence): String = when (c) {
+        Confidence.HIGH -> "High confidence"
+        Confidence.MEDIUM -> "Medium confidence"
+        Confidence.LOW -> "Low confidence: missed or patchy nights"
+    }
+
+    fun bodyStatus(status: BodyStatus, validNights: Int, needed: Int): String = when (status) {
+        BodyStatus.READY -> ""
+        BodyStatus.WARMING_UP -> if (validNights < needed) {
+            "Night ${validNights + 1} of $needed. Body compares each night with your own normal, " +
+                "and a reading built on fewer nights would be a guess."
+        } else {
+            "Learning the normal for this watch. A new device starts its own baseline, so numbers are never mixed."
+        }
+        BodyStatus.NO_RECENT_NIGHT -> "No night recorded in the last two days, so there is no Body reading for today."
+    }
+
+    /** "sleeping HR 4 bpm above normal", "2 drinks logged". */
+    fun reason(r: BodyReason): String {
+        val a = r.amount
+        return when (r.kind) {
+            ReasonKind.SLEEPING_HR_ABOVE -> "sleeping HR ${a.roundToInt()} bpm above normal"
+            ReasonKind.SLEEPING_HR_BELOW -> "sleeping HR ${a.roundToInt()} bpm below normal"
+            ReasonKind.HRV_BELOW -> "HRV ${a.roundToInt()}% below normal"
+            ReasonKind.HRV_ABOVE -> "HRV ${a.roundToInt()}% above normal"
+            ReasonKind.ILLNESS_WATCH -> "overnight heart rate high for several nights"
+            ReasonKind.SICK_TAG -> "you tagged feeling sick"
+            ReasonKind.DRINKS -> "${drinks(a)} logged"
+            ReasonKind.SHORT_NIGHT -> "${formatHours(a)} short of your need last night"
+            ReasonKind.SLEEP_DEBT -> "${formatHours(a)} of sleep debt"
+            ReasonKind.HARD_TRAINING -> "yesterday’s training was ${one(a)}× your usual"
+            ReasonKind.LATE_MEAL -> "${a.roundToInt()} kcal within 3 h of bed"
+            ReasonKind.CAFFEINE_AT_BED -> "about ${a.roundToInt()} mg of caffeine left at bedtime"
+            ReasonKind.TRAVEL_TAG -> "you tagged travel"
+            ReasonKind.STRESS_TAG -> "you tagged an exam or stress week"
+            ReasonKind.CYCLE -> "part of this may be your cycle"
+        }
+    }
+
+    fun reasons(list: List<BodyReason>): String =
+        list.joinToString("; ") { reason(it) }.replaceFirstChar { it.uppercase(Locale.getDefault()) }
+
+    fun weekly(p: WeeklyPattern): String = when (p) {
+        WeeklyPattern.STEADY -> "Steady week"
+        WeeklyPattern.ADAPTING -> "Adapting well"
+        WeeklyPattern.STRAINED -> "Strained week: stress, short sleep, illness or a hard block"
+        WeeklyPattern.POSSIBLE_OVERREACHING -> "HRV drifting down under heavy load: check how you feel"
+        WeeklyPattern.MIXED -> "Mixed week"
+    }
+
+    fun form(f: FormBand): String = when (f) {
+        FormBand.FRESH -> "Fresh"
+        FormBand.PRODUCTIVE -> "Productive training"
+        FormBand.HEAVY -> "Heavy"
+    }
+
+    /** "You're 3 h 10 m behind", or nothing to catch up. */
+    fun debt(hours: Double?): String = when {
+        hours == null -> "Not enough nights yet"
+        hours < 0.25 -> "No sleep debt"
+        else -> "${formatHours(hours)} behind"
+    }
+
+    /** Sleep Regularity Index in a word; the UK Biobank median was 81. */
+    fun regularity(sri: Double?): String = when {
+        sri == null -> "Regularity needs a week of nights"
+        sri >= 81 -> "Regular (${sri.roundToInt()})"
+        sri >= 60 -> "Fairly regular (${sri.roundToInt()})"
+        else -> "Irregular (${sri.roundToInt()})"
+    }
+
+    const val ILLNESS_ALERT =
+        "Your overnight heart rate has been above your normal for several nights. " +
+            "This often happens with a cold, stress, alcohol or travel."
+
+    const val ILLNESS_WATCH = "Overnight heart rate has run a little high for a few nights. Pawse is keeping an eye on it."
+
+    const val DOCTOR =
+        "Your sleep debt has stayed high for two weeks, or you said you are having trouble sleeping. " +
+            "Talking to a doctor will help more than more tracking; CBT-I is the first-line treatment for insomnia."
+
+    const val FOOTER =
+        "Wellness information, not a diagnosis. Pawse doesn’t account for medical conditions or medication."
+
+    const val FORECAST_NOTE =
+        "A forecast from the two-process model of sleep: it models typical physiology rather than measuring yours."
+
+    fun likelyCauses(causes: List<ReasonKind>): String? {
+        val named = causes.mapNotNull {
+            when (it) {
+                ReasonKind.DRINKS -> "drinks you logged"
+                ReasonKind.TRAVEL_TAG -> "travel"
+                ReasonKind.STRESS_TAG -> "a stress week"
+                ReasonKind.SICK_TAG -> "feeling sick, as you tagged"
+                else -> null
+            }
+        }
+        return if (named.isEmpty()) null else "Likely linked to " + named.joinToString(" and ") + "."
+    }
+
+    fun tag(t: DayTag): String = when (t) {
+        DayTag.SICK -> "Sick"
+        DayTag.TRAVEL -> "Travel"
+        DayTag.STRESS -> "Exam or stress"
+        DayTag.TROUBLE_SLEEPING -> "Trouble sleeping"
+        DayTag.OTHER -> "Other"
     }
 
     /**
-     * The word beside the dot.
-     *
-     * Strain gets its own vocabulary because its bands are magnitude, not verdict:
-     * a high strain day is a lot of load, which is neither good news nor bad. The
-     * training-load ratio gets a third, because only its middle is good and both
-     * tails mean something different.
+     * Check-in mapped onto Body's four bands, 0 = strained .. 3 = above normal.
+     * Two or more apart, both are shown as information and neither wins.
      */
-    fun bandWord(type: ScoreType, band: Band): String = when (type) {
-        ScoreType.STRAIN -> when (band) {
-            Band.LOW -> "Light"
-            Band.MODERATE -> "Moderate"
-            Band.HIGH -> "Hard"
+    fun disagrees(feeling: Int, band: BodyBand): Boolean {
+        val felt = when (feeling) {
+            1 -> 0
+            2 -> 1
+            5 -> 3
+            else -> 2
         }
-
-        ScoreType.LOAD_RATIO -> when (band) {
-            Band.HIGH -> "Steady"
-            Band.MODERATE -> "Uneven"
-            Band.LOW -> "Ramping fast"
+        val body = when (band) {
+            BodyBand.STRAINED -> 0
+            BodyBand.BELOW_NORMAL -> 1
+            BodyBand.TYPICAL -> 2
+            BodyBand.ABOVE_NORMAL -> 3
         }
+        return abs(felt - body) >= 2
+    }
 
-        else -> when (band) {
-            Band.LOW -> "Low"
-            Band.MODERATE -> "Moderate"
-            Band.HIGH -> "High"
+    const val DISAGREE =
+        "How you feel and what your body shows disagree today. Both are information; neither is the winner."
+
+    /** "After evenings with a drink, your Body signal ran 0.4 SD lower (0.2 to 0.6), seen 11 times." */
+    fun insight(i: Insight): String {
+        val lead = when (i.predictor) {
+            Predictor.TRAINING -> "After a typical training day"
+            Predictor.SLEEP_DEBT -> "For each hour of sleep debt"
+            Predictor.ALCOHOL -> "For each drink the evening before"
+            Predictor.CAFFEINE -> "For each 100 mg of caffeine left at bedtime"
+            Predictor.LATE_MEAL -> "For each 500 kcal within 3 h of bed"
         }
+        val dir = if (i.effect < 0) "lower" else "higher"
+        val (lo, hi) = listOf(abs(i.low), abs(i.high)).sorted()
+        return "$lead, your Body signal the next morning ran ${one(abs(i.effect))} SD $dir " +
+            "(${one(lo)} to ${one(hi)}), seen on ${i.exposureDays} days."
     }
 
-    /** One plain sentence saying what the number came from. */
-    fun sentence(type: ScoreType, score: Score, snapshot: HomeSnapshot): String = when (type) {
-        ScoreType.RECOVERY -> recoverySentence(score)
-        ScoreType.SLEEP -> sleepSentence(score, snapshot)
-        ScoreType.STRAIN -> strainSentence(score, snapshot)
-        ScoreType.ENERGY_BANK -> energySentence(score)
-        ScoreType.LOAD_RATIO -> loadSentence(score)
+    const val INSIGHT_NOTE = "Associations in your own data, not proof of cause."
+
+    fun loadMethod(m: LoadMethod?): String = when (m) {
+        LoadMethod.BANISTER -> "Heart rate (Banister TRIMP)"
+        LoadMethod.EDWARDS -> "Heart-rate zones (Edwards)"
+        LoadMethod.RPE -> "Effort × minutes"
+        null -> "Not counted"
     }
-
-    fun recoverySentence(score: Score): String {
-        val driver = score.contributions
-            .filter { it.present && !it.anomalyFlag && it.z != null }
-            .maxByOrNull { abs(it.points) }
-            ?: return "Scored from what your device recorded overnight."
-
-        val direction = if ((driver.z ?: 0.0) >= 0) "above" else "below"
-        val sigmas = String.format(Locale.getDefault(), "%.1f", abs(driver.z ?: 0.0))
-        val lead = "${metricLabel(driver.metric)} came in $sigmas SD $direction your usual range"
-
-        val flagged = score.contributions.firstOrNull { it.anomalyFlag && it.points < 0.0 }
-        return if (flagged != null) {
-            // Never illness, never a diagnosis. Distance from the user's own range,
-            // and nothing more.
-            "$lead, and your ${metricLabel(flagged.metric).lowercase(Locale.getDefault())} " +
-                "was outside your usual range."
-        } else {
-            "$lead."
-        }
-    }
-
-    private fun sleepSentence(score: Score, snapshot: HomeSnapshot): String {
-        val asleep = score.contributions.firstOrNull { it.metric == Metric.TIME_ASLEEP }?.raw
-        val need = snapshot.sleepNeedHours
-        return when {
-            asleep != null && need != null ->
-                "You slept ${formatMinutes(asleep)} against a need of ${formatHours(need)}."
-            asleep != null -> "You slept ${formatMinutes(asleep)}."
-            else -> "Scored against tonight's target rather than against your history."
-        }
-    }
-
-    private fun strainSentence(score: Score, snapshot: HomeSnapshot): String {
-        val target = snapshot.strainTargetDisplay ?: return "Today's cardiovascular and muscular load."
-        val value = snapshot.strainDisplay ?: score.value.toDouble()
-        val delta = value - target
-        val targetText = formatStrain(target, snapshot.strainScale)
-        return when {
-            abs(delta) <= STRAIN_NEAR_TARGET -> "About your usual for a day like this. Target was $targetText."
-            delta > 0 -> "Above the $targetText your recent weeks and this morning's Recovery pointed at."
-            else -> "Below the $targetText your recent weeks and this morning's Recovery pointed at."
-        }
-    }
-
-    private fun energySentence(score: Score): String {
-        fun points(metric: Metric) = score.contributions.firstOrNull { it.metric == metric }?.points
-        val carryover = points(Metric.CARRYOVER)?.roundToInt()
-        val recharge = points(Metric.OVERNIGHT_RECHARGE)?.roundToInt()
-        val drain = points(Metric.STRAIN_DRAIN)?.roundToInt()
-        return if (carryover != null && recharge != null && drain != null) {
-            "Started at $carryover, the night put back $recharge, the day spent ${abs(drain)}."
-        } else {
-            "Yesterday's leftover energy, plus the night, minus the day."
-        }
-    }
-
-    private fun loadSentence(score: Score): String {
-        val ratio = String.format(Locale.getDefault(), "%.2f", score.value / 100.0)
-        return "This week's training load is $ratio times the month behind it."
-    }
-
-    /** Shown under every score, always, degraded or not. */
-    fun coverageLine(score: Score): String {
-        val present = score.contributions.count { it.present && !it.anomalyFlag }
-        val total = score.contributions.count { !it.anomalyFlag }
-        val percent = (score.dataCoverage * 100).roundToInt()
-        return "$present of $total inputs · $percent% of the weight"
-    }
-
-    /** Qualifiers shown as chips beside a score. */
-    fun flags(score: Score): List<String> = buildList {
-        if (score.warmingUp) add("Still settling")
-        if (score.degraded && !score.warmingUp) add("Lower confidence")
-    }
-
-    /**
-     * The empty state.
-     *
-     * "Refuse rather than guess" only works if the refusal explains itself, so each
-     * reason gets its own sentence rather than a shared apology.
-     */
-    fun unavailableSentence(type: ScoreType, unavailable: ScoreUnavailable): String =
-        when (unavailable.reason) {
-            ScoreUnavailable.Reason.NO_SLEEP_SESSION ->
-                "No sleep session for this night, so there is nothing to score."
-
-            ScoreUnavailable.Reason.NO_REQUIRED_INPUT -> when (type) {
-                ScoreType.STRAIN ->
-                    "No workouts and no waking hours to score. Nothing to measure yet."
-                ScoreType.LOAD_RATIO ->
-                    "No training history to compare this week against."
-                else ->
-                    "Your device did not write the inputs this needs: " +
-                        unavailable.missing.joinToString { metricLabel(it).lowercase(Locale.getDefault()) } + "."
-            }
-
-            ScoreUnavailable.Reason.BASELINE_WARMUP ->
-                "Still learning your usual range. This needs about two weeks of nights " +
-                    "before it means anything, and we would rather show nothing than a " +
-                    "number built on three."
-
-            ScoreUnavailable.Reason.COVERAGE_TOO_LOW -> when (type) {
-                ScoreType.STRAIN ->
-                    "A workout today could not be scored — usually a missing heart rate or " +
-                        "a missing age — so reporting a rest day would be wrong."
-                else ->
-                    "Too much of tonight is missing to score honestly. Missing: " +
-                        unavailable.missing.joinToString { metricLabel(it).lowercase(Locale.getDefault()) } + "."
-            }
-        }
 
     fun metricLabel(metric: Metric): String = when (metric) {
         Metric.HRV_RMSSD -> "Heart rate variability"
         Metric.RESTING_HEART_RATE -> "Resting heart rate"
-        Metric.SLEEP_SCORE -> "Last night's sleep"
         Metric.RESPIRATORY_RATE -> "Breathing rate"
         Metric.SKIN_TEMPERATURE -> "Skin temperature"
         Metric.SPO2 -> "Blood oxygen"
-        Metric.TIME_ASLEEP -> "Time asleep"
-        Metric.SLEEP_EFFICIENCY -> "Sleep efficiency"
-        Metric.SLEEP_LATENCY -> "Time to fall asleep"
-        Metric.REM_MINUTES -> "REM sleep"
-        Metric.DEEP_MINUTES -> "Deep sleep"
-        Metric.RESTFULNESS -> "Restfulness"
-        Metric.SLEEP_TIMING -> "Sleep timing"
-        Metric.BEDTIME_CONSISTENCY -> "Bedtime consistency"
-        Metric.SLEEP_INTERRUPTIONS -> "Interruptions"
-        Metric.HEART_RATE_DIP -> "Overnight heart-rate dip"
         Metric.HEART_RATE -> "Heart rate"
-        Metric.WORKOUT_LOAD -> "Workouts"
-        Metric.PASSIVE_LOAD -> "Rest of the day"
-        Metric.CARRYOVER -> "Yesterday's leftover"
-        Metric.OVERNIGHT_RECHARGE -> "Overnight recharge"
-        Metric.STRAIN_DRAIN -> "Spent today"
-        Metric.NAP_CREDIT -> "Naps"
-        Metric.ACUTE_LOAD -> "This week"
-        Metric.CHRONIC_LOAD -> "Last four weeks"
+        Metric.SLEEPING_HEART_RATE -> "Sleeping heart rate"
+        Metric.HR_NADIR -> "Heart-rate low point"
+        Metric.NIGHT_HR_COVERAGE -> "Night coverage"
+        Metric.MENSTRUATION -> "Period"
         Metric.BODY_WEIGHT -> "Weight"
         Metric.BODY_FAT -> "Body fat"
         Metric.LEAN_MASS -> "Lean mass"
@@ -222,109 +236,18 @@ object ScoreCopy {
 
     /** A raw value in its own unit, rounded to the precision the sensor deserves. */
     fun formatRaw(metric: Metric, raw: Double): String = when (metric) {
-        Metric.TIME_ASLEEP -> formatMinutes(raw)
         Metric.HRV_RMSSD -> "${raw.roundToInt()} ms"
-        Metric.RESTING_HEART_RATE, Metric.HEART_RATE -> "${raw.roundToInt()} bpm"
+        Metric.RESTING_HEART_RATE, Metric.HEART_RATE, Metric.SLEEPING_HEART_RATE -> "${raw.roundToInt()} bpm"
         Metric.RESPIRATORY_RATE -> String.format(Locale.getDefault(), "%.1f br/min", raw)
-        // Health Connect delivers skin temperature as a signed delta from the
-        // device's own baseline, so it is shown as one.
         Metric.SKIN_TEMPERATURE -> String.format(Locale.getDefault(), "%+.2f °C", raw)
-        Metric.SPO2, Metric.SLEEP_EFFICIENCY, Metric.HEART_RATE_DIP ->
-            String.format(Locale.getDefault(), "%.1f%%", raw)
-        Metric.SLEEP_LATENCY, Metric.REM_MINUTES, Metric.DEEP_MINUTES -> "${raw.roundToInt()} min"
-        Metric.SLEEP_INTERRUPTIONS -> raw.roundToInt().toString()
-        Metric.RESTFULNESS, Metric.SLEEP_TIMING, Metric.BEDTIME_CONSISTENCY, Metric.SLEEP_SCORE ->
-            "${raw.roundToInt()} / 100"
-        Metric.WORKOUT_LOAD, Metric.PASSIVE_LOAD, Metric.ACUTE_LOAD, Metric.CHRONIC_LOAD ->
-            "${raw.roundToInt()} TRIMP"
-        Metric.CARRYOVER, Metric.OVERNIGHT_RECHARGE, Metric.STRAIN_DRAIN -> "${raw.roundToInt()} pts"
-        Metric.NAP_CREDIT -> "${raw.roundToInt()} min"
+        Metric.SPO2 -> String.format(Locale.getDefault(), "%.1f%%", raw)
+        Metric.HR_NADIR, Metric.NIGHT_HR_COVERAGE -> "${(raw * 100).roundToInt()}%"
+        Metric.MENSTRUATION -> ""
         Metric.BODY_WEIGHT, Metric.LEAN_MASS, Metric.BONE_MASS, Metric.BODY_WATER ->
             String.format(Locale.getDefault(), "%.1f kg", raw)
         Metric.BODY_FAT -> String.format(Locale.getDefault(), "%.1f%%", raw)
         Metric.BODY_HEIGHT -> String.format(Locale.getDefault(), "%.2f m", raw)
         Metric.BASAL_METABOLIC_RATE, Metric.ACTIVE_ENERGY -> "${raw.roundToInt()} kcal"
-    }
-
-    /** "Usually 52 ± 6 ms over 43 nights", or why there is no such line. */
-    fun baselineText(contribution: Contribution): String {
-        val mean = contribution.baselineMean
-        val sd = contribution.baselineSd
-        if (mean == null || sd == null) {
-            return "Scored against a target, not against your history"
-        }
-        val meanText = formatRaw(contribution.metric, mean)
-        val sdText = formatRaw(contribution.metric, sd).replace("+", "")
-        return "Usually $meanText ± $sdText over ${contribution.baselineSampleCount} nights"
-    }
-
-    /** The deviation, in words. The band alone never has to carry it. */
-    fun deltaText(contribution: Contribution): String {
-        if (!contribution.present) return "Not recorded"
-        val z = contribution.z ?: return "No baseline yet"
-        val sigmas = String.format(Locale.getDefault(), "%.1f", abs(z))
-        return when {
-            abs(z) < NEUTRAL_Z -> "About your usual"
-            z > 0 -> "$sigmas SD better than usual"
-            else -> "$sigmas SD worse than usual"
-        }
-    }
-
-    fun pointsText(contribution: Contribution): String? {
-        if (!contribution.present) return null
-        val rounded = contribution.points.roundToInt()
-        if (rounded == 0 && abs(contribution.points) < 0.5) return "0 pts"
-        return "${if (rounded > 0) "+" else ""}$rounded pts"
-    }
-
-    fun weightText(contribution: Contribution): String {
-        if (contribution.anomalyFlag) return "Flag, not a weighted term"
-        val effective = (contribution.weight * 100).roundToInt()
-        val nominal = (contribution.nominalWeight * 100).roundToInt()
-        return if (contribution.present && effective != nominal) {
-            "Weight $effective% (normally $nominal%, raised to cover a missing input)"
-        } else {
-            "Weight $nominal%"
-        }
-    }
-
-    fun provenanceLabel(provenance: Provenance): String = when (provenance) {
-        Provenance.PUBLISHED -> "Published"
-        Provenance.RECOVERED -> "Recovered"
-        Provenance.INFERRED -> "Inferred"
-        Provenance.OUR_CHOICE -> "Our default"
-    }
-
-    /**
-     * How a score's terms relate to its total. This differs per score and saying so
-     * is the whole reason the explainability screen is trustworthy.
-     */
-    fun arithmeticNote(type: ScoreType): String = when (type) {
-        ScoreType.RECOVERY ->
-            "Recovery squashes a weighted sum of deviations through a logistic curve, " +
-                "which is not a sum. Each figure below is that term's own effect — how far " +
-                "the score moves if it alone is removed — so they deliberately do not add " +
-                "up to the total."
-
-        ScoreType.SLEEP ->
-            "Sleep is a weighted sum of sub-scores, each 0-100, so these figures do add up " +
-                "to the total exactly. Each contributor is scored against a physiological " +
-                "target rather than against your own history, which is how both Oura and " +
-                "Apple work and why there is no baseline range on these rows."
-
-        ScoreType.STRAIN ->
-            "Load is converted to strain through a saturating curve, so two hard sessions " +
-                "do not add to twice one. Each figure is how much of today's strain that " +
-                "part accounts for at the margin."
-
-        ScoreType.ENERGY_BANK ->
-            "These are exact. They are the realised change in the gauge at each step, after " +
-                "the resistance near the top and bottom of the scale, so yesterday's leftover " +
-                "plus the three below is today's closing level."
-
-        ScoreType.LOAD_RATIO ->
-            "A ratio has no additive parts, so there are no points here — only the two " +
-                "averages it divides."
     }
 
     fun formatMinutes(minutes: Double): String {
@@ -334,63 +257,17 @@ object ScoreCopy {
 
     fun formatHours(hours: Double): String = formatMinutes(hours * 60.0)
 
-    /**
-     * Strain, on whichever scale the user is reading.
-     *
-     * Whoop's ceiling is 21 and Bevel's is 100: the same curve with a different
-     * label. The stored value is always the canonical 0-100, so switching scales
-     * relabels a number and never reshapes a history.
-     */
-    fun formatStrain(value: Double, scale: StrainScale): String = when (scale) {
-        StrainScale.WHOOP_21 -> String.format(Locale.getDefault(), "%.1f / 21", value)
-        StrainScale.BEVEL_100 -> value.roundToInt().toString()
+    /** Minutes since midnight of the shown day as a wall clock: "21:30". Past midnight wraps. */
+    fun minuteOfDay(minute: Int): String {
+        val m = Math.floorMod(minute, 1440)
+        return String.format(Locale.getDefault(), "%02d:%02d", m / 60, m % 60)
     }
 
-    /**
-     * The one warm line at the top of Today and in the morning notification. One
-     * sentence of tone, then plain facts everywhere else.
-     */
-    fun warmLine(
-        hour: Int,
-        recovery: Score?,
-        recoveryMissing: ScoreUnavailable?,
-        warmingUp: Boolean,
-        strain: Double?,
-        strainTarget: Double?,
-    ): String {
-        val greeting = when {
-            hour < 12 -> "Morning."
-            hour < 18 -> "Afternoon."
-            else -> "Evening."
-        }
-        val rest = when {
-            hour >= 18 && strain != null && strainTarget != null -> when {
-                abs(strain - strainTarget) <= STRAIN_NEAR_TARGET -> "A solid day, about on target."
-                strain < strainTarget -> "A lighter day than your target."
-                else -> "A bigger day than your target."
-            }
-            recovery != null -> when (recovery.band) {
-                Band.HIGH -> "You bounced back well."
-                Band.MODERATE -> "About a middling recovery."
-                Band.LOW -> "Your body is still catching up."
-            }
-            recoveryMissing?.reason == ScoreUnavailable.Reason.NO_SLEEP_SESSION -> "No sleep showed up for last night."
-            warmingUp -> "Still getting to know your nights."
-            else -> "Here is what last night says."
-        }
-        return "$greeting $rest"
-    }
+    fun load(value: Double): String = value.roundToInt().toString()
 
-    /**
-     * "Better than 35 of 43 nights": tonight ranked against the same earlier nights
-     * its baseline came from. Null where "better" has no direction (temperature is
-     * bad both ways) or there is nothing to rank against.
-     */
-    fun rankText(contribution: Contribution, earlier: List<Double>?): String? {
-        val raw = contribution.raw ?: return null
-        if (earlier.isNullOrEmpty() || contribution.metric.deviationOnly || !contribution.present) return null
-        val better = earlier.count { if (contribution.metric.direction > 0) raw > it else raw < it }
-        return "Better than $better of ${earlier.size} earlier nights"
+    fun drinks(n: Double): String {
+        val shown = if (n < 1.5) "1 drink" else "${n.roundToInt()} drinks"
+        return shown
     }
 
     /** Local wall-clock time, 24-hour: "07:12". */
@@ -399,9 +276,8 @@ object ScoreCopy {
             .atZone(java.time.ZoneId.systemDefault())
             .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
 
-    /** Within this many sigmas of the baseline, a night is simply usual. */
-    const val NEUTRAL_Z = 0.4
+    private fun one(v: Double): String = String.format(Locale.getDefault(), "%.1f", v)
 
-    /** Within this much of target strain, today was about normal. */
-    const val STRAIN_NEAR_TARGET = 8.0
+    /** Within this many sigmas of the baseline, a value is simply usual. */
+    const val NEUTRAL_Z = 0.4
 }

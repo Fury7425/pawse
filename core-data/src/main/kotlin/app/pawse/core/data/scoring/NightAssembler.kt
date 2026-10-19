@@ -37,6 +37,9 @@ data class NightSummary(
     val timezoneShiftMinutes: Int,
     val startEpochMs: Long?,
     val endEpochMs: Long?,
+    /** UTC offsets at bedtime and at waking. The energy curve anchors the body clock on them. */
+    val startOffsetSeconds: Int = 0,
+    val endOffsetSeconds: Int = 0,
 ) {
     val efficiencyPercent: Double?
         get() = if (inBedMinutes <= 0.0) null else 100.0 * asleepMinutes / inBedMinutes
@@ -174,6 +177,8 @@ object NightAssembler {
             timezoneShiftMinutes = (nights.last().zoneOffsetSeconds - nights.first().startZoneOffsetSeconds) / 60,
             startEpochMs = start,
             endEpochMs = end,
+            startOffsetSeconds = startOffset.totalSeconds,
+            endOffsetSeconds = wakeOffset.totalSeconds,
         )
     }
 

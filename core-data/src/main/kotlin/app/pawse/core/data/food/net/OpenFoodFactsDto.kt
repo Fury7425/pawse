@@ -63,6 +63,10 @@ object OpenFoodFactsMapper {
             sugarGrams = nutriments.number("sugars_100g"),
             fiberGrams = nutriments.number("fiber_100g"),
             sodiumMilligrams = sodiumMgPer100g(nutriments),
+            // Open Food Facts states caffeine in g per 100 g...
+            caffeineMg = nutriments.number("caffeine_100g")?.times(1000.0),
+            // ...and alcohol as % vol. 100 ml is taken as 100 g, as for servings.
+            alcoholGrams = nutriments.number("alcohol_100g")?.times(Nutrients.ETHANOL_DENSITY),
         )
         if (per100g.isEmpty) return null
 

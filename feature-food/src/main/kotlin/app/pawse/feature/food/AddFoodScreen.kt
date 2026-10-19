@@ -147,6 +147,18 @@ fun AddFoodScreen(
                     label = FoodCopy::meal,
                 )
 
+                state.portion?.caffeineMg?.let { mg ->
+                    Spacer(Modifier.height(24.dp))
+                    Caption("About ${mg.roundToInt()} mg of caffeine, by the label. Count it toward tonight?")
+                    Spacer(Modifier.height(8.dp))
+                    ChoiceRow(
+                        options = listOf(true, false),
+                        selected = state.countCaffeine,
+                        onSelect = viewModel::setCountCaffeine,
+                        label = { if (it) "Count it" else "Leave it out" },
+                    )
+                }
+
                 Spacer(Modifier.height(24.dp))
                 PortionCard(state.portion)
             }
@@ -199,6 +211,8 @@ private fun NutritionPanel(product: FoodProduct) {
         n.fatGrams?.let { "Fat" to FoodCopy.grams(it) },
         n.sugarGrams?.let { "Sugars" to FoodCopy.grams(it) },
         n.sodiumMilligrams?.let { "Sodium" to "${it.roundToInt()} mg" },
+        n.caffeineMg?.let { "Caffeine" to "${it.roundToInt()} mg" },
+        n.alcoholGrams?.let { "Alcohol" to FoodCopy.grams(it) },
     )
     PawseCard(padding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 12.dp)) {
         Row(verticalAlignment = Alignment.Bottom) {

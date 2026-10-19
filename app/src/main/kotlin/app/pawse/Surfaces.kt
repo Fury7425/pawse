@@ -19,20 +19,18 @@ import androidx.core.content.edit
 import app.pawse.core.data.scoring.ScoringSnapshot
 import app.pawse.core.data.sync.ScoreSurfaces
 import app.pawse.feature.home.ScoreCopy
-import app.pawse.scoring.config.StrainScale
-import app.pawse.scoring.model.Band
-import app.pawse.scoring.model.ScoreType
+import app.pawse.scoring.model.BodyBand
+import app.pawse.scoring.model.IllnessLevel
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import java.time.LocalDate
-import java.time.LocalTime
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** Where a finished read shows up outside the app: the widget, and once a day a notification. */
+/** Where a finished read shows up outside the app: the widget, and once a week a summary. */
 @Singleton
 class AppSurfaces @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -40,8 +38,8 @@ class AppSurfaces @Inject constructor(
     override fun onScored(snapshot: ScoringSnapshot, inBackground: Boolean) {
         TodayWidget.save(context, snapshot)
         TodayWidget.refresh(context)
-        // Only the nightly read notifies. A user who tapped refresh is already looking.
-        if (inBackground) MorningNotification.maybePost(context, snapshot)
+        // Only the nightly read notifies, and only weekly: no daily score push.
+        if (inBackground) WeeklyNotification.maybePost(context, snapshot)
     }
 }
 
@@ -56,9 +54,7 @@ abstract class SurfacesModule {
  * Home-screen widget. Plain RemoteViews: no extra library for one card.
  *
  * The figures are kept in a small preferences file rather than read from the
- * encrypted database, because the launcher can ask for a redraw at any time and
- * opening SQLCipher for four numbers is not worth a cold start. They are the same
- * four numbers the widget shows on the home screen anyway.
+ * encrypted database, because the launcher can ask for a redraw at any time.
  */
 class TodayWidget : AppWidgetProvider() {
 
@@ -70,25 +66,31 @@ class TodayWidget : AppWidgetProvider() {
         private const val PREFS = "pawse_widget"
 
         fun save(context: Context, s: ScoringSnapshot) {
-            val recovery = s.scores[ScoreType.RECOVERY]
-            val strain = s.strainDisplayValue
-            val target = s.strainTarget?.target?.let { if (s.strainScale == StrainScale.WHOOP_21) it * 21.0 / 100.0 else it }
+            val today = s.today
+            val body = today.body
+            val load = today.load
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit {
-                putString("recovery", recovery?.let { "${it.value}%" } ?: "—")
+                putString("body", body?.let { ScoreCopy.bandWord(it.band) } ?: "Settling")
+                putString("guidance", ScoreCopy.guidance(today.guidance))
                 putString(
-                    "band",
-                    recovery?.let { ScoreCopy.bandWord(ScoreType.RECOVERY, it.band) }
-                        ?: s.unavailable[ScoreType.RECOVERY]?.let { "Not scored today" }
-                        ?: "Open Pawse to read last night",
+                    "level",
+                    if (today.illness.level == IllnessLevel.ALERT) ALERT else body?.band?.name,
                 )
-                putString("bandLevel", recovery?.band?.name)
-                putString("sleep", "Sleep  ${s.scores[ScoreType.SLEEP]?.value ?: "—"}")
+                putString("sleep", "Sleep  " + ScoreCopy.debt(today.sleep.debtHours))
+                val low = load.rangeLow
+                val high = load.rangeHigh
                 putString(
-                    "strain",
-                    "Strain  " + (strain?.let { ScoreCopy.formatStrain(it, s.strainScale).substringBefore(" /") } ?: "—") +
-                        (target?.let { " / ${ScoreCopy.formatStrain(it, s.strainScale).substringBefore(" /")}" } ?: ""),
+                    "load",
+                    "Load  " + when {
+                        load.rest -> "rest"
+                        low != null && high != null -> "${ScoreCopy.load(low)}–${ScoreCopy.load(high)}"
+                        else -> "—"
+                    },
                 )
-                putString("energy", "Energy  ${s.scores[ScoreType.ENERGY_BANK]?.value ?: "—"}")
+                putString(
+                    "energy",
+                    s.energy?.let { "Focus  ${ScoreCopy.minuteOfDay(it.focusStart)}–${ScoreCopy.minuteOfDay(it.focusEnd)}" } ?: "",
+                )
                 putString("readAt", if (s.lastSyncEpochMs > 0) ScoreCopy.clock(s.lastSyncEpochMs) else "")
             }
         }
@@ -102,11 +104,11 @@ class TodayWidget : AppWidgetProvider() {
         private fun render(context: Context, manager: AppWidgetManager, ids: IntArray) {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             val views = RemoteViews(context.packageName, R.layout.widget_today).apply {
-                setTextViewText(R.id.widget_recovery, prefs.getString("recovery", "—"))
-                setTextViewText(R.id.widget_band, prefs.getString("band", "Open Pawse to read last night"))
-                setTextColor(R.id.widget_band_dot, bandColor(prefs.getString("bandLevel", null)))
+                setTextViewText(R.id.widget_body, prefs.getString("body", "—"))
+                setTextViewText(R.id.widget_guidance, prefs.getString("guidance", "Open Pawse to read last night"))
+                setTextColor(R.id.widget_band_dot, dotColor(prefs.getString("level", null)))
                 setTextViewText(R.id.widget_sleep, prefs.getString("sleep", ""))
-                setTextViewText(R.id.widget_strain, prefs.getString("strain", ""))
+                setTextViewText(R.id.widget_load, prefs.getString("load", ""))
                 setTextViewText(R.id.widget_energy, prefs.getString("energy", ""))
                 setTextViewText(R.id.widget_read_at, prefs.getString("readAt", ""))
                 setOnClickPendingIntent(R.id.widget_root, openApp(context, route = null, requestCode = 10))
@@ -114,33 +116,35 @@ class TodayWidget : AppWidgetProvider() {
             manager.updateAppWidget(ids, views)
         }
 
-        /** The dark palette's band hues; the dot is always next to the word. */
-        private fun bandColor(level: String?): Int = when (level) {
-            Band.HIGH.name -> 0xFF5CD6A0.toInt()
-            Band.MODERATE.name -> 0xFFF5C451.toInt()
-            Band.LOW.name -> 0xFFFF7A6B.toInt()
+        private const val ALERT = "ALERT"
+
+        /** The dark palette's hues. Red only for an illness alert; the dot always sits by a word. */
+        private fun dotColor(level: String?): Int = when (level) {
+            ALERT -> 0xFFFF7A6B.toInt()
+            BodyBand.ABOVE_NORMAL.name -> 0xFF5CD6A0.toInt()
+            BodyBand.BELOW_NORMAL.name, BodyBand.STRAINED.name -> 0xFFF5C451.toInt()
             else -> 0xFF7E878F.toInt()
         }
     }
 }
 
 /**
- * One calm note a day, after the nightly read, and never a nudge to open the app
- * for its own sake. Low importance: no sound, no heads-up.
+ * One calm summary a week, after a nightly read, never a daily score push and
+ * never a nudge to open the app for its own sake. Low importance: no sound.
  */
-object MorningNotification {
-    private const val CHANNEL = "morning_read"
+object WeeklyNotification {
+    private const val CHANNEL = "weekly_summary"
     private const val ID = 1
     private const val PREFS = "pawse_notify"
+    private const val EVERY_DAYS = 7L
 
     fun maybePost(context: Context, s: ScoringSnapshot) {
         val today = LocalDate.now()
-        if (s.date != today) return
-        val recovery = s.scores[ScoreType.RECOVERY]
-        if (recovery == null && s.scores[ScoreType.SLEEP] == null) return
+        if (s.date != today || s.week.size < 4) return
 
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        if (prefs.getString("last", null) == today.toString()) return
+        val last = prefs.getString("last_weekly", null)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+        if (last != null && last.plusDays(EVERY_DAYS).isAfter(today)) return
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
@@ -149,44 +153,37 @@ object MorningNotification {
         }
 
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(
-            NotificationChannel(CHANNEL, context.getString(R.string.channel_morning), NotificationManager.IMPORTANCE_LOW)
-                .apply { description = context.getString(R.string.channel_morning_description) },
+            NotificationChannel(CHANNEL, context.getString(R.string.channel_weekly), NotificationManager.IMPORTANCE_LOW)
+                .apply { description = context.getString(R.string.channel_weekly_description) },
         )
 
-        val target = s.strainTarget?.target?.let { if (s.strainScale == StrainScale.WHOOP_21) it * 21.0 / 100.0 else it }
-        val title = ScoreCopy.warmLine(
-            hour = LocalTime.now().hour,
-            recovery = recovery,
-            recoveryMissing = s.unavailable[ScoreType.RECOVERY],
-            warmingUp = s.warmup != null,
-            strain = s.strainDisplayValue,
-            strainTarget = target,
-        )
-        val body = buildList {
-            recovery?.let { add("Recovery ${it.value}% · ${ScoreCopy.recoverySentence(it)}") }
-            target?.let { add("Aim for strain around ${ScoreCopy.formatStrain(it, s.strainScale).substringBefore(" /")}.") }
-        }.joinToString(" ").ifEmpty { "Last night's Sleep is ready." }
+        val bands = s.week.mapNotNull { it.body?.band }
+        val usual = bands.groupingBy { it }.eachCount().maxByOrNull { it.value }
+        val body = s.today.weekly?.let { ScoreCopy.weekly(it.pattern) + "." }
+            ?: usual?.let { "Body mostly ${ScoreCopy.bandWord(it.key).lowercase()} (${it.value} of ${s.week.size} days)." }
+        val sleep = "Sleep: ${ScoreCopy.debt(s.today.sleep.debtHours).lowercase()}."
+        val load = s.today.load.formBand?.let { "Load: ${ScoreCopy.form(it).lowercase()}." }
+        val text = listOfNotNull(body, sleep, load).joinToString(" ")
 
         val notification = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_pawse)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setContentTitle("Your week")
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(openApp(context, route = null, requestCode = 20))
-            .addAction(0, "See why", openApp(context, route = ROUTE_EXPLAIN_RECOVERY, requestCode = 21))
-            .addAction(0, "Log breakfast", openApp(context, route = ROUTE_FOOD, requestCode = 22))
+            .addAction(0, "See why", openApp(context, route = ROUTE_EXPLAIN_BODY, requestCode = 21))
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)
             .build()
 
         runCatching { NotificationManagerCompat.from(context).notify(ID, notification) }
-        prefs.edit { putString("last", today.toString()) }
+        prefs.edit { putString("last_weekly", today.toString()) }
     }
 }
 
 const val EXTRA_ROUTE = "app.pawse.route"
 const val ROUTE_FOOD = "food"
-const val ROUTE_EXPLAIN_RECOVERY = "explain_recovery"
+const val ROUTE_EXPLAIN_BODY = "explain_body"
 
 private fun openApp(context: Context, route: String?, requestCode: Int): PendingIntent =
     PendingIntent.getActivity(

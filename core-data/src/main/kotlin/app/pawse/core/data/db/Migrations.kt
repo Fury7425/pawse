@@ -86,5 +86,31 @@ object Migrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2)
+    /**
+     * Scoring v2. Raw samples are untouched, so every baseline survives.
+     *
+     * - The v1 score table goes: v2 recomputes from samples and never read it back.
+     * - Food rows gain caffeine and alcohol, which the energy curve, the illness
+     *   detector and the dose-response model read straight from the barcode log.
+     * - `day_note` holds the morning check-in and one-tap tags.
+     */
+    val MIGRATION_2_3 = object : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("DROP TABLE IF EXISTS `score`")
+            db.execSQL("ALTER TABLE `food_product` ADD COLUMN `caffeineMgPer100g` REAL")
+            db.execSQL("ALTER TABLE `food_product` ADD COLUMN `alcoholGramsPer100g` REAL")
+            db.execSQL("ALTER TABLE `food_log_entry` ADD COLUMN `caffeineMg` REAL")
+            db.execSQL("ALTER TABLE `food_log_entry` ADD COLUMN `alcoholGrams` REAL")
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `day_note` (" +
+                    "`localDate` TEXT NOT NULL, " +
+                    "`feeling` INTEGER, " +
+                    "`tags` TEXT NOT NULL, " +
+                    "`updatedAtEpochMs` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`localDate`))",
+            )
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
 }

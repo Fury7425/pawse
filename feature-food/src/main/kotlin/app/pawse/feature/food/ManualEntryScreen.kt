@@ -96,6 +96,16 @@ fun ManualEntryScreen(
                     Figure("Carbs", state.carbsText, viewModel::setCarbs, "g", Modifier.weight(1f))
                     Figure("Fat", state.fatText, viewModel::setFat, "g", Modifier.weight(1f))
                 }
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Figure("Caffeine", state.caffeineText, viewModel::setCaffeine, "mg", Modifier.weight(1f))
+                    Figure("Alcohol", state.abvText, viewModel::setAbv, "% vol", Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(6.dp))
+                Caption(
+                    "Caffeine shapes tonight's energy curve. Alcohol, with the amount in ml, " +
+                        "helps explain an odd morning instead of calling it poor recovery.",
+                )
                 Spacer(Modifier.height(12.dp))
                 Caption(
                     "Leave the figures blank and it’s still a true record. A blank stays blank rather " +

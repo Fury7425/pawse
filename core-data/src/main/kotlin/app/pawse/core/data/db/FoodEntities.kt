@@ -44,6 +44,9 @@ data class FoodProductEntity(
     val source: String,
     val sourceDetail: String?,
     val fetchedAtEpochMs: Long,
+    val caffeineMgPer100g: Double? = null,
+    /** Grams of ethanol per 100 g: ABV x 0.789, taking 100 ml as 100 g. */
+    val alcoholGramsPer100g: Double? = null,
 )
 
 /**
@@ -83,4 +86,6 @@ data class FoodLogEntryEntity(
     /** [app.pawse.core.data.food.FoodSource] name, copied from the product. */
     val source: String,
     val healthConnectId: String?,
+    val caffeineMg: Double? = null,
+    val alcoholGrams: Double? = null,
 )

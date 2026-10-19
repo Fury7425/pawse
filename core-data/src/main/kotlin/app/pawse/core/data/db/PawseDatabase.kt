@@ -12,20 +12,20 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
         SleepSessionEntity::class,
         SleepStageEntity::class,
         ExerciseSessionEntity::class,
-        ScoreEntity::class,
         FoodProductEntity::class,
         FoodLogEntryEntity::class,
+        DayNoteEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class PawseDatabase : RoomDatabase() {
     abstract fun metricSampleDao(): MetricSampleDao
     abstract fun sleepDao(): SleepDao
     abstract fun exerciseDao(): ExerciseDao
-    abstract fun scoreDao(): ScoreDao
     abstract fun foodProductDao(): FoodProductDao
     abstract fun foodLogDao(): FoodLogDao
+    abstract fun dayNoteDao(): DayNoteDao
 
     companion object {
         const val NAME = "pawse.db"

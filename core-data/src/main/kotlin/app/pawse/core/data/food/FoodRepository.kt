@@ -103,13 +103,15 @@ class FoodRepository @Inject constructor(
         meal: Meal,
         grams: Double,
         servings: Double? = null,
+        /** Caffeine counts only once the user has confirmed the product's figure. */
+        countCaffeine: Boolean = true,
         eatenAt: Instant = Instant.now(),
         zone: ZoneId = ZoneId.systemDefault(),
     ): FoodLogEntry = log(
         productId = product.id.takeIf { it > 0 },
         name = product.name,
         brand = product.brand,
-        nutrients = product.per100g.forGrams(grams),
+        nutrients = product.per100g.forGrams(grams).let { if (countCaffeine) it else it.copy(caffeineMg = null) },
         meal = meal,
         grams = grams,
         servings = servings,

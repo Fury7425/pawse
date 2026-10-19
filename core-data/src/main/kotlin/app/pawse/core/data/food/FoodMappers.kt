@@ -28,6 +28,8 @@ object FoodProductMapper {
             sugarGrams = entity.sugarPer100g,
             fiberGrams = entity.fiberPer100g,
             sodiumMilligrams = entity.sodiumMgPer100g,
+            caffeineMg = entity.caffeineMgPer100g,
+            alcoholGrams = entity.alcoholGramsPer100g,
         ),
         servingGrams = entity.servingGrams,
         servingLabel = entity.servingLabel,
@@ -54,6 +56,8 @@ object FoodProductMapper {
         source = product.source.name,
         sourceDetail = product.sourceDetail,
         fetchedAtEpochMs = product.fetchedAtEpochMs,
+        caffeineMgPer100g = product.per100g.caffeineMg,
+        alcoholGramsPer100g = product.per100g.alcoholGrams,
     )
 
     fun sourceOf(name: String): FoodSource =
@@ -81,6 +85,8 @@ object FoodLogMapper {
             sugarGrams = entity.sugarGrams,
             fiberGrams = entity.fiberGrams,
             sodiumMilligrams = entity.sodiumMilligrams,
+            caffeineMg = entity.caffeineMg,
+            alcoholGrams = entity.alcoholGrams,
         ),
         source = FoodProductMapper.sourceOf(entity.source),
         healthConnectId = entity.healthConnectId,
@@ -107,6 +113,8 @@ object FoodLogMapper {
         sodiumMilligrams = entry.nutrients.sodiumMilligrams,
         source = entry.source.name,
         healthConnectId = entry.healthConnectId,
+        caffeineMg = entry.nutrients.caffeineMg,
+        alcoholGrams = entry.nutrients.alcoholGrams,
     )
 
     /** A day's entries, summed, with the caveat count that makes the sum honest. */

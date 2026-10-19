@@ -176,7 +176,7 @@ private fun PawseNavGraph(initialRoute: String?) {
     LaunchedEffect(initialRoute) {
         when (initialRoute) {
             ROUTE_FOOD -> navController.switchTab(FoodDestinations.LOG)
-            ROUTE_EXPLAIN_RECOVERY -> navController.navigate(HomeDestinations.explain(ScoreType.RECOVERY))
+            ROUTE_EXPLAIN_BODY -> navController.navigate(HomeDestinations.explain(ScoreType.BODY))
         }
     }
 

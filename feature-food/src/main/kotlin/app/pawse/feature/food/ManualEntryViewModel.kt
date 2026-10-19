@@ -21,6 +21,9 @@ data class ManualEntryUiState(
     val proteinText: String = "",
     val carbsText: String = "",
     val fatText: String = "",
+    val caffeineText: String = "",
+    /** Alcohol by volume, percent. With the amount, gives grams: ml x ABV x 0.789. */
+    val abvText: String = "",
     val meal: Meal = Meal.SNACK,
     val logged: Boolean = false,
 ) {
@@ -33,6 +36,10 @@ data class ManualEntryUiState(
             proteinGrams = proteinText.toNumber(),
             carbsGrams = carbsText.toNumber(),
             fatGrams = fatText.toNumber(),
+            caffeineMg = caffeineText.toNumber(),
+            alcoholGrams = abvText.toNumber()?.let { abv ->
+                gramsText.toNumber()?.let { ml -> ml * abv / 100.0 * Nutrients.ETHANOL_DENSITY }
+            },
         )
 
     val grams: Double get() = gramsText.toNumber() ?: 0.0
@@ -54,6 +61,8 @@ class ManualEntryViewModel @Inject constructor(
     fun setProtein(value: String) = _state.update { it.copy(proteinText = value.numeric()) }
     fun setCarbs(value: String) = _state.update { it.copy(carbsText = value.numeric()) }
     fun setFat(value: String) = _state.update { it.copy(fatText = value.numeric()) }
+    fun setCaffeine(value: String) = _state.update { it.copy(caffeineText = value.numeric()) }
+    fun setAbv(value: String) = _state.update { it.copy(abvText = value.numeric()) }
     fun setMeal(meal: Meal) = _state.update { it.copy(meal = meal) }
 
     /**

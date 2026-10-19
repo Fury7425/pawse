@@ -1,24 +1,25 @@
 package app.pawse.core.data.scoring
 
+import app.pawse.core.data.db.DayNoteDao
+import app.pawse.core.data.db.DayNoteEntity
 import app.pawse.core.data.db.ExerciseDao
+import app.pawse.core.data.db.FoodLogDao
 import app.pawse.core.data.db.MetricSampleDao
-import app.pawse.core.data.db.ScoreDao
 import app.pawse.core.data.db.SleepDao
 import app.pawse.core.data.profile.UserProfilePreferences
+import app.pawse.core.data.sync.NightSignalEnricher
 import app.pawse.core.data.sync.SyncPreferences
 import app.pawse.core.data.sync.SyncStep
 import app.pawse.core.data.sync.WorkoutHeartRateEnricher
+import app.pawse.scoring.PawseEngine
 import app.pawse.scoring.config.ScoringConfig
-import app.pawse.scoring.config.StrainScale
+import app.pawse.scoring.model.Calibration
+import app.pawse.scoring.model.DayReport
+import app.pawse.scoring.model.DayTag
+import app.pawse.scoring.model.EnergyForecast
+import app.pawse.scoring.model.Insight
 import app.pawse.scoring.model.Metric
-import app.pawse.scoring.model.Score
-import app.pawse.scoring.model.ScoreType
-import app.pawse.scoring.model.ScoreUnavailable
-import app.pawse.scoring.model.ScoringOutcome
 import app.pawse.scoring.model.UserProfile
-import app.pawse.scoring.sleep.SleepNeed
-import app.pawse.scoring.strain.SessionLoad
-import app.pawse.scoring.strain.StrainTarget
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,37 +33,28 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * What the Home and explainability screens read.
- *
- * The [scores] map holds only what actually scored; [unavailable] holds the
- * reasons for everything that did not, because "no number tonight, and here is
- * why" is a state this app treats as a first-class result rather than an error.
+ * What the Today and explain screens read: one guidance line, three cards, the
+ * energy curve, and everything behind them. The UI recomputes nothing.
  */
 data class ScoringSnapshot(
-    /** Wake date these numbers belong to. Not necessarily today. */
+    /** The morning these numbers belong to. Not necessarily today. */
     val date: LocalDate,
-    val scores: Map<ScoreType, Score>,
-    val unavailable: Map<ScoreType, ScoreUnavailable>,
-    val sleepNeed: SleepNeed?,
-    val strainTarget: StrainTarget?,
-    val sessionLoads: List<SessionLoad>,
-    val strainScale: StrainScale,
-    /** Strain on the scale the user is reading, canonical value untouched. */
-    val strainDisplayValue: Double?,
+    val today: DayReport,
+    /** Up to seven days ending on [date], oldest first. */
+    val week: List<DayReport>,
+    val energy: EnergyForecast?,
+    val insights: List<Insight>,
+    val calibration: Calibration,
     val profile: UserProfile,
-    val nightsInWindow: Int,
+    val checkIn: Int?,
+    val tags: Set<DayTag>,
+    val showNumbers: Boolean,
     val computedAtEpochMs: Long,
     val lastSyncEpochMs: Long,
-    /** Seven days per score, for the small charts on Home and the widget. */
-    val trends: Map<ScoreType, ScoreTrend> = emptyMap(),
-    /** Set while Recovery's baseline is still filling. */
-    val warmup: Warmup? = null,
-    /** Earlier nights per Recovery input, for ranking tonight in the explanation. */
-    val nightValues: Map<Metric, List<Double>> = emptyMap(),
+    val scoringVersion: String,
+    val configHash: String,
 ) {
-    val hasAnyScore: Boolean get() = scores.isNotEmpty()
-
-    /** Strain cannot run at all without an age or a measured maximum heart rate. */
+    /** Banister needs an HRmax; without age or a measured one, sessions fall back to effort. */
     val needsProfile: Boolean
         get() = profile.ageYears == null && profile.measuredMaxHeartRate == null
 }
@@ -74,57 +66,36 @@ sealed interface ScoringState {
 }
 
 /**
- * Storage in, scores out.
+ * Storage in, guidance out.
  *
- * Two things here are worth stating, because both are choices and both are
- * reversible:
- *
- * **Scores are recomputed on demand and persisted afterwards, not read back.**
- * The score table is a record of what was shown, stamped with the config hash and
- * engine version that produced it, and it exists so that retuning a weight
- * tomorrow cannot silently rewrite last week. What the screen shows is the result
- * of running the engine now over the samples we hold now. Recomputing ninety days
- * costs a few milliseconds; getting a stale number because a sync arrived after
- * the last recompute costs the user's trust.
- *
- * **The derived detail is not stored at all.** Sleep need, target strain and the
- * per-session breakdown are functions of the same inputs, so they live in the
- * in-memory [snapshot] and are rebuilt with it rather than being persisted as a
- * second copy that can drift from the score it explains.
+ * **Everything is recomputed on demand from stored samples.** The filter state,
+ * baselines, calibration and insights are all functions of the same rows, so
+ * replaying 120 days is cheaper than keeping a second copy that can drift from
+ * them. It also means v1 and v2 can be replayed on the same stored data.
  */
 @Singleton
 class ScoringRepository @Inject constructor(
     private val metricDao: MetricSampleDao,
     private val sleepDao: SleepDao,
     private val exerciseDao: ExerciseDao,
-    private val scoreDao: ScoreDao,
+    private val foodLogDao: FoodLogDao,
+    private val dayNoteDao: DayNoteDao,
     private val syncPreferences: SyncPreferences,
     private val profilePreferences: UserProfilePreferences,
-    private val enricher: WorkoutHeartRateEnricher,
+    private val workoutEnricher: WorkoutHeartRateEnricher,
+    private val nightEnricher: NightSignalEnricher,
 ) {
 
     private val config: ScoringConfig = ScoringConfig.DEFAULT
-    private val pipeline = ScoringPipeline(config)
+    private val engine = PawseEngine(config)
     private val mutex = Mutex()
 
     private val _state = MutableStateFlow<ScoringState>(ScoringState.Loading)
     val state: StateFlow<ScoringState> = _state.asStateFlow()
 
-    /**
-     * The date the current snapshot was computed *for*, which is not always the
-     * date it ended up describing: before the night is synced, the newest scoreable
-     * day is yesterday.
-     */
     private var lastComputedFor: LocalDate? = null
 
-    /**
-     * Recompute only if what we are holding is stale.
-     *
-     * Opening the explainability screen creates a second view model looking at the
-     * same repository, and rebuilding ninety days to answer "show me the row I am
-     * already looking at" is work nobody asked for. A sync always calls [refresh]
-     * directly, so this can afford to be lazy.
-     */
+    /** Recompute only if what we are holding is stale. */
     suspend fun ensureFresh(today: LocalDate = LocalDate.now()): ScoringState {
         val current = _state.value
         if (current is ScoringState.Ready &&
@@ -136,13 +107,6 @@ class ScoringRepository @Inject constructor(
         return refresh(today)
     }
 
-    /**
-     * Recompute the window, publish the newest day, and persist every day it
-     * produced.
-     *
-     * @param windowDays how far back to rebuild. The default matches the sync
-     *   backfill so the widest configurable baseline window is always full.
-     */
     suspend fun refresh(
         today: LocalDate = LocalDate.now(),
         windowDays: Int = DEFAULT_WINDOW_DAYS,
@@ -151,10 +115,41 @@ class ScoringRepository @Inject constructor(
         val result = runCatching { compute(today, windowDays, onStep) }
         val next = result.fold(
             onSuccess = { ScoringState.Ready(it) },
-            onFailure = { ScoringState.Failed(it.message ?: "Could not compute your scores") },
+            onFailure = { ScoringState.Failed(it.message ?: "Could not work out today") },
         )
         _state.value = next
         next
+    }
+
+    // --- What the user tells us ------------------------------------------------
+
+    /** "How do you feel?" 1..5. Calibrates tomorrow; never moves today's Body. */
+    suspend fun setCheckIn(date: LocalDate, feeling: Int?) {
+        withContext(Dispatchers.IO) {
+            val note = dayNoteDao.get(date.toString())
+            dayNoteDao.upsert(
+                DayNoteEntity(date.toString(), feeling, note?.tags.orEmpty(), System.currentTimeMillis()),
+            )
+        }
+        refresh()
+    }
+
+    suspend fun toggleTag(date: LocalDate, tag: DayTag) {
+        withContext(Dispatchers.IO) {
+            val note = dayNoteDao.get(date.toString())
+            val tags = note?.tags.orEmpty().split(',').filter { it.isNotBlank() }.toMutableSet()
+            if (!tags.remove(tag.name)) tags += tag.name
+            dayNoteDao.upsert(
+                DayNoteEntity(date.toString(), note?.feeling, tags.joinToString(","), System.currentTimeMillis()),
+            )
+        }
+        refresh()
+    }
+
+    /** One button back to the default model. Check-ins before today stop counting. */
+    suspend fun resetCalibration() {
+        profilePreferences.resetCalibration()
+        refresh()
     }
 
     private suspend fun compute(today: LocalDate, windowDays: Int, onStep: (SyncStep) -> Unit): ScoringSnapshot =
@@ -164,142 +159,81 @@ class ScoringRepository @Inject constructor(
             val fromKey = from.toString()
             val toKey = today.toString()
 
-            // Workouts arrive without a heart rate, so go and fetch one before
-            // scoring rather than reporting a rest day for a two-hour ride.
-            runCatching { enricher.enrich(fromKey, toKey) }
+            // Workouts arrive without a heart rate, nights without Pawse's own sleeping HR.
+            runCatching { workoutEnricher.enrich(fromKey, toKey) }
+            runCatching { nightEnricher.enrich(fromKey, toKey) }
 
-            val samples = LOADED_METRICS.flatMap { metric ->
-                metricDao.range(metric.key, fromKey, toKey)
-            }
-
+            val samples = LOADED_METRICS.flatMap { metricDao.range(it.key, fromKey, toKey) }
             val sessions = sleepDao.sessionsBetween(fromKey, toKey)
             val stagesBySession = sessions.associate { it.id to sleepDao.stagesFor(it.id) }
             val nights = sessions.groupBy { it.localDate }
                 .mapValues { (date, forDate) -> NightAssembler.summarise(date, forDate, stagesBySession) }
-
-            val exercises = exerciseDao.between(fromKey, toKey)
-            val sourcePriority = syncPreferences.sourcePriority.first()
+            val notes = dayNoteDao.between(fromKey, toKey)
             val profile = profilePreferences.current()
-            val strainScale = profilePreferences.strainScale.first()
 
-            val dates = generateSequence(from) { it.plusDays(1) }
-                .takeWhile { !it.isAfter(today) }
-                .toList()
-
-            val bundles = DailyInputAssembler(config, sourcePriority)
-                .assemble(dates, samples, nights, exercises)
+            val dates = generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(today) }.toList()
+            val input = DailyInputAssembler(config, syncPreferences.sourcePriority.first()).assemble(
+                dates = dates,
+                samples = samples,
+                nights = nights,
+                sessions = sessions,
+                exercises = exerciseDao.between(fromKey, toKey),
+                // The evening before the first night matters too.
+                food = foodLogDao.between(from.minusDays(1).toString(), toKey),
+                notes = notes,
+                profile = profile,
+                calibrationSince = profilePreferences.calibrationSince.first(),
+            )
 
             onStep(SyncStep.SCORE)
-            val days = pipeline.run(bundles, profile)
-            val now = System.currentTimeMillis()
+            val result = engine.run(input)
 
-            persist(days, now)
-
-            // The most recent night we could actually score, then the most recent
-            // day with anything at all, then today whatever it holds.
-            //
-            // The first clause matters at half past midnight: "today" has no night
-            // yet, and a screen that went blank between midnight and waking would be
-            // hiding a real number behind a calendar boundary. The date is in the
-            // header either way, so yesterday's night is shown as yesterday's.
-            val newest = days.lastOrNull { day ->
-                day.recovery is ScoringOutcome.Scored || day.sleep is ScoringOutcome.Scored
-            } ?: days.lastOrNull { day -> day.anyScored() } ?: days.last()
+            // The most recent morning with a night behind it, then the most recent
+            // day at all. At half past midnight "today" has no night yet, and a
+            // screen that went blank until waking would hide a real reading.
+            val newest = result.days.lastOrNull { it.body != null || it.sleep.lastNightMinutes != null }
+                ?: result.days.last()
+            val week = result.days.filter { !it.date.isAfter(newest.date) }.takeLast(WEEK)
+            val note = notes.firstOrNull { it.localDate == newest.date.toString() }
 
             lastComputedFor = today
-            snapshotOf(
-                day = newest,
-                strainScale = strainScale,
+            ScoringSnapshot(
+                date = newest.date,
+                today = newest,
+                week = week,
+                energy = result.energy.takeIf { newest.date == result.days.last().date },
+                insights = result.insights,
+                calibration = result.calibration,
                 profile = profile,
-                nightsInWindow = nights.values.count { it.hasSession },
-                computedAtEpochMs = now,
+                checkIn = note?.feeling,
+                tags = note?.tags.orEmpty().split(',')
+                    .mapNotNull { runCatching { DayTag.valueOf(it.trim()) }.getOrNull() }.toSet(),
+                showNumbers = profilePreferences.showNumbers.first(),
+                computedAtEpochMs = System.currentTimeMillis(),
                 lastSyncEpochMs = syncPreferences.lastSyncEpochMs.first(),
-            ).copy(
-                trends = SnapshotExtras.trends(days, newest.date),
-                warmup = SnapshotExtras.warmup(
-                    bundles = bundles,
-                    newest = newest.date,
-                    needed = config.baseline.warmupSamples,
-                    windowDays = config.baseline.windowDays,
-                ),
-                nightValues = SnapshotExtras.nightValues(bundles, days, newest.date, config.baseline.windowDays),
+                scoringVersion = result.scoringVersion,
+                configHash = result.configHash,
             )
         }
 
-    private suspend fun persist(days: List<DayScores>, computedAtEpochMs: Long) {
-        val rows = days.flatMap { it.outcomes.values }
-            .mapNotNull { it.scoreOrNull }
-            .map { ScoreMapper.toEntity(it, computedAtEpochMs) }
-        if (rows.isNotEmpty()) scoreDao.upsertAll(rows)
-    }
-
-    private fun snapshotOf(
-        day: DayScores,
-        strainScale: StrainScale,
-        profile: UserProfile,
-        nightsInWindow: Int,
-        computedAtEpochMs: Long,
-        lastSyncEpochMs: Long,
-    ): ScoringSnapshot {
-        val scored = mutableMapOf<ScoreType, Score>()
-        val unavailable = mutableMapOf<ScoreType, ScoreUnavailable>()
-        for ((type, outcome) in day.outcomes) {
-            when (outcome) {
-                is ScoringOutcome.Scored -> scored[type] = outcome.score
-                is ScoringOutcome.NotScored -> unavailable[type] = outcome.unavailable
-            }
-        }
-        return ScoringSnapshot(
-            date = day.date,
-            scores = scored,
-            unavailable = unavailable,
-            sleepNeed = day.sleepNeed,
-            strainTarget = day.strainTarget,
-            sessionLoads = day.sessionLoads,
-            strainScale = strainScale,
-            strainDisplayValue = scored[ScoreType.STRAIN]
-                ?.let { pipeline.strainDisplayValue(it.value, strainScale) },
-            profile = profile,
-            nightsInWindow = nightsInWindow,
-            computedAtEpochMs = computedAtEpochMs,
-            lastSyncEpochMs = lastSyncEpochMs,
-        )
-    }
-
     companion object {
-        /** Matches the sync backfill, so the widest baseline window fills in one pass. */
-        const val DEFAULT_WINDOW_DAYS = 90
+        /** Dose-response looks back 120 days; the baseline needs 67. */
+        const val DEFAULT_WINDOW_DAYS = 120
 
-        /**
-         * How long a computed snapshot stands before [ensureFresh] rebuilds it.
-         * Two minutes: long enough to cover navigating around the app, short enough
-         * that a sync landing in the background is never far from the screen.
-         */
         const val STALE_AFTER_MS = 120_000L
 
-        /**
-         * Metrics read from storage. Everything else the engine consumes is derived
-         * from sleep sessions and exercise sessions rather than stored as a sample.
-         */
+        private const val WEEK = 7
+
         private val LOADED_METRICS = listOf(
             Metric.HRV_RMSSD,
             Metric.RESTING_HEART_RATE,
             Metric.RESPIRATORY_RATE,
             Metric.SPO2,
             Metric.SKIN_TEMPERATURE,
-            Metric.HEART_RATE,
+            Metric.SLEEPING_HEART_RATE,
+            Metric.HR_NADIR,
+            Metric.NIGHT_HR_COVERAGE,
+            Metric.MENSTRUATION,
         )
     }
 }
-
-/** The five outcomes of a day, keyed so callers can iterate rather than branch. */
-val DayScores.outcomes: Map<ScoreType, ScoringOutcome>
-    get() = mapOf(
-        ScoreType.RECOVERY to recovery,
-        ScoreType.SLEEP to sleep,
-        ScoreType.STRAIN to strain,
-        ScoreType.ENERGY_BANK to energyBank,
-        ScoreType.LOAD_RATIO to loadRatio,
-    )
-
-fun DayScores.anyScored(): Boolean = outcomes.values.any { it is ScoringOutcome.Scored }

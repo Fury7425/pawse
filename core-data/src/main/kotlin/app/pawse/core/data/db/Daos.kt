@@ -5,7 +5,6 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
-import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface MetricSampleDao {
@@ -110,52 +109,14 @@ interface ExerciseDao {
 }
 
 @Dao
-interface ScoreDao {
+interface DayNoteDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(score: ScoreEntity)
+    suspend fun upsert(note: DayNoteEntity)
 
-    /** Latest score for a type on a date under the config currently in force. */
-    @Query(
-        """
-        SELECT * FROM score
-        WHERE type = :type AND localDate = :date
-          AND scoringVersion = :version AND configHash = :configHash
-        """,
-    )
-    suspend fun get(type: String, date: String, version: String, configHash: String): ScoreEntity?
+    @Query("SELECT * FROM day_note WHERE localDate = :date")
+    suspend fun get(date: String): DayNoteEntity?
 
-    @Query(
-        """
-        SELECT * FROM score
-        WHERE type = :type AND scoringVersion = :version AND configHash = :configHash
-          AND localDate BETWEEN :from AND :to
-        ORDER BY localDate
-        """,
-    )
-    fun history(
-        type: String,
-        from: String,
-        to: String,
-        version: String,
-        configHash: String,
-    ): Flow<List<ScoreEntity>>
-
-    /** Every stored variant of one day, including ones computed under older weights. */
-    @Query("SELECT * FROM score WHERE type = :type AND localDate = :date ORDER BY computedAtEpochMs DESC")
-    suspend fun allVariants(type: String, date: String): List<ScoreEntity>
-
-    /** Every type at once, for the Home screen's one read. */
-    @Query(
-        """
-        SELECT * FROM score
-        WHERE scoringVersion = :version AND configHash = :configHash
-          AND localDate BETWEEN :from AND :to
-        ORDER BY localDate
-        """,
-    )
-    fun between(from: String, to: String, version: String, configHash: String): Flow<List<ScoreEntity>>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertAll(scores: List<ScoreEntity>)
+    @Query("SELECT * FROM day_note WHERE localDate BETWEEN :from AND :to ORDER BY localDate")
+    suspend fun between(from: String, to: String): List<DayNoteEntity>
 }

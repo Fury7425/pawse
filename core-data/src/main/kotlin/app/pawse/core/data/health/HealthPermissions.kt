@@ -11,6 +11,7 @@ import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord
 import androidx.health.connect.client.records.HeightRecord
 import androidx.health.connect.client.records.LeanBodyMassRecord
+import androidx.health.connect.client.records.MenstruationPeriodRecord
 import androidx.health.connect.client.records.NutritionRecord
 import androidx.health.connect.client.records.OxygenSaturationRecord
 import androidx.health.connect.client.records.Record
@@ -63,6 +64,8 @@ object HealthPermissions {
         HeightRecord::class,
         BasalMetabolicRateRecord::class,
         NutritionRecord::class,
+        // Logged periods, so a healthy luteal phase is not read as a week below normal.
+        MenstruationPeriodRecord::class,
     )
 
     /**
@@ -85,9 +88,10 @@ object HealthPermissions {
     val WRITE: Set<String> = NUTRITION_WRITE + BODY_WRITE
 
     /**
-     * The capability probe reads 30 days back, which is past the default 30-day
-     * history window boundary on some platform versions, so history access is
-     * requested alongside the read grants.
+     * Without it Health Connect only returns data from 30 days before access was
+     * first granted, and a 60-day baseline ending a week ago would need another
+     * month to fill. Asked for at onboarding so baselines start from the watch's
+     * existing history.
      */
     val READ_HISTORY: String = HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY
 

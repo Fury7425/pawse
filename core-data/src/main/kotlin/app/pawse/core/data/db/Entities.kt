@@ -93,28 +93,17 @@ data class ExerciseSessionEntity(
 )
 
 /**
- * A persisted score.
+ * What the user told us about one day: the one-tap morning check-in and tags.
  *
- * [scoringVersion] and [configHash] travel with the row so history stays
- * reproducible when weights change. Recomputing yesterday under a new config
- * writes a new row; it never rewrites the old one in place.
+ * The check-in never feeds a score, only the calibration, so Body cannot turn into
+ * a mirror of mood. Tags explain odd days and hold back alerts.
  */
-@Entity(
-    tableName = "score",
-    primaryKeys = ["type", "localDate", "scoringVersion", "configHash"],
-    indices = [Index(value = ["type", "localDate"])],
-)
-data class ScoreEntity(
-    val type: String,
-    val localDate: String,
-    val value: Int,
-    val band: String,
-    val dataCoverage: Float,
-    val degraded: Boolean,
-    val warmingUp: Boolean,
-    val scoringVersion: String,
-    val configHash: String,
-    /** Serialised List<Contribution>. The explainability screen reads only this. */
-    val contributionsJson: String,
-    val computedAtEpochMs: Long,
+@Entity(tableName = "day_note")
+data class DayNoteEntity(
+    @PrimaryKey val localDate: String,
+    /** "How do you feel?" 1..5, or null when not answered. */
+    val feeling: Int?,
+    /** Comma-separated [app.pawse.scoring.model.DayTag] names. */
+    val tags: String,
+    val updatedAtEpochMs: Long,
 )

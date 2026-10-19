@@ -1,129 +1,59 @@
 package app.pawse.scoring.model
 
 /**
- * Every physiological input the engine can consume.
+ * Every stored quantity the app reads, keyed into the `metric_sample` table.
  *
- * [direction] is the sign applied to the z-score before weighting: +1 when
- * higher-than-baseline is better, -1 when higher-than-baseline is worse.
- * The reports agree on direction for every one of these even where they cannot
- * agree on weight.
- *
- * [deviationOnly] metrics are scored on |x - mu| rather than signed z, because
- * both directions are bad. Temperature is the canonical case: the reports treat
- * a wrist-temperature excursion in either direction as an anomaly flag, never as
- * a continuous "warmer is worse" term.
+ * [direction] is the sign that makes "higher is better" for a z-score: +1 when a
+ * value above your usual is good, -1 when it is bad. [deviationOnly] metrics are
+ * bad in both directions.
  */
 enum class Metric(
     val direction: Int,
     val deviationOnly: Boolean = false,
     val unit: String,
 ) {
-    /**
-     * Overnight RMSSD. Health Connect exposes HRV only as
-     * HeartRateVariabilityRmssdRecord — there is no SDNN record type — so RMSSD
-     * is the sole path on Android. This matches Bevel's default and every
-     * recovery-relevant recommendation in the reports (claude.md §9, §12:
-     * "RMSSD during stable sleep is the most reliable window").
-     */
+    /** One HeartRateVariabilityRmssdRecord. Health Connect has no SDNN type. */
     HRV_RMSSD(direction = +1, unit = "ms"),
 
-    /** Sleeping / resting heart rate. Elevated vs baseline is worse. */
+    /** The writer's own daily resting heart rate. The sleeping-HR fallback. */
     RESTING_HEART_RATE(direction = -1, unit = "bpm"),
 
-    /** Last night's Sleep Score, fed forward into Recovery as one term. */
-    SLEEP_SCORE(direction = +1, unit = "pts"),
-
-    /**
-     * Overnight respiratory rate. Whoop penalises elevations >1.0 breaths/min
-     * above baseline as an early respiratory-illness signal (gemini.txt).
-     * We never call it illness — copy says "outside your usual range".
-     */
     RESPIRATORY_RATE(direction = -1, unit = "br/min"),
 
-    /** Wrist / skin temperature. Anomaly in either direction. */
+    /** Skin temperature as a delta from the device's own baseline. */
     SKIN_TEMPERATURE(direction = -1, deviationOnly = true, unit = "degC"),
 
-    /** Overnight SpO2. Low is the anomaly; high saturates and carries no signal. */
     SPO2(direction = +1, unit = "%"),
 
-    // --- Inputs used by Sleep, Strain, Energy Bank rather than Recovery ---
-    TIME_ASLEEP(direction = +1, unit = "min"),
-    SLEEP_EFFICIENCY(direction = +1, unit = "%"),
-    SLEEP_LATENCY(direction = -1, unit = "min"),
-    REM_MINUTES(direction = +1, unit = "min"),
-    DEEP_MINUTES(direction = +1, unit = "min"),
-    RESTFULNESS(direction = +1, unit = "pts"),
-    SLEEP_TIMING(direction = +1, unit = "pts"),
-    BEDTIME_CONSISTENCY(direction = +1, unit = "pts"),
-    SLEEP_INTERRUPTIONS(direction = -1, unit = "count"),
-    HEART_RATE_DIP(direction = +1, unit = "%"),
-
-    /**
-     * Raw beat-to-beat heart rate, as written by the watch. Distinct from
-     * [HEART_RATE_DIP], which is a derived percentage: storing bpm under the dip's
-     * key would put two different quantities in one column and make the sleep
-     * profile that consumes the dip read heart rates instead.
-     */
+    /** Raw beat-to-beat heart rate. Read on demand over narrow windows, never synced. */
     HEART_RATE(direction = -1, unit = "bpm"),
 
-    // --- Derived terms -----------------------------------------------------
-    // Not sensor inputs. These are engine outputs that appear as Contribution
-    // rows so that Strain, Energy Bank and Load Ratio can be explained with the
-    // same machinery, and persisted through the same contributionsJson column, as
-    // Recovery and Sleep.
-    //
-    // [direction] is meaningless for all of them: none is ever z-scored against a
-    // rolling baseline, so nothing reads the sign. It is set to the intuitive
-    // reading where one exists and should not be relied on.
+    // --- Signal layer --------------------------------------------------------
+    // Written by Pawse itself, once per night, from the raw heart-rate series.
 
-    /** Summed Banister or Edwards TRIMP across the day's scored sessions. */
-    WORKOUT_LOAD(direction = -1, unit = "TRIMP"),
+    /** Lowest 30-minute rolling mean of heart rate inside the night. */
+    SLEEPING_HEART_RATE(direction = -1, unit = "bpm"),
 
-    /** Flat per-waking-hour term standing in for Bevel's passive strain. */
-    PASSIVE_LOAD(direction = -1, unit = "TRIMP"),
+    /** When that lowest window happened, as a fraction of the night (0..1). */
+    HR_NADIR(direction = +1, unit = "fraction"),
 
-    /** Yesterday's leftover Energy Bank level. */
-    CARRYOVER(direction = +1, unit = "pts"),
+    /** Share of the night with any heart-rate data (0..1). Feeds night quality. */
+    NIGHT_HR_COVERAGE(direction = +1, unit = "fraction"),
 
-    /** Points the night put back into the Energy Bank. */
-    OVERNIGHT_RECHARGE(direction = +1, unit = "pts"),
+    /** A MenstruationPeriodRecord interval. Value is always 1. */
+    MENSTRUATION(direction = +1, unit = "flag"),
 
-    /** Points the day took out of the Energy Bank. */
-    STRAIN_DRAIN(direction = -1, unit = "pts"),
-
-    /** Points a nap put back during the day. */
-    NAP_CREDIT(direction = +1, unit = "pts"),
-
-    /** 7-day EWMA of daily load. */
-    ACUTE_LOAD(direction = -1, unit = "TRIMP"),
-
-    /** 28-day EWMA of daily load. */
-    CHRONIC_LOAD(direction = +1, unit = "TRIMP"),
-
-    // --- Body ----------------------------------------------------------------
-    // Written by a smart scale, compared against the user's own usual range on
-    // the Body tab. None of them feeds a score, and none has a "better"
-    // direction: more lean mass or less body fat is a goal some people have and
-    // others do not. [direction] is +1 throughout so a z-score reads as plain
-    // "above / below usual", and the UI never colours it.
+    // --- Body tab ------------------------------------------------------------
+    // Written by a smart scale and compared with the user's own usual range. No
+    // "better" direction; none of them feeds a score.
 
     BODY_WEIGHT(direction = +1, unit = "kg"),
     BODY_FAT(direction = +1, unit = "%"),
-
-    /**
-     * Health Connect's LeanBodyMassRecord: muscle, water and bone together.
-     * There is no skeletal-muscle record type, so a scale's own muscle figure
-     * never reaches the app and this is the closest honest number.
-     */
     LEAN_MASS(direction = +1, unit = "kg"),
     BONE_MASS(direction = +1, unit = "kg"),
     BODY_WATER(direction = +1, unit = "kg"),
     BODY_HEIGHT(direction = +1, unit = "m"),
-
-    /** Measured by the scale when it writes one; otherwise estimated, see Bmr. */
     BASAL_METABOLIC_RATE(direction = +1, unit = "kcal/day"),
-
-    /** ActiveCaloriesBurnedRecord intervals, summed per day at read time. */
     ACTIVE_ENERGY(direction = +1, unit = "kcal"),
     ;
 
