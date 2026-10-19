@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import app.pawse.core.data.profile.Appearance
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.scoring.config.StrainScale
 import app.pawse.scoring.model.BiologicalSex
@@ -49,9 +50,17 @@ import app.pawse.scoring.model.UserProfile
 fun ProfileDialog(
     initialProfile: UserProfile?,
     initialScale: StrainScale?,
+    initialAppearance: Appearance,
     onDismiss: () -> Unit,
-    onSave: (ageYears: Int?, sex: BiologicalSex, measuredMaxHeartRate: Double?, scale: StrainScale?) -> Unit,
+    onSave: (
+        ageYears: Int?,
+        sex: BiologicalSex,
+        measuredMaxHeartRate: Double?,
+        scale: StrainScale?,
+        appearance: Appearance,
+    ) -> Unit,
 ) {
+    var appearance by remember { mutableStateOf(initialAppearance) }
     var age by remember { mutableStateOf(initialProfile?.ageYears?.toString().orEmpty()) }
     var maxHr by remember {
         mutableStateOf(initialProfile?.measuredMaxHeartRate?.toInt()?.toString().orEmpty())
@@ -69,6 +78,7 @@ fun ProfileDialog(
                         sex,
                         maxHr.toDoubleOrNull()?.takeIf { it in 100.0..230.0 },
                         scale,
+                        appearance,
                     )
                 },
             ) { Text("Save") }
@@ -147,6 +157,23 @@ fun ProfileDialog(
                     style = PawseType.Label,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+
+                Spacer(Modifier.height(16.dp))
+                Text("Appearance", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Column {
+                    Appearance.entries.forEach { option ->
+                        Choice(
+                            label = when (option) {
+                                Appearance.SYSTEM -> "Follow the phone"
+                                Appearance.DARK -> "Dark"
+                                Appearance.LIGHT -> "Light"
+                                Appearance.BEDSIDE -> "Bedside, true black and dimmer"
+                            },
+                            selected = appearance == option,
+                            onSelect = { appearance = option },
+                        )
+                    }
+                }
             }
         },
     )

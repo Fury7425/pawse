@@ -78,4 +78,17 @@ class UserProfilePreferences @Inject constructor(
     suspend fun setStrainScale(scale: StrainScale) {
         store.edit { it[strainScaleKey] = scale.name }
     }
+
+    private val appearanceKey = stringPreferencesKey("appearance")
+
+    /** Follows the phone unless the user picks; bedside is the near-black night palette. */
+    val appearance: Flow<Appearance> = store.data.map { prefs ->
+        prefs[appearanceKey]?.let { runCatching { Appearance.valueOf(it) }.getOrNull() } ?: Appearance.SYSTEM
+    }
+
+    suspend fun setAppearance(appearance: Appearance) {
+        store.edit { it[appearanceKey] = appearance.name }
+    }
 }
+
+enum class Appearance { SYSTEM, DARK, LIGHT, BEDSIDE }

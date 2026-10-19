@@ -2,14 +2,19 @@ package app.pawse.feature.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.pawse.core.data.profile.Appearance
 import app.pawse.core.data.profile.UserProfilePreferences
+import app.pawse.core.data.scoring.ScoreTrend
 import app.pawse.core.data.scoring.ScoringRepository
 import app.pawse.core.data.scoring.ScoringSnapshot
 import app.pawse.core.data.scoring.ScoringState
-import app.pawse.core.data.sync.HealthSyncRepository
-import app.pawse.core.data.sync.SyncResult
+import app.pawse.core.data.scoring.Warmup
+import app.pawse.core.data.sync.SyncCoordinator
+import app.pawse.core.data.sync.SyncFailure
+import app.pawse.core.data.sync.SyncStatus
 import app.pawse.scoring.config.StrainScale
 import app.pawse.scoring.model.BiologicalSex
+import app.pawse.scoring.model.Metric
 import app.pawse.scoring.model.Score
 import app.pawse.scoring.model.ScoreType
 import app.pawse.scoring.model.ScoreUnavailable
@@ -52,6 +57,9 @@ data class HomeSnapshot(
     val needsProfile: Boolean,
     val nightsInWindow: Int,
     val lastSyncEpochMs: Long,
+    val trends: Map<ScoreType, ScoreTrend> = emptyMap(),
+    val warmup: Warmup? = null,
+    val nightValues: Map<Metric, List<Double>> = emptyMap(),
 ) {
     fun score(type: ScoreType): Score? = scores[type]
 
@@ -67,36 +75,51 @@ data class HomeSnapshot(
 
 sealed interface HomeUiState {
     data object Loading : HomeUiState
-    data class Ready(val snapshot: HomeSnapshot, val syncing: Boolean) : HomeUiState
+    data class Ready(val snapshot: HomeSnapshot, val sync: SyncStatus) : HomeUiState {
+        val syncing: Boolean get() = sync is SyncStatus.Running
+
+        /** Every grant the scores rest on is off. Scored history stays; nothing new can come. */
+        val accessOff: Boolean get() = (sync as? SyncStatus.Failed)?.reason == SyncFailure.ACCESS_OFF
+    }
     data class Failed(val message: String) : HomeUiState
 }
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val scoring: ScoringRepository,
-    private val sync: HealthSyncRepository,
+    private val coordinator: SyncCoordinator,
     private val profilePreferences: UserProfilePreferences,
 ) : ViewModel() {
 
-    private val syncing = MutableStateFlow(false)
-    private val syncError = MutableStateFlow<String?>(null)
+    private val dismissedAt = MutableStateFlow(0L)
 
-    val state: StateFlow<HomeUiState> = combine(scoring.state, syncing) { scoringState, isSyncing ->
+    val state: StateFlow<HomeUiState> = combine(scoring.state, coordinator.status) { scoringState, status ->
         when (scoringState) {
             is ScoringState.Loading -> HomeUiState.Loading
             is ScoringState.Failed -> HomeUiState.Failed(scoringState.message)
-            is ScoringState.Ready -> HomeUiState.Ready(scoringState.snapshot.toHomeSnapshot(), isSyncing)
+            is ScoringState.Ready -> HomeUiState.Ready(scoringState.snapshot.toHomeSnapshot(), status)
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), initialState())
 
-    /** Last sync failure, if the user asked for one and it did not work. */
-    val error: StateFlow<String?> = syncError
+    /**
+     * The last read's failure, in words, until dismissed. Access-off is not here:
+     * it replaces the screen's lead rather than sitting in a notice.
+     */
+    val error: StateFlow<String?> = combine(coordinator.status, dismissedAt) { status, dismissed ->
+        val failed = status as? SyncStatus.Failed ?: return@combine null
+        if (failed.atEpochMs <= dismissed) return@combine null
+        when (failed.reason) {
+            SyncFailure.READ_FAILED -> "Health Connect didn't answer at ${ScoreCopy.clock(failed.atEpochMs)}. " +
+                "Nothing new was scored, so these are the last numbers we had."
+            SyncFailure.UNAVAILABLE -> "Health Connect isn't available on this phone, so nothing new can be read."
+            SyncFailure.ACCESS_OFF -> null
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), null)
 
     init {
-        // Lazy on purpose: navigating to an explainability screen creates a second
-        // view model over the same repository, and that is not a reason to rebuild
-        // ninety days of history.
-        viewModelScope.launch { scoring.ensureFresh() }
+        // Lazy on purpose: the explainability screen creates a second view model over
+        // the same repository, and that is not a reason to read Health Connect again.
+        viewModelScope.launch { coordinator.runIfStale() }
     }
 
     /**
@@ -105,7 +128,7 @@ class HomeViewModel @Inject constructor(
      * user who is looking at that very number.
      */
     private fun initialState(): HomeUiState = when (val current = scoring.state.value) {
-        is ScoringState.Ready -> HomeUiState.Ready(current.snapshot.toHomeSnapshot(), syncing = false)
+        is ScoringState.Ready -> HomeUiState.Ready(current.snapshot.toHomeSnapshot(), coordinator.status.value)
         is ScoringState.Failed -> HomeUiState.Failed(current.message)
         ScoringState.Loading -> HomeUiState.Loading
     }
@@ -116,28 +139,22 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * Go and ask Health Connect for anything new, then recompute.
-     *
-     * Done in the foreground rather than by enqueueing the worker, because a user
-     * who taps refresh is watching the screen and WorkManager's scheduling is
-     * inexact by design.
+     * Go and ask Health Connect for anything new, then recompute. The numbers on
+     * screen stay put while it works and change in place when it is done.
      */
     fun syncNow() {
-        viewModelScope.launch {
-            syncing.value = true
-            syncError.value = null
-            when (val result = sync.sync()) {
-                is SyncResult.Failed -> syncError.value = result.cause.message ?: "Could not read Health Connect"
-                SyncResult.Unavailable -> syncError.value = "Health Connect is not available on this phone"
-                is SyncResult.Success -> Unit
-            }
-            scoring.refresh()
-            syncing.value = false
-        }
+        viewModelScope.launch { coordinator.run() }
     }
 
     fun dismissError() {
-        syncError.update { null }
+        dismissedAt.update { System.currentTimeMillis() }
+    }
+
+    val appearance: StateFlow<Appearance> = profilePreferences.appearance
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), Appearance.SYSTEM)
+
+    fun setAppearance(appearance: Appearance) {
+        viewModelScope.launch { profilePreferences.setAppearance(appearance) }
     }
 
     /**
@@ -182,6 +199,9 @@ class HomeViewModel @Inject constructor(
             needsProfile = needsProfile,
             nightsInWindow = nightsInWindow,
             lastSyncEpochMs = lastSyncEpochMs,
+            trends = trends,
+            warmup = warmup,
+            nightValues = nightValues,
         )
     }
 

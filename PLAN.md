@@ -131,7 +131,13 @@ Label 13sp, plus a 14sp Delta for signed point contributions.
 4. **Home, baseline-band component, explainability screens** — done, together with the
    pipeline that turns stored samples into scores
 5. **Barcode scanning and the resolver chain** — done
-6. Trend charts, weight tuning, export/import, widgets
+6. **Backend for the redesign** — done: Body tab data (scale records, usual range,
+   composition, BMR, energy eaten vs burned), one sync coordinator that names its three
+   steps, seven-day trends and the warm-up countdown in the snapshot, food Undo /
+   "Again" / week strip, bedside palette, a home-screen widget and one morning note.
+   The screens are wired to all of it at a functional level; matching the design board
+   pixel for pixel (rings, sparklines, sheets) is the next step.
+7. Weight tuning, export/import
 
 ## Assumptions taken
 
@@ -255,6 +261,22 @@ Label 13sp, plus a 14sp Delta for signed point contributions.
 - **Nothing is required except a name.** An entry that records only "porridge, breakfast" is
   a true record of the day; refusing it because the calories are unknown would refuse the part
   the user actually knows.
+- **Body records ride the same sample table.** Weight, body fat, lean mass, bone, water,
+  height and BMR are `metric_sample` rows like everything else, so no migration, and no
+  score reads them. One reading per day, the day's last; a usual range needs five
+  weigh-ins inside 30 days and never includes the one being judged.
+- **A scale's BMR counts only on the morning it was written.** Otherwise Katch–McArdle
+  from lean mass, then Mifflin–St Jeor; the screen always says which.
+- **Active energy is aggregated by Health Connect, not synced.** It de-duplicates writers
+  by the user's own priority and a watch can write an interval a minute.
+- **A type without its grant is skipped by sync, not attempted.** One declined scale
+  permission must not fail the night's read for everything else.
+- **Undo holds the Health Connect delete, not the local one.** The row goes at once;
+  the mirror's delete waits for the Undo window, persisted so a kill cannot orphan it.
+- **The widget reads a small preferences file, not the encrypted database.** Four
+  numbers that are on the home screen anyway, without a SQLCipher cold start.
+- **One notification a day, only from the nightly read.** A user who tapped refresh is
+  already looking. Low importance: no sound, no heads-up.
 - **No frame is ever captured.** The scanner binds `Preview` and `ImageAnalysis` and no
   `ImageCapture` use case exists in the tree, which is the structural reason no photograph of
   anyone's kitchen can reach disk. Both models — barcode and Korean text — run on-device.

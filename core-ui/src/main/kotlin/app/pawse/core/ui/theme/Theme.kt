@@ -54,6 +54,34 @@ private val LightSemantics = PawseSemantics(
     baselineOuter = PawseColors.BaselineOuterLight,
 )
 
+private val NightSemantics = PawseSemantics(
+    bandLow = PawseColors.BandLowNight,
+    bandModerate = PawseColors.BandModerateNight,
+    bandHigh = PawseColors.BandHighNight,
+    better = PawseColors.BandHighNight,
+    worse = PawseColors.BandLowNight,
+    neutral = PawseColors.NeutralNight,
+    baselineBand = PawseColors.BaselineBandNight,
+    baselineOuter = PawseColors.BaselineOuterNight,
+)
+
+private val NightScheme = darkColorScheme(
+    background = PawseColors.NightBackground,
+    onBackground = PawseColors.NightOnSurface,
+    surface = PawseColors.NightSurface,
+    onSurface = PawseColors.NightOnSurface,
+    surfaceVariant = PawseColors.NightSurfaceContainer,
+    onSurfaceVariant = PawseColors.NightOnSurfaceVariant,
+    surfaceContainer = PawseColors.NightSurfaceContainer,
+    surfaceContainerHigh = PawseColors.NightSurfaceContainerHigh,
+    outline = PawseColors.NightOutline,
+    outlineVariant = PawseColors.NightOutlineVariant,
+    primary = PawseColors.NightOnSurface,
+    onPrimary = PawseColors.NightBackground,
+    secondary = PawseColors.NightOnSurfaceVariant,
+    onSecondary = PawseColors.NightBackground,
+)
+
 private val DarkScheme = darkColorScheme(
     background = PawseColors.DarkBackground,
     onBackground = PawseColors.DarkOnSurface,
@@ -97,13 +125,22 @@ private val LightScheme = lightColorScheme(
 @Composable
 fun PawseTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    bedside: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     CompositionLocalProvider(
-        LocalPawseSemantics provides if (darkTheme) DarkSemantics else LightSemantics,
+        LocalPawseSemantics provides when {
+            bedside -> NightSemantics
+            darkTheme -> DarkSemantics
+            else -> LightSemantics
+        },
     ) {
         MaterialTheme(
-            colorScheme = if (darkTheme) DarkScheme else LightScheme,
+            colorScheme = when {
+                bedside -> NightScheme
+                darkTheme -> DarkScheme
+                else -> LightScheme
+            },
             typography = PawseTypography,
             content = content,
         )

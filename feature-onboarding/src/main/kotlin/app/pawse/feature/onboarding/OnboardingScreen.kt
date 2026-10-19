@@ -178,6 +178,33 @@ private fun Report(report: CapabilityReport, error: String?, onContinue: () -> U
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         }
 
+        item {
+            Column(Modifier.padding(vertical = 14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Body", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        text = if (report.weighIns > 0) "Available" else "No scale yet",
+                        style = PawseType.Label,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = if (report.weighIns > 0) {
+                        "Your scale writes weight" +
+                            report.bodyParts.joinToString(prefix = if (report.bodyParts.isEmpty()) "" else ", ") +
+                            ": ${report.weighIns} weigh-ins in ${report.probedDays} days."
+                    } else {
+                        "Nothing writes weight to Health Connect yet. The Body tab fills in on its own when a scale does."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        }
+
         if (report.contestedTypes.isNotEmpty()) {
             item {
                 Spacer(Modifier.height(20.dp))

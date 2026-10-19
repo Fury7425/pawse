@@ -42,6 +42,24 @@ object PawseColors {
     val LightOnSurfaceVariant = Color(0xFF515A62)
     val LightOnSurfaceFaint = Color(0xFF79838B)
 
+    // --- Bedside --------------------------------------------------------------
+    // True black and dimmer band hues, for a phone read with the lights off. Same
+    // roles as dark, every value pulled down so nothing glares.
+    val NightBackground = Color(0xFF000000)
+    val NightSurface = Color(0xFF0A0B0C)
+    val NightSurfaceContainer = Color(0xFF111315)
+    val NightSurfaceContainerHigh = Color(0xFF181B1E)
+    val NightOutline = Color(0xFF2A2F34)
+    val NightOutlineVariant = Color(0xFF1C2024)
+    val NightOnSurface = Color(0xFFD9DCDF)
+    val NightOnSurfaceVariant = Color(0xFF8A929A)
+    val BandLowNight = Color(0xFFE56B5E)
+    val BandModerateNight = Color(0xFFDDB04A)
+    val BandHighNight = Color(0xFF4FBF8E)
+    val NeutralNight = Color(0xFF6E777F)
+    val BaselineBandNight = Color(0xFF1F2428)
+    val BaselineOuterNight = Color(0xFF121518)
+
     // --- Band state (the first of the two places colour is allowed) -------------
     // Bands are 1-33 / 34-66 / 67-100, the split documented identically for Whoop
     // and Bevel. Every one of these is paired with a text label or shape in the UI;

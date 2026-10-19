@@ -2,15 +2,23 @@ package app.pawse.core.data.sync
 
 import androidx.health.connect.client.changes.DeletionChange
 import androidx.health.connect.client.changes.UpsertionChange
+import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.BasalMetabolicRateRecord
+import androidx.health.connect.client.records.BodyFatRecord
+import androidx.health.connect.client.records.BodyWaterMassRecord
+import androidx.health.connect.client.records.BoneMassRecord
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord
+import androidx.health.connect.client.records.HeightRecord
+import androidx.health.connect.client.records.LeanBodyMassRecord
 import androidx.health.connect.client.records.OxygenSaturationRecord
 import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.RespiratoryRateRecord
 import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.SkinTemperatureRecord
 import androidx.health.connect.client.records.SleepSessionRecord
+import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.request.ChangesTokenRequest
 import app.pawse.core.data.db.ExerciseSessionEntity
 import app.pawse.core.data.db.ExerciseDao
@@ -19,6 +27,7 @@ import app.pawse.core.data.db.MetricSampleEntity
 import app.pawse.core.data.db.SleepDao
 import app.pawse.core.data.health.HealthConnectAvailability
 import app.pawse.core.data.health.HealthConnectGateway
+import app.pawse.core.data.health.HealthPermissions
 import app.pawse.scoring.model.Metric
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -31,6 +40,13 @@ import kotlin.reflect.KClass
 sealed interface SyncResult {
     data class Success(val upserted: Int, val deleted: Int, val fullResync: Boolean) : SyncResult
     data object Unavailable : SyncResult
+
+    /**
+     * Health Connect is there but every grant the scores rest on was revoked.
+     * Distinct from a failure: nothing is broken, and retrying will not help until
+     * the user turns access back on.
+     */
+    data object AccessOff : SyncResult
     data class Failed(val cause: Throwable) : SyncResult
 }
 
@@ -69,20 +85,27 @@ class HealthSyncRepository @Inject constructor(
         SkinTemperatureRecord::class,
         SleepSessionRecord::class,
         ExerciseSessionRecord::class,
-    )
+    ) + BODY_TYPES
 
     suspend fun sync(
         zone: ZoneId = ZoneId.systemDefault(),
         backfillDays: Int = DEFAULT_BACKFILL_DAYS,
     ): SyncResult = withContext(Dispatchers.IO) {
         if (gateway.availability() !is HealthConnectAvailability.Available) return@withContext SyncResult.Unavailable
+        // Checked by grant rather than by catching the read's exception, so "access
+        // off" and "Health Connect did not answer" reach the screen as two answers.
+        val granted = runCatching { gateway.grantedPermissions() }.getOrDefault(emptySet())
+        if (granted.intersect(HealthPermissions.CORE_READS).isEmpty()) return@withContext SyncResult.AccessOff
 
         runCatching {
             var upserted = 0
             var deleted = 0
             var fullResync = false
 
-            for (type in trackedTypes) {
+            // A type without its read grant is skipped rather than attempted: asking
+            // for its change token throws, and one declined scale permission must not
+            // fail the night's sync.
+            for (type in trackedTypes.filter { HealthPermission.getReadPermission(it) in granted }) {
                 val name = type.simpleName ?: continue
                 val token = prefs.changeToken(name)
 
@@ -118,12 +141,15 @@ class HealthSyncRepository @Inject constructor(
         }.getOrElse { SyncResult.Failed(it) }
     }
 
-    private suspend fun freshToken(type: KClass<out Record>): String? =
+    private suspend fun freshToken(type: KClass<out Record>): String? = runCatching {
         gateway.client?.getChangesToken(ChangesTokenRequest(recordTypes = setOf(type)))
+    }.getOrNull()
 
     private suspend fun backfill(type: KClass<out Record>, zone: ZoneId, days: Int): Int {
         val end = Instant.now()
-        val start = end.minusSeconds(days * 86_400L)
+        // Weigh-ins are a few a week at most, and the Body tab charts a year.
+        val span = if (type in BODY_TYPES) maxOf(days, BODY_BACKFILL_DAYS) else days
+        val start = end.minusSeconds(span * 86_400L)
         val records = gateway.readOrEmpty(type, start, end)
         persist(records, zone)
         return records.size
@@ -199,6 +225,7 @@ class HealthSyncRepository @Inject constructor(
                         originId = record.metadata.id,
                     )
                 }
+                else -> RecordMapper.body(record, zone)?.let { samples += it }
             }
         }
 
@@ -213,5 +240,19 @@ class HealthSyncRepository @Inject constructor(
          * can configure without a second pass.
          */
         const val DEFAULT_BACKFILL_DAYS = 90
+
+        /** A year, so the Body chart's longest range is full after the first sync. */
+        const val BODY_BACKFILL_DAYS = 365
+
+        /** A scale's records. Followed by change token like everything else. */
+        val BODY_TYPES: List<KClass<out Record>> = listOf(
+            WeightRecord::class,
+            BodyFatRecord::class,
+            LeanBodyMassRecord::class,
+            BoneMassRecord::class,
+            BodyWaterMassRecord::class,
+            HeightRecord::class,
+            BasalMetabolicRateRecord::class,
+        )
     }
 }

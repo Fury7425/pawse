@@ -138,6 +138,34 @@ class ScoreCopyTest {
         ScoreCopy.formatStrain(10.1, StrainScale.WHOOP_21) shouldBe "10.1 / 21"
     }
 
+    @Test
+    fun `the warm line says what kind of night it was, and the evening says what kind of day`() {
+        val high = score(ScoreType.RECOVERY, emptyList()).copy(band = Band.HIGH)
+        ScoreCopy.warmLine(7, high, null, false, null, null) shouldBe "Morning. You bounced back well."
+        ScoreCopy.warmLine(20, high, null, false, 38.0, 41.0) shouldBe "Evening. A solid day, about on target."
+        ScoreCopy.warmLine(20, high, null, false, 6.0, 41.0) shouldBe "Evening. A lighter day than your target."
+        ScoreCopy.warmLine(
+            7,
+            null,
+            ScoreUnavailable(ScoreType.RECOVERY, "2026-03-02", ScoreUnavailable.Reason.NO_SLEEP_SESSION, emptyList()),
+            false,
+            null,
+            null,
+        ) shouldBe "Morning. No sleep showed up for last night."
+        ScoreCopy.warmLine(7, null, null, true, null, null) shouldBe "Morning. Still getting to know your nights."
+    }
+
+    @Test
+    fun `ranking respects which way is better, and refuses where neither is`() {
+        // raw is 50 in the helper.
+        ScoreCopy.rankText(contribution(Metric.HRV_RMSSD), listOf(40.0, 45.0, 55.0)) shouldBe
+            "Better than 2 of 3 earlier nights"
+        ScoreCopy.rankText(contribution(Metric.RESTING_HEART_RATE), listOf(40.0, 45.0, 55.0)) shouldBe
+            "Better than 1 of 3 earlier nights"
+        ScoreCopy.rankText(contribution(Metric.SKIN_TEMPERATURE), listOf(1.0)) shouldBe null
+        ScoreCopy.rankText(contribution(Metric.HRV_RMSSD), emptyList()) shouldBe null
+    }
+
     private fun snapshot() = HomeSnapshot(
         date = java.time.LocalDate.parse("2026-03-02"),
         scores = emptyMap(),

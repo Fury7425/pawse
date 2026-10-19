@@ -63,6 +63,9 @@ interface FoodLogDao {
     @Query("SELECT * FROM food_log_entry WHERE localDate BETWEEN :from AND :to ORDER BY eatenAtEpochMs")
     suspend fun between(from: String, to: String): List<FoodLogEntryEntity>
 
+    @Query("SELECT * FROM food_log_entry WHERE localDate BETWEEN :from AND :to ORDER BY eatenAtEpochMs")
+    fun observeBetween(from: String, to: String): Flow<List<FoodLogEntryEntity>>
+
     /** Entries not yet mirrored into Health Connect, for a retry after a denied grant. */
     @Query("SELECT * FROM food_log_entry WHERE healthConnectId IS NULL ORDER BY eatenAtEpochMs DESC LIMIT :limit")
     suspend fun notMirrored(limit: Int = 100): List<FoodLogEntryEntity>

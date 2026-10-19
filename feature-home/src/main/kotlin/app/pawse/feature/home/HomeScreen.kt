@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -27,10 +28,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import android.content.Intent
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.health.connect.client.HealthConnectClient
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.pawse.core.data.sync.SyncFailure
+import app.pawse.core.data.sync.SyncStatus
+import app.pawse.core.data.sync.SyncStep
 import app.pawse.core.ui.component.BaselineBandRow
 import app.pawse.core.ui.component.Chip
 import app.pawse.core.ui.component.ScoreHero
@@ -62,12 +69,12 @@ import kotlin.math.roundToInt
 @Composable
 fun HomeScreen(
     onOpenExplain: (ScoreType) -> Unit,
-    onOpenFood: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
+    val appearance by viewModel.appearance.collectAsStateWithLifecycle()
     var editingProfile by remember { mutableStateOf(false) }
 
     Scaffold(modifier = modifier) { padding ->
@@ -93,11 +100,11 @@ fun HomeScreen(
 
             is HomeUiState.Ready -> HomeContent(
                 snapshot = current.snapshot,
-                syncing = current.syncing,
+                sync = current.sync,
+                accessOff = current.accessOff,
                 syncError = error,
                 contentPadding = padding,
                 onOpenExplain = onOpenExplain,
-                onOpenFood = onOpenFood,
                 onSyncNow = viewModel::syncNow,
                 onEditProfile = { editingProfile = true },
                 onDismissError = viewModel::dismissError,
@@ -110,10 +117,12 @@ fun HomeScreen(
         ProfileDialog(
             initialProfile = snapshot?.profile,
             initialScale = snapshot?.strainScale,
+            initialAppearance = appearance,
             onDismiss = { editingProfile = false },
-            onSave = { age, sex, maxHr, scale ->
+            onSave = { age, sex, maxHr, scale, chosenAppearance ->
                 viewModel.saveProfile(age, sex, maxHr)
                 scale?.let(viewModel::setStrainScale)
+                viewModel.setAppearance(chosenAppearance)
                 editingProfile = false
             },
         )
@@ -140,34 +149,81 @@ private fun Loading(modifier: Modifier = Modifier) {
 @Composable
 private fun HomeContent(
     snapshot: HomeSnapshot,
-    syncing: Boolean,
+    sync: SyncStatus,
+    accessOff: Boolean,
     syncError: String?,
     contentPadding: PaddingValues,
     onOpenExplain: (ScoreType) -> Unit,
-    onOpenFood: () -> Unit,
     onSyncNow: () -> Unit,
     onEditProfile: () -> Unit,
     onDismissError: () -> Unit,
 ) {
     val hero = snapshot.heroType
     val heroScore = snapshot.score(hero)
+    val context = LocalContext.current
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
             top = contentPadding.calculateTopPadding() + 16.dp,
-            bottom = contentPadding.calculateBottomPadding() + 40.dp,
+            bottom = contentPadding.calculateBottomPadding() + 120.dp,
         ),
     ) {
         item {
             Header(
                 date = snapshot.date,
-                syncing = syncing,
+                sync = sync,
+                lastSyncEpochMs = snapshot.lastSyncEpochMs,
                 onSyncNow = onSyncNow,
-                onOpenFood = onOpenFood,
                 modifier = Modifier.padding(horizontal = 24.dp),
             )
             Spacer(Modifier.height(20.dp))
+            Text(
+                text = ScoreCopy.warmLine(
+                    hour = java.time.LocalTime.now().hour,
+                    recovery = snapshot.score(ScoreType.RECOVERY),
+                    recoveryMissing = snapshot.unavailable[ScoreType.RECOVERY],
+                    warmingUp = snapshot.warmup != null,
+                    strain = snapshot.strainDisplay,
+                    strainTarget = snapshot.strainTargetDisplay,
+                ),
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.padding(horizontal = 24.dp),
+            )
+            Spacer(Modifier.height(20.dp))
+        }
+
+        if (accessOff) {
+            item {
+                Notice(
+                    text = "Pawse can't read your data right now. Access to Health Connect was " +
+                        "turned off, so nothing new can be scored. Everything already scored is " +
+                        "still on this phone, untouched.",
+                    actionLabel = "Turn access back on",
+                    onAction = {
+                        runCatching {
+                            context.startActivity(Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS))
+                        }
+                    },
+                    modifier = Modifier.padding(horizontal = 24.dp),
+                )
+                Spacer(Modifier.height(20.dp))
+            }
+        }
+
+        snapshot.warmup?.takeIf { heroScore == null || hero != ScoreType.RECOVERY }?.let { warmup ->
+            item {
+                Notice(
+                    text = "Recovery · night ${warmup.nightsCollected + 1} of ${warmup.nightsNeeded}. " +
+                        "Ready around ${warmup.readyAround.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.getDefault()))}. " +
+                        "Recovery compares each night with your own usual range, and a number built " +
+                        "on a few nights would be a guess.",
+                    actionLabel = null,
+                    onAction = {},
+                    modifier = Modifier.padding(horizontal = 24.dp),
+                )
+                Spacer(Modifier.height(20.dp))
+            }
         }
 
         item {
@@ -283,29 +339,64 @@ private fun HomeContent(
     }
 }
 
+/**
+ * The date and what happened: when Health Connect was last read, or which of the
+ * three steps is running now. The scores below never blank while it works.
+ */
 @Composable
 private fun Header(
     date: LocalDate,
-    syncing: Boolean,
+    sync: SyncStatus,
+    lastSyncEpochMs: Long,
     onSyncNow: () -> Unit,
-    onOpenFood: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            text = date.format(DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.getDefault())),
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Spacer(Modifier.weight(1f))
-        // The food log is one tap from the number, not buried in a menu: it is the
-        // other half of the app, and the only part the user actively feeds.
-        TextButton(onClick = onOpenFood) { Text("Food") }
-        if (syncing) {
-            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-        } else {
-            TextButton(onClick = onSyncNow) { Text("Refresh") }
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = date.format(DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.getDefault())),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = statusLine(sync, lastSyncEpochMs),
+                    style = PawseType.Label,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (sync is SyncStatus.Running) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+            } else {
+                TextButton(onClick = onSyncNow) { Text("Refresh") }
+            }
         }
+        if (sync is SyncStatus.Running) {
+            Spacer(Modifier.height(10.dp))
+            LinearProgressIndicator(
+                progress = { (sync.step.ordinal + 1) / SyncStep.entries.size.toFloat() },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+private fun statusLine(sync: SyncStatus, lastSyncEpochMs: Long): String = when (sync) {
+    is SyncStatus.Running -> "Reading Health Connect · step ${sync.step.ordinal + 1} of ${SyncStep.entries.size}, " +
+        when (sync.step) {
+            SyncStep.READ -> "reading"
+            SyncStep.COMPARE -> "comparing"
+            SyncStep.SCORE -> "scoring"
+        }
+    is SyncStatus.Failed -> when (sync.reason) {
+        SyncFailure.READ_FAILED -> "Health Connect didn't answer at ${ScoreCopy.clock(sync.atEpochMs)}"
+        SyncFailure.ACCESS_OFF -> "Access to Health Connect is off"
+        SyncFailure.UNAVAILABLE -> "Health Connect isn't available"
+    }
+    else -> if (lastSyncEpochMs > 0) {
+        "Read from Health Connect at ${ScoreCopy.clock(lastSyncEpochMs)}"
+    } else {
+        "Not read from Health Connect yet"
     }
 }
 
@@ -409,14 +500,14 @@ private fun SectionLabel(text: String, modifier: Modifier = Modifier) {
 @Composable
 private fun Notice(
     text: String,
-    actionLabel: String,
+    actionLabel: String?,
     onAction: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surfaceContainer,
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(16.dp),
     ) {
         Column(Modifier.padding(16.dp)) {
             Text(
@@ -424,8 +515,10 @@ private fun Notice(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            Spacer(Modifier.height(8.dp))
-            TextButton(onClick = onAction, contentPadding = PaddingValues(0.dp)) { Text(actionLabel) }
+            if (actionLabel != null) {
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = onAction, contentPadding = PaddingValues(0.dp)) { Text(actionLabel) }
+            }
         }
     }
 }

@@ -73,7 +73,7 @@ object ScoreCopy {
         ScoreType.LOAD_RATIO -> loadSentence(score)
     }
 
-    private fun recoverySentence(score: Score): String {
+    fun recoverySentence(score: Score): String {
         val driver = score.contributions
             .filter { it.present && !it.anomalyFlag && it.z != null }
             .maxByOrNull { abs(it.points) }
@@ -210,6 +210,14 @@ object ScoreCopy {
         Metric.NAP_CREDIT -> "Naps"
         Metric.ACUTE_LOAD -> "This week"
         Metric.CHRONIC_LOAD -> "Last four weeks"
+        Metric.BODY_WEIGHT -> "Weight"
+        Metric.BODY_FAT -> "Body fat"
+        Metric.LEAN_MASS -> "Lean mass"
+        Metric.BONE_MASS -> "Bone mass"
+        Metric.BODY_WATER -> "Body water"
+        Metric.BODY_HEIGHT -> "Height"
+        Metric.BASAL_METABOLIC_RATE -> "Basal metabolic rate"
+        Metric.ACTIVE_ENERGY -> "Active energy"
     }
 
     /** A raw value in its own unit, rounded to the precision the sensor deserves. */
@@ -231,6 +239,11 @@ object ScoreCopy {
             "${raw.roundToInt()} TRIMP"
         Metric.CARRYOVER, Metric.OVERNIGHT_RECHARGE, Metric.STRAIN_DRAIN -> "${raw.roundToInt()} pts"
         Metric.NAP_CREDIT -> "${raw.roundToInt()} min"
+        Metric.BODY_WEIGHT, Metric.LEAN_MASS, Metric.BONE_MASS, Metric.BODY_WATER ->
+            String.format(Locale.getDefault(), "%.1f kg", raw)
+        Metric.BODY_FAT -> String.format(Locale.getDefault(), "%.1f%%", raw)
+        Metric.BODY_HEIGHT -> String.format(Locale.getDefault(), "%.2f m", raw)
+        Metric.BASAL_METABOLIC_RATE, Metric.ACTIVE_ENERGY -> "${raw.roundToInt()} kcal"
     }
 
     /** "Usually 52 ± 6 ms over 43 nights", or why there is no such line. */
@@ -333,9 +346,62 @@ object ScoreCopy {
         StrainScale.BEVEL_100 -> value.roundToInt().toString()
     }
 
+    /**
+     * The one warm line at the top of Today and in the morning notification. One
+     * sentence of tone, then plain facts everywhere else.
+     */
+    fun warmLine(
+        hour: Int,
+        recovery: Score?,
+        recoveryMissing: ScoreUnavailable?,
+        warmingUp: Boolean,
+        strain: Double?,
+        strainTarget: Double?,
+    ): String {
+        val greeting = when {
+            hour < 12 -> "Morning."
+            hour < 18 -> "Afternoon."
+            else -> "Evening."
+        }
+        val rest = when {
+            hour >= 18 && strain != null && strainTarget != null -> when {
+                abs(strain - strainTarget) <= STRAIN_NEAR_TARGET -> "A solid day, about on target."
+                strain < strainTarget -> "A lighter day than your target."
+                else -> "A bigger day than your target."
+            }
+            recovery != null -> when (recovery.band) {
+                Band.HIGH -> "You bounced back well."
+                Band.MODERATE -> "About a middling recovery."
+                Band.LOW -> "Your body is still catching up."
+            }
+            recoveryMissing?.reason == ScoreUnavailable.Reason.NO_SLEEP_SESSION -> "No sleep showed up for last night."
+            warmingUp -> "Still getting to know your nights."
+            else -> "Here is what last night says."
+        }
+        return "$greeting $rest"
+    }
+
+    /**
+     * "Better than 35 of 43 nights": tonight ranked against the same earlier nights
+     * its baseline came from. Null where "better" has no direction (temperature is
+     * bad both ways) or there is nothing to rank against.
+     */
+    fun rankText(contribution: Contribution, earlier: List<Double>?): String? {
+        val raw = contribution.raw ?: return null
+        if (earlier.isNullOrEmpty() || contribution.metric.deviationOnly || !contribution.present) return null
+        val better = earlier.count { if (contribution.metric.direction > 0) raw > it else raw < it }
+        return "Better than $better of ${earlier.size} earlier nights"
+    }
+
+    /** Local wall-clock time, 24-hour: "07:12". */
+    fun clock(epochMs: Long): String =
+        java.time.Instant.ofEpochMilli(epochMs)
+            .atZone(java.time.ZoneId.systemDefault())
+            .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+
     /** Within this many sigmas of the baseline, a night is simply usual. */
     const val NEUTRAL_Z = 0.4
 
     /** Within this much of target strain, today was about normal. */
-    private const val STRAIN_NEAR_TARGET = 8.0
+    const val STRAIN_NEAR_TARGET = 8.0
 }
