@@ -24,6 +24,8 @@ data class AddFoodUiState(
     val amountText: String = "100",
     val usingServings: Boolean = false,
     val meal: Meal = Meal.SNACK,
+    /** The meal the clock suggested, so the screen can say "Snack fits the time". */
+    val suggestedMeal: Meal = Meal.SNACK,
     val logged: Boolean = false,
 ) {
     /** Grams the entry will be logged as, or null while the field is unusable. */
@@ -54,7 +56,7 @@ class AddFoodViewModel @Inject constructor(
     private val productId: Long = savedStateHandle.get<String>(FoodDestinations.PRODUCT_ARG)
         ?.toLongOrNull() ?: 0L
 
-    private val _state = MutableStateFlow(AddFoodUiState(meal = mealForTimeOfDay()))
+    private val _state = MutableStateFlow(mealForTimeOfDay().let { AddFoodUiState(meal = it, suggestedMeal = it) })
     val state: StateFlow<AddFoodUiState> = _state.asStateFlow()
 
     init {

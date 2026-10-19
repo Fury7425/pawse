@@ -166,6 +166,24 @@ class ScoreCopyTest {
         ScoreCopy.rankText(contribution(Metric.HRV_RMSSD), emptyList()) shouldBe null
     }
 
+    @Test
+    fun `the target says which way the night moved it, on the user's scale`() {
+        ScoreCopy.targetNote(41.0, 38.0, StrainScale.BEVEL_100) shouldBe "A good night moved it up from your usual 38"
+        ScoreCopy.targetNote(30.0, 38.0, StrainScale.BEVEL_100) shouldContain "moved it down from your usual 38"
+        ScoreCopy.targetNote(38.4, 38.0, StrainScale.BEVEL_100) shouldBe "Your usual for a day like this"
+        ScoreCopy.targetNote(8.6, 8.0, StrainScale.WHOOP_21) shouldContain "usual 8.0"
+        ScoreCopy.strainNumber(8.61, StrainScale.WHOOP_21) shouldBe "8.6"
+    }
+
+    @Test
+    fun `a sleep term's sub-score is read back from its points, and time asleep is told against the need`() {
+        val asleep = contribution(Metric.TIME_ASLEEP).copy(raw = 444.0, weight = 0.35, points = 30.8)
+        ScoreCopy.subScore(asleep) shouldBe 88
+        ScoreCopy.sleepNote(asleep, needHours = 7.0 + 50.0 / 60.0) shouldBe "26 min short of your need"
+        ScoreCopy.sleepNote(contribution(Metric.REM_MINUTES, present = false), 8.0) shouldBe "Not recorded"
+        ScoreCopy.subScore(contribution(Metric.REM_MINUTES, present = false)) shouldBe null
+    }
+
     private fun snapshot() = HomeSnapshot(
         date = java.time.LocalDate.parse("2026-03-02"),
         scores = emptyMap(),

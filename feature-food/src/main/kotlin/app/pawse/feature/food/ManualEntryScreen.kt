@@ -1,33 +1,51 @@
 package app.pawse.feature.food
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pawse.core.data.food.Meal
+import app.pawse.core.ui.component.BottomAction
+import app.pawse.core.ui.component.Choices
+import app.pawse.core.ui.component.FieldLabel
+import app.pawse.core.ui.component.Glyphs
+import app.pawse.core.ui.component.QuietButton
+import app.pawse.core.ui.component.SectionLabel
+import app.pawse.core.ui.component.UnitField
 import app.pawse.core.ui.theme.PawseType
 
 /**
@@ -50,97 +68,112 @@ fun ManualEntryScreen(
     viewModel: ManualEntryViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     LaunchedEffect(state.logged) {
         if (state.logged) onDone()
     }
 
-    Scaffold(modifier = modifier) { padding ->
+    Box(
+        modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+    ) {
         Column(
-            modifier = Modifier
+            Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(rememberScrollState())
+                .padding(start = 24.dp, end = 24.dp, top = top + 12.dp, bottom = bottom + 140.dp),
         ) {
-            Row(modifier = Modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onBack) { Text("Back") }
-            }
+            QuietButton("Food", onBack, Modifier.offset(x = (-12).dp), glyph = Glyphs.BACK)
+            Text(
+                "Add without a barcode",
+                style = PawseType.Headline,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(top = 12.dp),
+            )
 
-            Column(Modifier.padding(horizontal = 24.dp)) {
-                Text("Add it by hand", style = MaterialTheme.typography.headlineSmall)
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = "Only the name is required. Fill in what you know and leave the rest — " +
-                        "a blank stays blank rather than becoming a zero, and the day's total says " +
-                        "how many items it could not price.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            FieldLabel("What was it?", Modifier.padding(top = 20.dp))
+            UnitField(
+                value = state.name,
+                onValueChange = viewModel::setName,
+                unit = "",
+                keyboardType = KeyboardType.Text,
+            )
 
-                Spacer(Modifier.height(20.dp))
-                OutlinedTextField(
-                    value = state.name,
-                    onValueChange = viewModel::setName,
-                    label = { Text("What was it?") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+            FieldLabel("Which meal?", Modifier.padding(top = 16.dp))
+            Choices(
+                options = Meal.entries.map(FoodCopy::meal),
+                selected = Meal.entries.indexOf(state.meal),
+                onSelect = { viewModel.setMeal(Meal.entries[it]) },
+            )
 
-                Spacer(Modifier.height(12.dp))
-                NumberField(
-                    value = state.gramsText,
-                    onValueChange = viewModel::setGrams,
-                    label = "Grams (optional)",
-                )
-
-                Spacer(Modifier.height(20.dp))
-                Text(
-                    "For the portion you ate",
-                    style = PawseType.Label,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(8.dp))
-                NumberField(state.kcalText, viewModel::setKcal, "Calories (kcal)")
-                Spacer(Modifier.height(8.dp))
-                NumberField(state.proteinText, viewModel::setProtein, "Protein (g)")
-                Spacer(Modifier.height(8.dp))
-                NumberField(state.carbsText, viewModel::setCarbs, "Carbohydrate (g)")
-                Spacer(Modifier.height(8.dp))
-                NumberField(state.fatText, viewModel::setFat, "Fat (g)")
-
-                Spacer(Modifier.height(20.dp))
-                Text("Which meal?", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(8.dp))
+            SectionLabel("Figures, if you know them", Modifier.padding(top = 20.dp, bottom = 6.dp), trailing = "per portion")
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Figure("Amount", state.gramsText, viewModel::setGrams, "g", Modifier.fillMaxWidth())
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Meal.entries.forEach { meal ->
-                        FilterChip(
-                            selected = state.meal == meal,
-                            onClick = { viewModel.setMeal(meal) },
-                            label = { Text(FoodCopy.meal(meal)) },
-                        )
-                    }
+                    Figure("Energy", state.kcalText, viewModel::setKcal, "kcal", Modifier.weight(1f))
+                    Figure("Protein", state.proteinText, viewModel::setProtein, "g", Modifier.weight(1f))
                 }
-
-                Spacer(Modifier.height(24.dp))
-                Button(
-                    onClick = viewModel::log,
-                    enabled = state.canLog,
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("Add to log") }
-                Spacer(Modifier.height(32.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Figure("Carbs", state.carbsText, viewModel::setCarbs, "g", Modifier.weight(1f))
+                    Figure("Fat", state.fatText, viewModel::setFat, "g", Modifier.weight(1f))
+                }
             }
+            Text(
+                "Leave the figures blank and it's still a true record. The day's total will say it's one item short.",
+                style = PawseType.Label,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 12.dp),
+            )
         }
+
+        BottomAction(
+            text = if (state.canLog) "Add ${state.name.trim()} to ${FoodCopy.meal(state.meal)}" else "Name it first",
+            onClick = viewModel::log,
+            enabled = state.canLog,
+        )
     }
 }
 
+/** One figure in its own tile: the name above, the number and its unit below. Blank reads "—". */
 @Composable
-private fun NumberField(value: String, onValueChange: (String) -> Unit, label: String) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { Text(label) },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        modifier = Modifier.fillMaxWidth(),
-    )
+private fun Figure(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    unit: String,
+    modifier: Modifier = Modifier,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(12.dp)
+    val style = PawseType.MetricValue.copy(color = MaterialTheme.colorScheme.onSurface)
+    Column(
+        modifier
+            .height(64.dp)
+            .background(MaterialTheme.colorScheme.surfaceContainer, shape)
+            .border(1.dp, if (focused) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outlineVariant, shape)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Text(label, style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) {
+                if (value.isEmpty()) Text("—", style = style.copy(color = MaterialTheme.colorScheme.onSurfaceVariant))
+                BasicTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    singleLine = true,
+                    textStyle = style,
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onFocusChanged { focused = it.isFocused }
+                        .semantics { contentDescription = "$label in $unit" },
+                )
+            }
+            Text(unit, style = PawseType.Body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
 }

@@ -50,6 +50,7 @@ fun Contribution.toRowState(): BaselineRowState = BaselineRowState(
     pointsText = ScoreCopy.pointsText(this),
     z = z?.toFloat(),
     direction = direction(),
+    present = present,
 )
 
 private fun Contribution.direction(): DeviationDirection {

@@ -46,6 +46,13 @@ object FoodCopy {
         FoodSource.MANUAL -> "You entered these figures."
     }
 
+    /** The short form beside the source chip on the add screen. */
+    fun sourceShortNote(source: FoodSource): String = when (source) {
+        FoodSource.OPEN_FOOD_FACTS -> "Anyone can edit it. Worth a glance at the packet."
+        FoodSource.LABEL_OCR -> "Read by the camera. Check it against the packet."
+        FoodSource.MANUAL -> "You entered these figures."
+    }
+
     fun lookupFailure(reason: FoodLookupFailure): String = when (reason) {
         FoodLookupFailure.NOT_FOUND ->
             "No match for that barcode. Point the camera at the nutrition panel instead, " +

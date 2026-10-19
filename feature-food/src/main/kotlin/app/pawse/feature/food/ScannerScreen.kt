@@ -45,6 +45,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pawse.core.data.food.FoodLookupFailure
 import app.pawse.core.data.food.ocr.LabelBasis
 import app.pawse.core.ui.component.Chip
+import app.pawse.core.ui.component.Pictogram
+import app.pawse.core.ui.component.PrimaryButton
+import app.pawse.core.ui.component.SecondaryButton
+import app.pawse.core.ui.component.StatePictogram
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.feature.food.camera.BarcodeFrameReader
 import app.pawse.feature.food.camera.CameraPreview
@@ -136,6 +140,7 @@ fun ScannerScreen(
                 onScanAgain = viewModel::scanAgain,
                 onManualEntry = onManualEntry,
                 onEnableNetwork = viewModel::acceptNetworkLookup,
+                onReadLabel = { viewModel.setMode(ScanMode.LABEL) },
                 onSaveLabel = { name, reading, grams ->
                     viewModel.saveLabelProduct(name, reading, grams, onProductChosen)
                 },
@@ -189,6 +194,7 @@ private fun ScanStatePanel(
     onScanAgain: () -> Unit,
     onManualEntry: () -> Unit,
     onEnableNetwork: () -> Unit,
+    onReadLabel: () -> Unit,
     onSaveLabel: (String, app.pawse.core.data.food.ocr.LabelReading, Double) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -234,21 +240,39 @@ private fun ScanStatePanel(
                 }
             }
 
+            // The way forward that works offline goes first: the panel on the back.
             is ScanState.NotFound -> {
-                Text("Not in your foods", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(8.dp))
+                StatePictogram(Pictogram.OFFLINE)
                 Text(
-                    text = FoodCopy.lookupFailure(state.reason),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = when (state.reason) {
+                        FoodLookupFailure.NETWORK_FAILED -> "Couldn't reach the food database"
+                        FoodLookupFailure.NETWORK_NOT_PERMITTED -> "Not in your saved foods"
+                        FoodLookupFailure.NOT_FOUND -> "No match for this barcode"
+                    },
+                    style = PawseType.Title,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(top = 12.dp),
                 )
-                Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (state.reason == FoodLookupFailure.NETWORK_NOT_PERMITTED) {
-                        Button(onClick = onEnableNetwork) { Text("Look it up online") }
-                    }
-                    TextButton(onClick = onScanAgain) { Text("Try again") }
-                    TextButton(onClick = onManualEntry) { Text("Type it in") }
+                Text(
+                    text = if (state.reason == FoodLookupFailure.NETWORK_FAILED) {
+                        "Barcode ${state.barcode} isn't in your saved foods yet. The nutrition panel on the " +
+                            "back works offline — point the camera at it instead."
+                    } else {
+                        FoodCopy.lookupFailure(state.reason)
+                    },
+                    style = PawseType.Body,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+                if (state.reason == FoodLookupFailure.NETWORK_NOT_PERMITTED) {
+                    PrimaryButton("Look it up online", onEnableNetwork, Modifier.padding(top = 20.dp).fillMaxWidth())
+                    SecondaryButton("Read the label", onReadLabel, Modifier.padding(top = 8.dp).fillMaxWidth())
+                } else {
+                    PrimaryButton("Read the label", onReadLabel, Modifier.padding(top = 20.dp).fillMaxWidth())
+                }
+                Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SecondaryButton("Try again", onScanAgain, Modifier.weight(1f))
+                    SecondaryButton("Type it in", onManualEntry, Modifier.weight(1f))
                 }
             }
 
