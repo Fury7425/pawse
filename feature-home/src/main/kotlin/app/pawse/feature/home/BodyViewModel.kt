@@ -35,7 +35,6 @@ class BodyViewModel @Inject constructor(
     val range: StateFlow<BodyRange> = _range.asStateFlow()
 
     init {
-        reload()
         // Step on the scale and it updates here on its own, after the next read.
         coordinator.status.filterIsInstance<SyncStatus.Done>().onEach { reload() }.launchIn(viewModelScope)
     }
@@ -44,7 +43,8 @@ class BodyViewModel @Inject constructor(
         _range.value = range
     }
 
-    private fun reload() {
+    /** Called each time the screen is shown, so a weigh-in typed in a moment ago is there. */
+    fun reload() {
         viewModelScope.launch { _snapshot.value = runCatching { body.snapshot() }.getOrNull() ?: _snapshot.value }
     }
 }

@@ -13,6 +13,8 @@ object HomeDestinations {
 
     const val HOME = "home"
 
+    const val WEIGH_IN = "weigh-in"
+
     const val EXPLAIN_ARG = "scoreType"
     const val EXPLAIN = "explain/{$EXPLAIN_ARG}"
 

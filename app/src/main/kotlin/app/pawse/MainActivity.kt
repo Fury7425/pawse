@@ -81,6 +81,7 @@ import app.pawse.feature.home.BodyScreen
 import app.pawse.feature.home.ExplainScreen
 import app.pawse.feature.home.HomeDestinations
 import app.pawse.feature.home.HomeScreen
+import app.pawse.feature.home.WeighInScreen
 import app.pawse.feature.onboarding.OnboardingScreen
 import app.pawse.scoring.model.ScoreType
 import dagger.hilt.android.AndroidEntryPoint
@@ -202,7 +203,14 @@ private fun PawseNavGraph(initialRoute: String?) {
                 )
             }
 
-            composable(BODY) { BodyScreen() }
+            composable(BODY) { BodyScreen(onAddWeighIn = { navController.navigate(HomeDestinations.WEIGH_IN) }) }
+
+            composable(HomeDestinations.WEIGH_IN) {
+                WeighInScreen(
+                    onDone = { navController.popBackStack() },
+                    onBack = { navController.popBackStack() },
+                )
+            }
 
             composable(FoodDestinations.SCAN) {
                 ScannerScreen(

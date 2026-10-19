@@ -15,11 +15,12 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * The only thing this app ever writes.
+ * Food, written back to Health Connect.
  *
- * Everything else in Pawse reads: the watch wrote it, we interpret it. Food is the
- * exception, because the user created it here and it belongs in the same store as
- * the rest of their health data rather than trapped in one app.
+ * Almost everything in Pawse reads: the watch wrote it, we interpret it. Food is an
+ * exception, as is a typed-in weigh-in, because the user created it here and it
+ * belongs in the same store as the rest of their health data rather than trapped
+ * in one app.
  *
  * Two properties matter and both are about not making a mess in someone else's
  * store. The record is tagged as a manual entry, because that is what it is and a
@@ -43,32 +44,33 @@ class NutritionWriter @Inject constructor(
 
         val eaten = Instant.ofEpochMilli(entry.eatenAtEpochMs)
 
-        // Zone offsets are left null: Health Connect fills them from the device,
-        // which is the right answer for a meal logged here and now and a better one
-        // than any offset this class could reconstruct after the fact.
-        val record = NutritionRecord(
-            startTime = eaten,
-            startZoneOffset = null,
-            // Eating takes a moment, not an instant, but the duration of a meal is
-            // not something we asked the user for and not something to invent. A
-            // fifteen-minute window centred on the log time would be a fabrication;
-            // a zero-length window is simply what we know.
-            endTime = eaten,
-            endZoneOffset = null,
-            energy = entry.nutrients.kcal?.let { Energy.kilocalories(it) },
-            protein = entry.nutrients.proteinGrams?.let { Mass.grams(it) },
-            totalCarbohydrate = entry.nutrients.carbsGrams?.let { Mass.grams(it) },
-            totalFat = entry.nutrients.fatGrams?.let { Mass.grams(it) },
-            saturatedFat = entry.nutrients.saturatedFatGrams?.let { Mass.grams(it) },
-            sugar = entry.nutrients.sugarGrams?.let { Mass.grams(it) },
-            dietaryFiber = entry.nutrients.fiberGrams?.let { Mass.grams(it) },
-            sodium = entry.nutrients.sodiumMilligrams?.let { Mass.milligrams(it) },
-            name = entry.name,
-            mealType = mealTypeOf(entry.meal),
-            metadata = Metadata.manualEntry(),
-        )
-
         try {
+            // Built inside the try: below Android 14 the Jetpack constructor validates
+            // eagerly, and a mirror failure must never escape this class.
+            //
+            // Zone offsets are left null: Health Connect fills them from the device,
+            // which is the right answer for a meal logged here and now and a better one
+            // than any offset this class could reconstruct after the fact.
+            val record = NutritionRecord(
+                startTime = eaten,
+                startZoneOffset = null,
+                // The duration of a meal is not something we asked the user for, so
+                // the window is the shortest one Health Connect accepts on every
+                // version: Jetpack rejects start == end below Android 14.
+                endTime = eaten.plusSeconds(1),
+                endZoneOffset = null,
+                energy = entry.nutrients.kcal?.let { Energy.kilocalories(it) },
+                protein = entry.nutrients.proteinGrams?.let { Mass.grams(it) },
+                totalCarbohydrate = entry.nutrients.carbsGrams?.let { Mass.grams(it) },
+                totalFat = entry.nutrients.fatGrams?.let { Mass.grams(it) },
+                saturatedFat = entry.nutrients.saturatedFatGrams?.let { Mass.grams(it) },
+                sugar = entry.nutrients.sugarGrams?.let { Mass.grams(it) },
+                dietaryFiber = entry.nutrients.fiberGrams?.let { Mass.grams(it) },
+                sodium = entry.nutrients.sodiumMilligrams?.let { Mass.milligrams(it) },
+                name = entry.name,
+                mealType = mealTypeOf(entry.meal),
+                metadata = Metadata.manualEntry(),
+            )
             client.insertRecords(listOf(record)).recordIdsList.firstOrNull()
         } catch (cancellation: CancellationException) {
             throw cancellation

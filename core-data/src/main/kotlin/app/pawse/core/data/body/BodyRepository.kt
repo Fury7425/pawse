@@ -24,7 +24,13 @@ import javax.inject.Singleton
 import kotlin.math.abs
 
 /** One day's reading of one body metric: the last weigh-in of that day. */
-data class BodyReading(val value: Double, val atEpochMs: Long, val date: LocalDate)
+data class BodyReading(
+    val value: Double,
+    val atEpochMs: Long,
+    val date: LocalDate,
+    /** Package that wrote it. This app's own package means it was typed in here. */
+    val sourceApp: String = "",
+)
 
 /** A body metric against the user's own usual range. Never coloured: up is not good or bad. */
 data class BodyRow(
@@ -245,7 +251,7 @@ object BodyAssembler {
         rows.groupBy { it.localDate }
             .map { (date, sameDay) ->
                 val last = sameDay.maxBy { it.startEpochMs }
-                BodyReading(last.value, last.startEpochMs, LocalDate.parse(date))
+                BodyReading(last.value, last.startEpochMs, LocalDate.parse(date), last.sourceApp)
             }
             .sortedBy { it.date }
 

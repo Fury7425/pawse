@@ -273,7 +273,7 @@ private fun Explain(onContinue: () -> Unit) {
                     Column(Modifier.weight(1f)) {
                         Text("Writes", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(2.dp))
-                        Text("Only the food you log", style = PawseType.Body)
+                        Text("Only food and weigh-ins you type in", style = PawseType.Body)
                     }
                     Text("Optional", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }

@@ -1,5 +1,7 @@
 package app.pawse.feature.food
 
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -44,15 +46,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.PermissionController
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pawse.core.data.food.FoodDay
 import app.pawse.core.data.food.FoodLogEntry
 import app.pawse.core.data.food.FoodSource
 import app.pawse.core.data.food.Nutrients
+import app.pawse.core.data.health.HealthPermissions
 import app.pawse.core.ui.component.GhostButton
 import app.pawse.core.ui.component.Glyph
 import app.pawse.core.ui.component.GlyphButton
@@ -99,6 +105,25 @@ fun FoodLogScreen(
     val undo by viewModel.undo.collectAsStateWithLifecycle()
     val networkEnabled by viewModel.networkEnabled.collectAsStateWithLifecycle()
     val mirroring by viewModel.mirroring.collectAsStateWithLifecycle()
+    val writeBlocked by viewModel.writeBlocked.collectAsStateWithLifecycle()
+    // Health Connect stops showing its sheet after repeated denials, so a second
+    // tap goes to its settings instead of to a sheet that never appears.
+    var askedForWrite by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val grantLauncher = rememberLauncherForActivityResult(
+        PermissionController.createRequestPermissionResultContract(),
+    ) {
+        askedForWrite = true
+        viewModel.onWriteGrantResult()
+    }
+    val allowWrite: () -> Unit = {
+        if (askedForWrite) {
+            runCatching { context.startActivity(Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS)) }
+            Unit
+        } else {
+            grantLauncher.launch(HealthPermissions.NUTRITION_WRITE)
+        }
+    }
     var showSettings by remember { mutableStateOf(false) }
     var open by remember { mutableStateOf<Long?>(null) }
     val isToday = date == LocalDate.now()
@@ -129,6 +154,12 @@ fun FoodLogScreen(
 
                 item {
                     DayTotal(day = day, modifier = pad.padding(top = 8.dp))
+                }
+
+                if (mirroring && writeBlocked) {
+                    item {
+                        WriteBlockedCard(askedBefore = askedForWrite, onClick = allowWrite, modifier = pad.padding(top = 10.dp))
+                    }
                 }
 
                 if (isToday) {
@@ -217,7 +248,10 @@ fun FoodLogScreen(
             networkEnabled = networkEnabled,
             mirroring = mirroring,
             onNetworkChange = viewModel::setNetworkLookup,
-            onMirroringChange = viewModel::setMirroring,
+            onMirroringChange = { on ->
+                viewModel.setMirroring(on)
+                if (on && writeBlocked) allowWrite()
+            },
             onDismiss = { showSettings = false },
         )
     }
@@ -374,6 +408,27 @@ private fun BurnedCard(
                         else -> "the same as eaten"
                     },
                     style = PawseType.BodyStrong,
+                )
+            }
+            Glyph(Glyphs.ChevronRight, size = 18.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun WriteBlockedCard(askedBefore: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    PawseCard(modifier = modifier, onClick = onClick, padding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Not reaching Health Connect", style = PawseType.BodyStrong)
+                Text(
+                    text = if (askedBefore) {
+                        "Still not allowed. Open Health Connect and let Pawse write nutrition."
+                    } else {
+                        "Health Connect hasn't allowed Pawse to save food. Tap to allow it."
+                    },
+                    style = PawseType.Label,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Glyph(Glyphs.ChevronRight, size = 18.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -542,7 +597,7 @@ private fun FoodSettingsSheet(
         )
         SettingRow(
             title = "Copy food into Health Connect",
-            body = "The only thing this app ever writes. Removing an entry here removes it there too.",
+            body = "Removing an entry here removes it there too.",
             now = if (mirroring) "New entries are copied as you log them" else "Entries stay only on this phone",
             checked = mirroring,
             onCheckedChange = onMirroringChange,

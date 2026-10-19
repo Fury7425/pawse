@@ -29,8 +29,13 @@
     <uses-permission android:name="android.permission.health.READ_BASAL_METABOLIC_RATE" />
     <uses-permission android:name="android.permission.health.READ_NUTRITION" />
 
-    <!-- Food logging writes back. The only write permission this app ever asks for. -->
+    <!-- Written back only for what the user typed in here: food, and a weigh-in. -->
     <uses-permission android:name="android.permission.health.WRITE_NUTRITION" />
+    <uses-permission android:name="android.permission.health.WRITE_WEIGHT" />
+    <uses-permission android:name="android.permission.health.WRITE_BODY_FAT" />
+    <uses-permission android:name="android.permission.health.WRITE_LEAN_BODY_MASS" />
+    <uses-permission android:name="android.permission.health.WRITE_BODY_WATER_MASS" />
+    <uses-permission android:name="android.permission.health.WRITE_BONE_MASS" />
 
     <!-- Needed by the onboarding capability probe, which reads 30 days back. -->
     <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY" />

@@ -22,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,6 +36,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -48,6 +50,7 @@ import app.pawse.core.ui.component.BaselineBandRow
 import app.pawse.core.ui.component.BaselineRowState
 import app.pawse.core.ui.component.Chip
 import app.pawse.core.ui.component.DeviationDirection
+import app.pawse.core.ui.component.GhostButton
 import app.pawse.core.ui.component.Glyph
 import app.pawse.core.ui.component.Glyphs
 import app.pawse.core.ui.component.KeySwatch
@@ -55,6 +58,8 @@ import app.pawse.core.ui.component.PawseCard
 import app.pawse.core.ui.component.Segmented
 import app.pawse.core.ui.component.SplitBar
 import app.pawse.core.ui.component.UsualRangeKey
+import app.pawse.core.ui.component.cardSurface
+import app.pawse.core.ui.component.pressable
 import app.pawse.core.ui.theme.PawseTheme
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.scoring.body.BmrResult
@@ -74,11 +79,16 @@ import kotlin.math.roundToInt
  */
 @Composable
 fun BodyScreen(
+    onAddWeighIn: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: BodyViewModel = hiltViewModel(),
 ) {
     val snapshot by viewModel.snapshot.collectAsStateWithLifecycle()
     val range by viewModel.range.collectAsStateWithLifecycle()
+    val ownPackage = LocalContext.current.packageName
+    val typedIn = snapshot?.weight?.sourceApp == ownPackage
+
+    LaunchedEffect(Unit) { viewModel.reload() }
 
     Scaffold(modifier = modifier, containerColor = MaterialTheme.colorScheme.background) { padding ->
         LazyColumn(
@@ -91,8 +101,20 @@ fun BodyScreen(
             ),
         ) {
             item {
-                Box(Modifier.heightIn(min = 48.dp), contentAlignment = Alignment.CenterStart) {
-                    Text("Body", style = PawseType.Title)
+                Row(Modifier.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Body", style = PawseType.Title, modifier = Modifier.weight(1f))
+                    Row(
+                        Modifier
+                            .height(44.dp)
+                            .pressable(onClick = onAddWeighIn)
+                            .cardSurface(RoundedCornerShape(22.dp), 22.dp)
+                            .padding(start = 10.dp, end = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Glyph(Glyphs.Plus, size = 18.dp, strokeWidth = 2f, color = MaterialTheme.colorScheme.onSurface)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Weigh-in", style = PawseType.BodyStrong)
+                    }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Glyph(
@@ -103,7 +125,7 @@ fun BodyScreen(
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = snapshot?.let(::statusLine) ?: "Reading your scale",
+                        text = snapshot?.let { statusLine(it, typedIn) } ?: "Reading your scale",
                         style = PawseType.Label,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -118,10 +140,13 @@ fun BodyScreen(
                         Text("No scale readings yet", style = PawseType.Heading)
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "When a scale writes weight to Health Connect, it shows here on its own.",
+                            "When a scale writes weight to Health Connect, it shows here on its own. " +
+                                "No scale that does? Type a weigh-in in.",
                             style = PawseType.Label,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        Spacer(Modifier.height(4.dp))
+                        GhostButton("Add a weigh-in", onClick = onAddWeighIn, glyph = Glyphs.Plus)
                     }
                     Spacer(Modifier.height(24.dp))
                 }
@@ -129,14 +154,14 @@ fun BodyScreen(
 
             s.weight?.let {
                 item {
-                    WeightSection(s, range, viewModel::setRange)
+                    WeightSection(s, range, viewModel::setRange, typedIn)
                     Spacer(Modifier.height(28.dp))
                 }
             }
 
             s.composition?.let { composition ->
                 item {
-                    CompositionCard(composition)
+                    CompositionCard(composition, typedIn)
                     Spacer(Modifier.height(28.dp))
                 }
             }
@@ -196,11 +221,11 @@ fun BodyScreen(
     }
 }
 
-private fun statusLine(s: BodySnapshot): String {
+private fun statusLine(s: BodySnapshot, typedIn: Boolean): String {
     val weight = s.weight ?: return "No weigh-ins yet"
     val days = s.daysSinceWeighIn ?: 0L
     return if (days == 0L) {
-        "Weighed today at ${ScoreCopy.clock(weight.atEpochMs)}, from your scale"
+        "Weighed today at ${ScoreCopy.clock(weight.atEpochMs)}, " + if (typedIn) "typed in" else "from your scale"
     } else {
         val date = weight.date.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.getDefault()))
         "Last weighed $date, ${if (days == 1L) "yesterday" else "$days days ago"}"
@@ -208,7 +233,7 @@ private fun statusLine(s: BodySnapshot): String {
 }
 
 @Composable
-private fun WeightSection(s: BodySnapshot, range: BodyRange, onRange: (BodyRange) -> Unit) {
+private fun WeightSection(s: BodySnapshot, range: BodyRange, onRange: (BodyRange) -> Unit, typedIn: Boolean) {
     val weight = s.weight ?: return
     Text("Weight", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Spacer(Modifier.height(4.dp))
@@ -226,7 +251,13 @@ private fun WeightSection(s: BodySnapshot, range: BodyRange, onRange: (BodyRange
     Text(weightLine(s), style = PawseType.Body, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Spacer(Modifier.height(10.dp))
     val days = s.daysSinceWeighIn ?: 0L
-    Chip(if (days == 0L) "Measured" else if (days == 1L) "A day old" else "$days days old")
+    Chip(
+        when {
+            days == 0L -> if (typedIn) "Typed in" else "Measured"
+            days == 1L -> "A day old"
+            else -> "$days days old"
+        },
+    )
     Spacer(Modifier.height(20.dp))
 
     Segmented(
@@ -242,7 +273,7 @@ private fun WeightSection(s: BodySnapshot, range: BodyRange, onRange: (BodyRange
 
 private fun weightLine(s: BodySnapshot): String {
     val weight = s.weight ?: return ""
-    if (!s.weighedToday) return "Step on the scale and it updates here on its own."
+    if (!s.weighedToday) return "Step on the scale and it updates here on its own, or add a weigh-in."
     val parts = buildList {
         s.weightUsual?.let { add(kgDelta(weight.value - it.mean, "your 30-day usual")) }
         s.weightYearAgo?.let { add(kgDelta(weight.value - it, "a year ago")) }
@@ -319,7 +350,7 @@ private fun WeightChart(s: BodySnapshot, range: BodyRange) {
 }
 
 @Composable
-private fun CompositionCard(c: BodyComposition) {
+private fun CompositionCard(c: BodyComposition, typedIn: Boolean) {
     val parts = listOfNotNull(
         c.waterKg?.let { "Water" to it },
         c.otherLeanKg?.let { (if (c.waterKg == null && c.boneKg == null) "Lean" else "Other lean") to it },
@@ -335,7 +366,7 @@ private fun CompositionCard(c: BodyComposition) {
     PawseCard {
         Row {
             Text("What the ${oneDecimal(c.weightKg)} kg is made of", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-            Text("From your scale", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(if (typedIn) "Typed in" else "From your scale", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.height(12.dp))
         SplitBar(parts.mapIndexed { i, (_, kg) -> kg.toFloat() to fills[i] }, height = 10.dp)

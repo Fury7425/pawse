@@ -8,6 +8,9 @@ import app.pawse.core.data.food.FoodDay
 import app.pawse.core.data.food.FoodLogEntry
 import app.pawse.core.data.food.FoodPreferences
 import app.pawse.core.data.food.FoodRepository
+import app.pawse.core.data.health.HealthConnectAvailability
+import app.pawse.core.data.health.HealthConnectGateway
+import app.pawse.core.data.health.HealthPermissions
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -30,6 +33,7 @@ class FoodLogViewModel @Inject constructor(
     private val repository: FoodRepository,
     private val preferences: FoodPreferences,
     private val body: BodyRepository,
+    private val gateway: HealthConnectGateway,
 ) : ViewModel() {
 
     private val _date = MutableStateFlow(LocalDate.now())
@@ -60,15 +64,37 @@ class FoodLogViewModel @Inject constructor(
     val mirroring: StateFlow<Boolean> = preferences.mirrorToHealthConnect
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), true)
 
+    /**
+     * Health Connect is there but has not allowed the food write. Onboarding asks
+     * once, so anyone who onboarded before food existed, or said no, lands here
+     * and every entry silently stays "only on this phone".
+     */
+    private val _writeBlocked = MutableStateFlow(false)
+    val writeBlocked: StateFlow<Boolean> = _writeBlocked.asStateFlow()
+
     init {
         viewModelScope.launch {
             // A removal whose Undo window closed while the app was killed finishes
             // here. Then entries logged while Health Connect was unreachable get
             // another chance. Both are one cheap query in the normal case.
             repository.flushPendingRemovals()
-            repository.retryMirroring()
+            checkWriteGrant()
+            if (!_writeBlocked.value) repository.retryMirroring()
             reloadSideFacts()
         }
+    }
+
+    /** After the system sheet: whatever was granted, catch the log up. */
+    fun onWriteGrantResult() {
+        viewModelScope.launch {
+            checkWriteGrant()
+            if (!_writeBlocked.value) repository.retryMirroring()
+        }
+    }
+
+    private suspend fun checkWriteGrant() {
+        _writeBlocked.value = gateway.availability() is HealthConnectAvailability.Available &&
+            runCatching { !gateway.grantedPermissions().containsAll(HealthPermissions.NUTRITION_WRITE) }.getOrDefault(false)
     }
 
     fun showDay(date: LocalDate) {

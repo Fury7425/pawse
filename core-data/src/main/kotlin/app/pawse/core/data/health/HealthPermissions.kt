@@ -65,11 +65,24 @@ object HealthPermissions {
         NutritionRecord::class,
     )
 
-    /** Only nutrition is ever written back, and only from the food log. */
-    val WRITE_TYPES: List<KClass<out Record>> = listOf(NutritionRecord::class)
+    /**
+     * Written back only for things the user typed in here: food from the food log,
+     * and a weigh-in from the Body tab. Each set is asked for where it is used, so
+     * a missing body grant never makes food look blocked, or the reverse.
+     */
+    val NUTRITION_WRITE: Set<String> = setOf(HealthPermission.getWritePermission(NutritionRecord::class))
+
+    val BODY_WRITE_TYPES: List<KClass<out Record>> = listOf(
+        WeightRecord::class,
+        BodyFatRecord::class,
+        LeanBodyMassRecord::class,
+        BodyWaterMassRecord::class,
+        BoneMassRecord::class,
+    )
+    val BODY_WRITE: Set<String> = BODY_WRITE_TYPES.map { HealthPermission.getWritePermission(it) }.toSet()
 
     val READ: Set<String> = READ_TYPES.map { HealthPermission.getReadPermission(it) }.toSet()
-    val WRITE: Set<String> = WRITE_TYPES.map { HealthPermission.getWritePermission(it) }.toSet()
+    val WRITE: Set<String> = NUTRITION_WRITE + BODY_WRITE
 
     /**
      * The capability probe reads 30 days back, which is past the default 30-day
