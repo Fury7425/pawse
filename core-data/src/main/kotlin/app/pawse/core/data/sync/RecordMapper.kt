@@ -1,12 +1,20 @@
 package app.pawse.core.data.sync
 
+import androidx.health.connect.client.records.BasalMetabolicRateRecord
+import androidx.health.connect.client.records.BodyFatRecord
+import androidx.health.connect.client.records.BodyWaterMassRecord
+import androidx.health.connect.client.records.BoneMassRecord
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord
+import androidx.health.connect.client.records.HeightRecord
+import androidx.health.connect.client.records.LeanBodyMassRecord
 import androidx.health.connect.client.records.OxygenSaturationRecord
+import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.RespiratoryRateRecord
 import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.SkinTemperatureRecord
 import androidx.health.connect.client.records.SleepSessionRecord
+import androidx.health.connect.client.records.WeightRecord
 import app.pawse.core.data.db.ExerciseSessionEntity
 import app.pawse.core.data.db.MetricSampleEntity
 import app.pawse.core.data.db.SleepSessionEntity
@@ -90,6 +98,46 @@ object RecordMapper {
             sourceApp = record.metadata.dataOrigin.packageName,
             originId = record.metadata.id,
         )
+
+    /**
+     * A scale's point readings, one row each, in the units the Body tab prints.
+     * Null for any record that is not a body measurement.
+     */
+    fun body(record: Record, zone: ZoneId): MetricSampleEntity? = when (record) {
+        is WeightRecord -> point(Metric.BODY_WEIGHT, record.weight.inKilograms, record.time, record.zoneOffset, record, zone)
+        is BodyFatRecord -> point(Metric.BODY_FAT, record.percentage.value, record.time, record.zoneOffset, record, zone)
+        is LeanBodyMassRecord -> point(Metric.LEAN_MASS, record.mass.inKilograms, record.time, record.zoneOffset, record, zone)
+        is BoneMassRecord -> point(Metric.BONE_MASS, record.mass.inKilograms, record.time, record.zoneOffset, record, zone)
+        is BodyWaterMassRecord -> point(Metric.BODY_WATER, record.mass.inKilograms, record.time, record.zoneOffset, record, zone)
+        is HeightRecord -> point(Metric.BODY_HEIGHT, record.height.inMeters, record.time, record.zoneOffset, record, zone)
+        is BasalMetabolicRateRecord -> point(
+            Metric.BASAL_METABOLIC_RATE,
+            record.basalMetabolicRate.inKilocaloriesPerDay,
+            record.time,
+            record.zoneOffset,
+            record,
+            zone,
+        )
+        else -> null
+    }
+
+    private fun point(
+        metric: Metric,
+        value: Double,
+        time: Instant,
+        offset: ZoneOffset?,
+        record: Record,
+        zone: ZoneId,
+    ): MetricSampleEntity = MetricSampleEntity(
+        metric = metric.key,
+        value = value,
+        startEpochMs = time.toEpochMilli(),
+        endEpochMs = time.toEpochMilli(),
+        localDate = localDate(time, offset, zone),
+        zoneOffsetSeconds = offsetSeconds(time, offset, zone),
+        sourceApp = record.metadata.dataOrigin.packageName,
+        originId = record.metadata.id,
+    )
 
     /**
      * Skin temperature arrives as a baseline plus signed deltas. We store the mean

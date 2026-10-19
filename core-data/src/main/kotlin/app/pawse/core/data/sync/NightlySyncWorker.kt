@@ -10,7 +10,6 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import app.pawse.core.data.scoring.ScoringRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.time.Duration
@@ -33,18 +32,17 @@ import javax.inject.Singleton
 class NightlySyncWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
-    private val repository: HealthSyncRepository,
-    private val scoring: ScoringRepository,
+    private val coordinator: SyncCoordinator,
 ) : CoroutineWorker(context, params) {
 
-    override suspend fun doWork(): Result = when (repository.sync()) {
-        is SyncResult.Success -> {
-            scoring.refresh()
-            Result.success()
+    override suspend fun doWork(): Result = when (val status = coordinator.run(inBackground = true)) {
+        is SyncStatus.Failed -> when (status.reason) {
+            SyncFailure.READ_FAILED -> if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else Result.failure()
+            // Nothing to retry against: Health Connect is missing, or access is off
+            // and stays off until the user changes it.
+            SyncFailure.UNAVAILABLE, SyncFailure.ACCESS_OFF -> Result.success()
         }
-        // Nothing to retry against: Health Connect is missing or out of date.
-        SyncResult.Unavailable -> Result.success()
-        is SyncResult.Failed -> if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else Result.failure()
+        else -> Result.success()
     }
 
     companion object {

@@ -125,7 +125,7 @@ fun ExplainScreen(
             }
 
             items(score.contributions) { contribution ->
-                ContributionDetail(contribution)
+                ContributionDetail(contribution, snapshot.nightValues[contribution.metric])
                 HorizontalDivider(
                     color = MaterialTheme.colorScheme.outlineVariant,
                     modifier = Modifier.padding(horizontal = 24.dp),
@@ -200,7 +200,7 @@ private fun Summary(type: ScoreType, score: Score, snapshot: HomeSnapshot) {
 }
 
 @Composable
-private fun ContributionDetail(contribution: Contribution) {
+private fun ContributionDetail(contribution: Contribution, earlier: List<Double>?) {
     val semantics = PawseTheme.semantics
     val row = contribution.toRowState()
     val markerColor = when {
@@ -236,6 +236,7 @@ private fun ContributionDetail(contribution: Contribution) {
 
         Spacer(Modifier.height(10.dp))
         DetailLine("Against your usual", row.deltaText)
+        ScoreCopy.rankText(contribution, earlier)?.let { DetailLine("Among your nights", it) }
         DetailLine("Baseline", row.baselineText)
         contribution.z?.let {
             DetailLine("z", String.format(Locale.getDefault(), "%+.2f", it))

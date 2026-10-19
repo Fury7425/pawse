@@ -1,6 +1,11 @@
 package app.pawse.core.data.health
 
+import androidx.health.connect.client.records.BodyFatRecord
+import androidx.health.connect.client.records.BodyWaterMassRecord
+import androidx.health.connect.client.records.BoneMassRecord
 import androidx.health.connect.client.records.ExerciseSessionRecord
+import androidx.health.connect.client.records.LeanBodyMassRecord
+import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord
 import androidx.health.connect.client.records.OxygenSaturationRecord
@@ -55,6 +60,13 @@ class CapabilityProbe @Inject constructor(
         val spo2 = gateway.readOrEmpty(OxygenSaturationRecord::class, start, end)
         val temp = gateway.readOrEmpty(SkinTemperatureRecord::class, start, end)
         val exercise = gateway.readOrEmpty(ExerciseSessionRecord::class, start, end)
+        val weight = gateway.readOrEmpty(WeightRecord::class, start, end)
+        val bodyParts = listOfNotNull(
+            "body fat".takeIf { gateway.readOrEmpty(BodyFatRecord::class, start, end).isNotEmpty() },
+            "lean mass".takeIf { gateway.readOrEmpty(LeanBodyMassRecord::class, start, end).isNotEmpty() },
+            "water".takeIf { gateway.readOrEmpty(BodyWaterMassRecord::class, start, end).isNotEmpty() },
+            "bone".takeIf { gateway.readOrEmpty(BoneMassRecord::class, start, end).isNotEmpty() },
+        )
 
         val sleepDays = sleep.map { it.endTime.localDate(zone) }.toSet()
         val nightsWithSleep = sleepDays.size
@@ -117,6 +129,8 @@ class CapabilityProbe @Inject constructor(
             contestedTypes = contested,
             sleepStageCoverage = stageCoverage,
             hrvShape = hrvShape,
+            weighIns = weight.map { it.time.localDate(zone) }.toSet().size,
+            bodyParts = bodyParts,
         )
     }
 

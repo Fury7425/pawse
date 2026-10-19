@@ -6,6 +6,7 @@ import app.pawse.core.data.db.ScoreDao
 import app.pawse.core.data.db.SleepDao
 import app.pawse.core.data.profile.UserProfilePreferences
 import app.pawse.core.data.sync.SyncPreferences
+import app.pawse.core.data.sync.SyncStep
 import app.pawse.core.data.sync.WorkoutHeartRateEnricher
 import app.pawse.scoring.config.ScoringConfig
 import app.pawse.scoring.config.StrainScale
@@ -52,6 +53,12 @@ data class ScoringSnapshot(
     val nightsInWindow: Int,
     val computedAtEpochMs: Long,
     val lastSyncEpochMs: Long,
+    /** Seven days per score, for the small charts on Home and the widget. */
+    val trends: Map<ScoreType, ScoreTrend> = emptyMap(),
+    /** Set while Recovery's baseline is still filling. */
+    val warmup: Warmup? = null,
+    /** Earlier nights per Recovery input, for ranking tonight in the explanation. */
+    val nightValues: Map<Metric, List<Double>> = emptyMap(),
 ) {
     val hasAnyScore: Boolean get() = scores.isNotEmpty()
 
@@ -139,8 +146,9 @@ class ScoringRepository @Inject constructor(
     suspend fun refresh(
         today: LocalDate = LocalDate.now(),
         windowDays: Int = DEFAULT_WINDOW_DAYS,
+        onStep: (SyncStep) -> Unit = {},
     ): ScoringState = mutex.withLock {
-        val result = runCatching { compute(today, windowDays) }
+        val result = runCatching { compute(today, windowDays, onStep) }
         val next = result.fold(
             onSuccess = { ScoringState.Ready(it) },
             onFailure = { ScoringState.Failed(it.message ?: "Could not compute your scores") },
@@ -149,8 +157,9 @@ class ScoringRepository @Inject constructor(
         next
     }
 
-    private suspend fun compute(today: LocalDate, windowDays: Int): ScoringSnapshot =
+    private suspend fun compute(today: LocalDate, windowDays: Int, onStep: (SyncStep) -> Unit): ScoringSnapshot =
         withContext(Dispatchers.IO) {
+            onStep(SyncStep.COMPARE)
             val from = today.minusDays(windowDays.toLong())
             val fromKey = from.toString()
             val toKey = today.toString()
@@ -180,6 +189,7 @@ class ScoringRepository @Inject constructor(
             val bundles = DailyInputAssembler(config, sourcePriority)
                 .assemble(dates, samples, nights, exercises)
 
+            onStep(SyncStep.SCORE)
             val days = pipeline.run(bundles, profile)
             val now = System.currentTimeMillis()
 
@@ -204,6 +214,15 @@ class ScoringRepository @Inject constructor(
                 nightsInWindow = nights.values.count { it.hasSession },
                 computedAtEpochMs = now,
                 lastSyncEpochMs = syncPreferences.lastSyncEpochMs.first(),
+            ).copy(
+                trends = SnapshotExtras.trends(days, newest.date),
+                warmup = SnapshotExtras.warmup(
+                    bundles = bundles,
+                    newest = newest.date,
+                    needed = config.baseline.warmupSamples,
+                    windowDays = config.baseline.windowDays,
+                ),
+                nightValues = SnapshotExtras.nightValues(bundles, days, newest.date, config.baseline.windowDays),
             )
         }
 

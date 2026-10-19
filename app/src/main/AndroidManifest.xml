@@ -10,6 +10,9 @@
         </intent>
     </queries>
 
+    <!-- The one "ready" note a day after the nightly read. Asked for once, never required. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:name=".PawseApplication"
         android:allowBackup="false"
@@ -47,6 +50,17 @@
                 <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
             </intent-filter>
         </activity-alias>
+
+        <receiver
+            android:name=".TodayWidget"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_today_info" />
+        </receiver>
 
         <!--
           WorkManager's default initializer is removed so Hilt can supply the

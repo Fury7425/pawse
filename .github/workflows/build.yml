@@ -89,9 +89,13 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
 
       # Provides ANDROID_HOME and accepted licences, so AGP can fetch the
-      # platform and build-tools it wants. No local.properties needed.
+      # platform and build-tools it wants. No local.properties needed. The
+      # action's default package list still names "tools", which sdkmanager 16
+      # no longer serves, so the list is given explicitly.
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -144,6 +148,8 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4

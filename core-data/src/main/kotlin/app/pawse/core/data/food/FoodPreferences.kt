@@ -3,6 +3,7 @@ package app.pawse.core.data.food
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -69,5 +70,22 @@ class FoodPreferences @Inject constructor(
 
     suspend fun setMirrorToHealthConnect(enabled: Boolean) {
         store.edit { it[mirrorKey] = enabled }
+    }
+
+    private val pendingDeletesKey = stringSetPreferencesKey("pending_health_connect_deletes")
+
+    /**
+     * Health Connect record ids whose local entry was removed but whose mirror has
+     * not been deleted yet, because the Undo bar was still up. Persisted so a kill
+     * mid-undo cannot leave a meal in Health Connect that is gone from the log.
+     */
+    suspend fun pendingDeletes(): Set<String> = store.data.first()[pendingDeletesKey].orEmpty()
+
+    suspend fun addPendingDelete(recordId: String) {
+        store.edit { it[pendingDeletesKey] = it[pendingDeletesKey].orEmpty() + recordId }
+    }
+
+    suspend fun removePendingDelete(recordId: String) {
+        store.edit { it[pendingDeletesKey] = it[pendingDeletesKey].orEmpty() - recordId }
     }
 }

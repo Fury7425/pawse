@@ -20,6 +20,10 @@ data class CapabilityReport(
     val contestedTypes: Set<String>,
     val sleepStageCoverage: Float,
     val hrvShape: HrvShape,
+    /** Days in the window a scale wrote a weight. The Body tab, not a score. */
+    val weighIns: Int = 0,
+    /** Which body measurements the scale writes besides weight: "body fat", "lean mass"... */
+    val bodyParts: List<String> = emptyList(),
 ) {
     val usable: Boolean get() = scores.any { it.computable }
 }

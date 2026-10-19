@@ -2,10 +2,15 @@ package app.pawse.core.data.health
 
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
+import androidx.health.connect.client.records.BasalMetabolicRateRecord
 import androidx.health.connect.client.records.BodyFatRecord
+import androidx.health.connect.client.records.BodyWaterMassRecord
+import androidx.health.connect.client.records.BoneMassRecord
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord
+import androidx.health.connect.client.records.HeightRecord
+import androidx.health.connect.client.records.LeanBodyMassRecord
 import androidx.health.connect.client.records.NutritionRecord
 import androidx.health.connect.client.records.OxygenSaturationRecord
 import androidx.health.connect.client.records.Record
@@ -51,6 +56,12 @@ object HealthPermissions {
         Vo2MaxRecord::class,
         WeightRecord::class,
         BodyFatRecord::class,
+        // The Body tab. Read only when a scale writes them; none feeds a score.
+        LeanBodyMassRecord::class,
+        BoneMassRecord::class,
+        BodyWaterMassRecord::class,
+        HeightRecord::class,
+        BasalMetabolicRateRecord::class,
         NutritionRecord::class,
     )
 

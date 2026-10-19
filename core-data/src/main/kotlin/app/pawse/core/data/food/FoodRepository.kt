@@ -179,10 +179,68 @@ class FoodRepository @Inject constructor(
         saved.copy(healthConnectId = mirrored)
     }
 
-    suspend fun delete(entry: FoodLogEntry) = withContext(Dispatchers.IO) {
-        entry.healthConnectId?.let { nutritionWriter.delete(it) }
+    /** Seven days ending on [end], oldest first, empty days included: a gap is a record too. */
+    fun observeWeek(end: LocalDate): Flow<List<FoodDay>> {
+        val start = end.minusDays(WEEK_DAYS - 1L)
+        return logDao.observeBetween(start.toString(), end.toString()).map { rows ->
+            val byDate = rows.map(FoodLogMapper::toEntry).groupBy { it.localDate }
+            (0 until WEEK_DAYS).map { offset ->
+                val date = start.plusDays(offset.toLong())
+                val entries = byDate[date.toString()].orEmpty()
+                FoodDay(date = date, entries = entries, totals = FoodLogMapper.totals(date.toString(), entries))
+            }
+        }
+    }
+
+    /**
+     * Removes an entry from the log at once and holds its Health Connect copy back
+     * until [flushPendingRemovals], so Undo can put it back without a second write.
+     */
+    suspend fun remove(entry: FoodLogEntry) = withContext(Dispatchers.IO) {
+        entry.healthConnectId?.let { preferences.addPendingDelete(it) }
         logDao.byId(entry.id)?.let { logDao.delete(it) }
     }
+
+    /** Undo: the same row, same id, same frozen figures, same Health Connect record. */
+    suspend fun restore(entry: FoodLogEntry, zone: ZoneId = ZoneId.systemDefault()) = withContext(Dispatchers.IO) {
+        val offset = zone.rules.getOffset(Instant.ofEpochMilli(entry.eatenAtEpochMs)).totalSeconds
+        logDao.insert(FoodLogMapper.toEntity(entry, offset))
+        entry.healthConnectId?.let { preferences.removePendingDelete(it) }
+    }
+
+    /** Deletes the mirrors of removals whose Undo window has closed. Kept for a retry if one fails. */
+    suspend fun flushPendingRemovals() = withContext(Dispatchers.IO) {
+        for (recordId in preferences.pendingDeletes()) {
+            if (nutritionWriter.delete(recordId)) preferences.removePendingDelete(recordId)
+        }
+    }
+
+    /**
+     * What to offer under "Again": the most recently eaten distinct foods. Most
+     * meals repeat, so yesterday's breakfast should be one tap, not one scan.
+     */
+    suspend fun again(today: LocalDate = LocalDate.now(), limit: Int = 4): List<FoodLogEntry> =
+        withContext(Dispatchers.IO) {
+            logDao.between(today.minusDays(AGAIN_LOOKBACK_DAYS).toString(), today.toString())
+                .map(FoodLogMapper::toEntry)
+                .sortedByDescending { it.eatenAtEpochMs }
+                .distinctBy { it.name.lowercase() to it.brand?.lowercase() }
+                .take(limit)
+        }
+
+    /** Logs [entry] again now, with the figures it was frozen with. */
+    suspend fun relog(entry: FoodLogEntry, meal: Meal = Meal.SNACK): FoodLogEntry = log(
+        productId = entry.productId,
+        name = entry.name,
+        brand = entry.brand,
+        nutrients = entry.nutrients,
+        meal = meal,
+        grams = entry.quantityGrams,
+        servings = entry.servings,
+        source = entry.source,
+        eatenAt = Instant.now(),
+        zone = ZoneId.systemDefault(),
+    )
 
     /**
      * Mirrors entries that were logged while Health Connect was unavailable or the
@@ -198,5 +256,10 @@ class FoodRepository @Inject constructor(
             mirrored++
         }
         mirrored
+    }
+
+    private companion object {
+        const val WEEK_DAYS = 7
+        const val AGAIN_LOOKBACK_DAYS = 30L
     }
 }

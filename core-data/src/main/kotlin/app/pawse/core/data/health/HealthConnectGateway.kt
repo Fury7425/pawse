@@ -2,7 +2,9 @@ package app.pawse.core.data.health
 
 import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
 import androidx.health.connect.client.records.Record
+import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -106,6 +108,25 @@ class HealthConnectGateway @Inject constructor(
         start: Instant,
         end: Instant,
     ): List<T> = runCatching { read(type, start, end) }.getOrDefault(emptyList())
+
+    /**
+     * Active energy in a window, aggregated by Health Connect itself.
+     *
+     * Aggregated rather than synced: a watch can write an interval every minute, and
+     * Health Connect already de-duplicates overlapping writers by the user's own
+     * priority order, which is the answer we want. Null when there is no grant or
+     * nothing was written.
+     */
+    suspend fun activeKcal(start: Instant, end: Instant): Double? = withContext(Dispatchers.IO) {
+        runCatching {
+            requireClient().aggregate(
+                AggregateRequest(
+                    metrics = setOf(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL),
+                    timeRangeFilter = TimeRangeFilter.between(start, end),
+                ),
+            )[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories
+        }.getOrNull()
+    }
 
     companion object {
         const val HEALTH_CONNECT_PACKAGE = "com.google.android.apps.healthdata"

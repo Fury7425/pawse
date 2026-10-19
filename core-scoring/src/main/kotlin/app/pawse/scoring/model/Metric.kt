@@ -99,6 +99,32 @@ enum class Metric(
 
     /** 28-day EWMA of daily load. */
     CHRONIC_LOAD(direction = +1, unit = "TRIMP"),
+
+    // --- Body ----------------------------------------------------------------
+    // Written by a smart scale, compared against the user's own usual range on
+    // the Body tab. None of them feeds a score, and none has a "better"
+    // direction: more lean mass or less body fat is a goal some people have and
+    // others do not. [direction] is +1 throughout so a z-score reads as plain
+    // "above / below usual", and the UI never colours it.
+
+    BODY_WEIGHT(direction = +1, unit = "kg"),
+    BODY_FAT(direction = +1, unit = "%"),
+
+    /**
+     * Health Connect's LeanBodyMassRecord: muscle, water and bone together.
+     * There is no skeletal-muscle record type, so a scale's own muscle figure
+     * never reaches the app and this is the closest honest number.
+     */
+    LEAN_MASS(direction = +1, unit = "kg"),
+    BONE_MASS(direction = +1, unit = "kg"),
+    BODY_WATER(direction = +1, unit = "kg"),
+    BODY_HEIGHT(direction = +1, unit = "m"),
+
+    /** Measured by the scale when it writes one; otherwise estimated, see Bmr. */
+    BASAL_METABOLIC_RATE(direction = +1, unit = "kcal/day"),
+
+    /** ActiveCaloriesBurnedRecord intervals, summed per day at read time. */
+    ACTIVE_ENERGY(direction = +1, unit = "kcal"),
     ;
 
     val key: String get() = name

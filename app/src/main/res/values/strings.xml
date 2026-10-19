@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Pawse</string>
+    <string name="widget_description">Recovery, Sleep, Strain and Energy from this morning\'s read.</string>
+    <string name="channel_morning">Morning read</string>
+    <string name="channel_morning_description">One calm note a day, after the nightly read.</string>
 
     <!--
       Shown by Health Connect on its own permission screen. This is the only place
