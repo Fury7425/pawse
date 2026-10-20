@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Pawse</string>
+    <string name="app_name" translatable="false">Pawse</string>
     <string name="widget_description">Today\'s guidance, Body, sleep debt and load from this morning\'s read.</string>
     <string name="channel_weekly">Weekly summary</string>
     <string name="channel_weekly_description">One calm summary a week. No daily score pushes.</string>
