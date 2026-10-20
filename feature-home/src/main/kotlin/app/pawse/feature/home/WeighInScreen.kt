@@ -8,10 +8,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -80,7 +76,10 @@ import app.pawse.core.ui.component.GlyphButton
 import app.pawse.core.ui.component.Glyphs
 import app.pawse.core.ui.component.PawseCard
 import app.pawse.core.ui.component.PawseField
+import app.pawse.core.ui.component.RevealEnter
+import app.pawse.core.ui.component.RevealExit
 import app.pawse.core.ui.component.Segmented
+import app.pawse.core.ui.component.aura
 import app.pawse.core.ui.component.cardSurface
 import app.pawse.core.ui.component.pressable
 import app.pawse.core.ui.theme.PawseTheme
@@ -127,7 +126,7 @@ fun WeighInScreen(
     }
 
     Scaffold(modifier = modifier, containerColor = MaterialTheme.colorScheme.background) { padding ->
-        Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().aura()) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -178,7 +177,7 @@ fun WeighInScreen(
                     onSelect = viewModel::setEarlier,
                     label = { if (it) tr("Earlier", "이전 시간") else tr("Now", "지금") + " · $now" },
                 )
-                AnimatedVisibility(state.earlier, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+                AnimatedVisibility(state.earlier, enter = RevealEnter, exit = RevealExit) {
                     Column {
                         Spacer(Modifier.height(8.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -223,7 +222,7 @@ fun WeighInScreen(
 
                 Spacer(Modifier.height(24.dp))
                 CompositionHeader(open = state.compositionOpen, onToggle = viewModel::toggleComposition)
-                AnimatedVisibility(state.compositionOpen, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+                AnimatedVisibility(state.compositionOpen, enter = RevealEnter, exit = RevealExit) {
                     Column {
                         Spacer(Modifier.height(8.dp))
                         PawseCard(padding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
@@ -392,7 +391,7 @@ private fun PickerBox(label: String, value: String, onClick: () -> Unit, modifie
 
 @Composable
 private fun CompositionHeader(open: Boolean, onToggle: () -> Unit) {
-    val turn by animateFloatAsState(if (open) 180f else 0f, tween(200, easing = EaseOut), label = "chevron")
+    val turn by animateFloatAsState(if (open) 180f else 0f, tween(220, easing = EaseOut), label = "chevron")
     Row(
         modifier = Modifier
             .fillMaxWidth()

@@ -31,6 +31,19 @@ data class PawseSemantics(
     val glassLine: Color,
     /** The one-pixel top highlight on cards. Chrome, not signal. */
     val highlight: Color,
+    /** Light falling on a card's top edge, fading out by two thirds down. Transparent turns it off. */
+    val sheen: Color,
+    /** The one deep, soft shadow under a card. Transparent turns it off. */
+    val cardShadow: Color,
+    /** A faint cool light from the top of each screen. Dark only. */
+    val aura: Color,
+    /** Sleep stages, light to deep in one blue ramp, so no stage reads as good or bad. */
+    val stageAwake: Color,
+    val stageRem: Color,
+    val stageLight: Color,
+    val stageDeep: Color,
+    /** A night written as asleep only, without stages. */
+    val stageAsleep: Color,
 )
 
 private val LocalPawseSemantics = staticCompositionLocalOf<PawseSemantics> {
@@ -47,8 +60,16 @@ private val DarkSemantics = PawseSemantics(
     baselineBand = PawseColors.BaselineBandDark,
     baselineOuter = PawseColors.BaselineOuterDark,
     glass = PawseColors.DarkSurface.copy(alpha = 0.9f),
-    glassLine = Color.White.copy(alpha = 0.07f),
-    highlight = Color.White.copy(alpha = 0.04f),
+    glassLine = Color.White.copy(alpha = 0.10f),
+    highlight = Color.White.copy(alpha = 0.07f),
+    sheen = Color.White.copy(alpha = 0.045f),
+    cardShadow = Color.Black.copy(alpha = 0.85f),
+    aura = Color(0xFF96ACD2).copy(alpha = 0.09f),
+    stageAwake = Color(0xFFE6E8EA),
+    stageRem = Color(0xFF9DB9F2),
+    stageLight = Color(0xFF5E86DB),
+    stageDeep = Color(0xFF3E5FC2),
+    stageAsleep = PawseColors.DarkOnSurfaceVariant,
 )
 
 private val LightSemantics = PawseSemantics(
@@ -63,6 +84,14 @@ private val LightSemantics = PawseSemantics(
     glass = PawseColors.LightSurface.copy(alpha = 0.92f),
     glassLine = PawseColors.LightOnSurface.copy(alpha = 0.08f),
     highlight = Color.White.copy(alpha = 0.7f),
+    sheen = Color.Transparent,
+    cardShadow = PawseColors.LightOnSurface.copy(alpha = 0.16f),
+    aura = Color.Transparent,
+    stageAwake = Color(0xFF7C858D),
+    stageRem = Color(0xFF6690DD),
+    stageLight = Color(0xFF3F67C8),
+    stageDeep = Color(0xFF1F3A8A),
+    stageAsleep = PawseColors.LightOnSurfaceVariant,
 )
 
 private val NightSemantics = PawseSemantics(
@@ -77,6 +106,15 @@ private val NightSemantics = PawseSemantics(
     glass = PawseColors.NightSurface.copy(alpha = 0.92f),
     glassLine = Color.White.copy(alpha = 0.06f),
     highlight = Color.White.copy(alpha = 0.03f),
+    // Bedside stays flat: no sheen, no shadow, no glow in a dark room.
+    sheen = Color.Transparent,
+    cardShadow = Color.Transparent,
+    aura = Color.Transparent,
+    stageAwake = Color(0xFFBFC4C9),
+    stageRem = Color(0xFF8AA6D9),
+    stageLight = Color(0xFF5579C4),
+    stageDeep = Color(0xFF3A5AB0),
+    stageAsleep = PawseColors.NightOnSurfaceVariant,
 )
 
 private val NightScheme = darkColorScheme(

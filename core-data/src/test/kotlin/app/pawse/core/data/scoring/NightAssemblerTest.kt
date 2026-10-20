@@ -69,6 +69,30 @@ class NightAssemblerTest {
         night.wasoMinutes!! shouldBe (10.0 plusOrMinus tolerance)
         night.awakenings shouldBe 1
         night.interruptions shouldBe 1
+        night.lightMinutes!! shouldBe (305.0 plusOrMinus tolerance)
+    }
+
+    @Test
+    fun `the stage chart keeps real blocks and draws a split night's gap as awake`() {
+        val sessions = listOf(
+            Rows.night(1, "2026-03-01", "23:00", "2026-03-02", "03:00", hasStages = true),
+            Rows.night(2, "2026-03-02", "03:30", "2026-03-02", "07:00", hasStages = true),
+        )
+        val stages = mapOf(
+            1L to listOf(
+                Rows.stage(1, SleepSessionRecord.STAGE_TYPE_LIGHT, "2026-03-01", "23:00", "2026-03-02", "01:00"),
+                Rows.stage(1, SleepSessionRecord.STAGE_TYPE_DEEP, "2026-03-02", "01:00", "2026-03-02", "03:00"),
+            ),
+            2L to listOf(Rows.stage(2, SleepSessionRecord.STAGE_TYPE_LIGHT, "2026-03-02", "03:30", "2026-03-02", "07:00")),
+        )
+
+        val spans = NightAssembler.spans(sessions, stages, staged = true)
+        spans.map { it.stage } shouldBe listOf(NightStage.LIGHT, NightStage.DEEP, NightStage.AWAKE, NightStage.LIGHT)
+        (spans[2].endEpochMs - spans[2].startEpochMs) / 60_000 shouldBe 30L
+
+        // Without stages the same night is asleep, awake, asleep.
+        NightAssembler.spans(sessions, emptyMap(), staged = false).map { it.stage } shouldBe
+            listOf(NightStage.ASLEEP, NightStage.AWAKE, NightStage.ASLEEP)
     }
 
     @Test

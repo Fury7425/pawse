@@ -71,6 +71,7 @@ import app.pawse.core.ui.component.PrimaryButton
 import app.pawse.core.ui.component.ScoreRing
 import app.pawse.core.ui.component.SplitBar
 import app.pawse.core.ui.component.UsualRangeKey
+import app.pawse.core.ui.component.aura
 import app.pawse.core.ui.component.cardSurface
 import app.pawse.core.ui.component.pressable
 import app.pawse.core.ui.theme.PawseTheme
@@ -212,7 +213,7 @@ private fun TodayContent(
     val pad = Modifier.padding(horizontal = 24.dp)
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().aura(),
         contentPadding = PaddingValues(
             top = contentPadding.calculateTopPadding() + 12.dp,
             bottom = contentPadding.calculateBottomPadding() + 140.dp,
@@ -235,7 +236,7 @@ private fun TodayContent(
             ) {
                 Header(snapshot.date, sync, snapshot.lastSyncEpochMs, onSyncNow, onSettings, pad)
                 Spacer(Modifier.height(28.dp))
-                Text(ScoreCopy.guidance(today.guidance), style = PawseType.Title, modifier = pad)
+                Text(ScoreCopy.guidance(today.guidance), style = PawseType.Guidance, modifier = pad)
                 Spacer(Modifier.height(20.dp))
                 Rings(snapshot = snapshot, focus = focus, onFocus = { focus = it })
             }

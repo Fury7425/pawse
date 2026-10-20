@@ -23,6 +23,8 @@ data class NightSummary(
     val asleepMinutes: Double,
     val remMinutes: Double?,
     val deepMinutes: Double?,
+    /** Shown on the Sleep tab next to REM and deep, never scored. */
+    val lightMinutes: Double?,
     val wasoMinutes: Double?,
     val awakenings: Int?,
     /** Wake blocks long enough to remember, which is what Apple's bucket counts. */
@@ -53,6 +55,7 @@ data class NightSummary(
             asleepMinutes = 0.0,
             remMinutes = null,
             deepMinutes = null,
+            lightMinutes = null,
             wasoMinutes = null,
             awakenings = null,
             interruptions = null,
@@ -66,6 +69,11 @@ data class NightSummary(
         )
     }
 }
+
+/** The stage chart's lanes. [ASLEEP] is a night written without stages. */
+enum class NightStage { AWAKE, REM, LIGHT, DEEP, ASLEEP }
+
+data class StageSpan(val stage: NightStage, val startEpochMs: Long, val endEpochMs: Long)
 
 /**
  * Sessions and stage blocks to a [NightSummary].
@@ -167,6 +175,7 @@ object NightAssembler {
             asleepMinutes = asleep,
             remMinutes = if (stagesCoverNight) blocks.filter { it.kind == SleepStageKind.REM }.sumOf { it.minutes } else null,
             deepMinutes = if (stagesCoverNight) blocks.filter { it.kind == SleepStageKind.DEEP }.sumOf { it.minutes } else null,
+            lightMinutes = if (stagesCoverNight) blocks.filter { it.kind == SleepStageKind.LIGHT }.sumOf { it.minutes } else null,
             wasoMinutes = waso,
             awakenings = awakenings,
             interruptions = interruptions,
@@ -180,6 +189,54 @@ object NightAssembler {
             startOffsetSeconds = startOffset.totalSeconds,
             endOffsetSeconds = wakeOffset.totalSeconds,
         )
+    }
+
+    /**
+     * The night as the stage chart draws it, first bedtime to final wake, with the
+     * gap between split sessions as awake. A staged night keeps its real blocks and
+     * leaves unrecorded stretches empty; an unstaged one is asleep wherever the
+     * writer did not say awake, because its envelope is all it has.
+     */
+    fun spans(
+        sessions: List<SleepSessionEntity>,
+        stagesBySession: Map<Long, List<SleepStageEntity>>,
+        staged: Boolean,
+    ): List<StageSpan> {
+        val out = mutableListOf<StageSpan>()
+        fun add(stage: NightStage, start: Long, end: Long) {
+            if (end <= start) return
+            val last = out.lastOrNull()
+            if (last != null && last.stage == stage && start <= last.endEpochMs) {
+                out[out.lastIndex] = last.copy(endEpochMs = maxOf(last.endEpochMs, end))
+            } else {
+                out += StageSpan(stage, start, end)
+            }
+        }
+        val nights = sessions.filter { !it.isNap }.sortedBy { it.startEpochMs }
+        var cursor = nights.firstOrNull()?.startEpochMs ?: return emptyList()
+        for (session in nights) {
+            add(NightStage.AWAKE, cursor, session.startEpochMs)
+            cursor = maxOf(cursor, session.startEpochMs)
+            for (block in stagesBySession[session.id].orEmpty().sortedBy { it.startEpochMs }) {
+                val kind = SleepStages.of(block.stageType)
+                val stage = when {
+                    kind.isAwake -> NightStage.AWAKE
+                    !staged -> continue
+                    kind == SleepStageKind.LIGHT -> NightStage.LIGHT
+                    kind == SleepStageKind.DEEP -> NightStage.DEEP
+                    kind == SleepStageKind.REM -> NightStage.REM
+                    else -> continue
+                }
+                val start = maxOf(block.startEpochMs, cursor)
+                val end = minOf(block.endEpochMs, session.endEpochMs)
+                if (!staged) add(NightStage.ASLEEP, cursor, start)
+                add(stage, start, end)
+                cursor = maxOf(cursor, end)
+            }
+            if (!staged) add(NightStage.ASLEEP, cursor, session.endEpochMs)
+            cursor = maxOf(cursor, session.endEpochMs)
+        }
+        return out
     }
 
     /**

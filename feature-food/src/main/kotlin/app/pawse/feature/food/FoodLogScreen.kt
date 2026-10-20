@@ -3,10 +3,10 @@ package app.pawse.feature.food
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -59,6 +59,7 @@ import app.pawse.core.data.food.FoodLogEntry
 import app.pawse.core.data.food.FoodSource
 import app.pawse.core.data.food.Nutrients
 import app.pawse.core.data.health.HealthPermissions
+import app.pawse.core.ui.component.EaseOut
 import app.pawse.core.ui.component.GhostButton
 import app.pawse.core.ui.component.Glyph
 import app.pawse.core.ui.component.GlyphButton
@@ -66,9 +67,12 @@ import app.pawse.core.ui.component.Glyphs
 import app.pawse.core.ui.component.KeySwatch
 import app.pawse.core.ui.component.PawseCard
 import app.pawse.core.ui.component.PawseSheet
+import app.pawse.core.ui.component.RevealEnter
+import app.pawse.core.ui.component.RevealExit
 import app.pawse.core.ui.component.SecondaryButton
 import app.pawse.core.ui.component.SplitBar
 import app.pawse.core.ui.component.UndoToast
+import app.pawse.core.ui.component.aura
 import app.pawse.core.ui.component.cardSurface
 import app.pawse.core.ui.component.pressable
 import app.pawse.core.ui.theme.PawseType
@@ -131,7 +135,7 @@ fun FoodLogScreen(
     val pad = Modifier.padding(horizontal = 24.dp)
 
     Scaffold(modifier = modifier, containerColor = MaterialTheme.colorScheme.background) { padding ->
-        Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().aura()) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
@@ -231,15 +235,18 @@ fun FoodLogScreen(
                 }
             }
 
-            undo?.let {
-                UndoToast(
-                    text = it.text,
-                    onUndo = it.undo,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .navigationBarsPadding()
-                        .padding(start = 16.dp, end = 16.dp, bottom = 100.dp),
-                )
+            // Rises from behind the dock. Compose retargets mid-flight, so a second undo
+            // picks up where the first was instead of restarting; it leaves at once.
+            AnimatedVisibility(
+                visible = undo != null,
+                enter = slideInVertically(tween(240, easing = EaseOut)) { it } + fadeIn(tween(240, easing = EaseOut)),
+                exit = ExitTransition.None,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(start = 16.dp, end = 16.dp, bottom = 100.dp),
+            ) {
+                undo?.let { UndoToast(text = it.text, onUndo = it.undo) }
             }
         }
     }
@@ -569,7 +576,7 @@ private fun EntryRow(
             )
         }
 
-        AnimatedVisibility(expanded, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+        AnimatedVisibility(expanded, enter = RevealEnter, exit = RevealExit) {
             Column(Modifier.padding(start = 52.dp, bottom = 16.dp)) {
                 Text(
                     FoodCopy.source(entry.source) +

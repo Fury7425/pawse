@@ -444,7 +444,7 @@ private fun CapabilityRow(name: String, glyph: String, coverage: Float, dot: Col
                 contentDescription = tr("$name: $state, $percent% of its inputs found. $why", "$name: $state, 입력값의 $percent% 확인. $why")
             },
     ) {
-        ScoreRing(fraction = coverage, color = dot, size = 52.dp, glow = false, ticks = false, stroke = 8f) {
+        ScoreRing(fraction = coverage, color = dot, size = 52.dp, glow = false, stroke = 8f) {
             Text("$percent%", style = PawseType.Label.copy(fontWeight = PawseType.BodyStrong.fontWeight))
         }
         Spacer(Modifier.width(16.dp))

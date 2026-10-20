@@ -74,20 +74,32 @@ opened in bed.
 
 | Token | Dark | Light |
 |---|---|---|
-| background | `#0E1012` | `#FBFBFC` |
-| surface | `#14171A` | `#FFFFFF` |
-| surfaceContainer | `#1A1E22` | `#F2F3F5` |
-| outline | `#343A40` | `#C6CBD1` |
-| onSurface | `#EDEFF1` | `#15181B` |
-| onSurfaceVariant | `#9BA3AB` | `#515A62` |
+| background | `#0A0B0D` | `#FBFBFC` |
+| surface | `#111317` | `#FFFFFF` |
+| surfaceContainer | `#15181C` | `#F2F3F5` |
+| surfaceContainerHigh | `#1D2126` | `#E9EBEE` |
+| outline | `#30363D` | `#C6CBD1` |
+| outlineVariant | white at 7% | `#DFE3E7` |
+| onSurface | `#F3F4F6` | `#15181B` |
+| onSurfaceVariant | `#9DA5AE` | `#515A62` |
 | band low (illness alert only) | `#FF7A6B` | `#B3261E` |
 | band moderate | `#F5C451` | `#8A5A00` |
 | band high | `#5CD6A0` | `#14684A` |
-| baseline band | `#2A3036` | `#E3E7EB` |
-| baseline outer | `#1C2126` | `#EFF2F5` |
+| baseline band | `#272C33` | `#E3E7EB` |
+| baseline outer | `#191C21` | `#EFF2F5` |
 
 Red is reserved for an illness alert: no single night is ever painted red. Band state is
 never encoded in hue alone — every dot is paired with a word.
+
+Cards are lit softly from above (white at 4.5% fading out by two thirds down) and sit on
+one deep shadow; the primary pill has a faint top-to-bottom satin; dark screens carry a
+faint cool light from the top. Bedside drops all three. Big figures are set at weight 250.
+
+Motion follows the canvas: presses go down in 90 ms and back in 160; a pushed screen
+slides 20 dp in with a fade over 300 ms on the drawer curve while tabs and Back are
+instant; the scanner grows out of its button in 280 ms; a tab switch fades its content
+up 4 dp out of a 2 dp blur in 200 ms; expanding a row snaps the height and fades the
+content in 220 ms; the undo bar rises from behind the dock in 240 ms.
 
 ## Delivery order
 
@@ -139,6 +151,11 @@ never encoded in hue alone — every dot is paired with a word.
   it feel current. Samsung watches only upload when they reconnect or Samsung Health opens.
 - **Duplicate sources resolve by priority, not averaging.**
 - **Bedtimes are angles, not numbers.** Habitual bedtime uses a circular mean.
+- **A night's curves are read when it is opened.** On the Sleep tab, heart rate and skin
+  temperature come from Health Connect for that night only; HRV, SpO₂ and breathing are the
+  readings already stored. The figures beside them are the stored ones, never re-derived.
+- **The explain screen's "your usual" bands are display statistics**: mean ± 1 SD of the stored
+  nightly figures over the 60 nights ending a week ago. They feed no score.
 - **The food log is the one place this app can reach the network, and it asks first.**
 - **Nutrition figures are per 100 g in storage, whatever the label said.** Alcohol is stored
   as grams of ethanol (ABV × 0.789, 100 ml taken as 100 g).

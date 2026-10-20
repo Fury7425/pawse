@@ -21,14 +21,16 @@ import androidx.compose.ui.graphics.Color
 object PawseColors {
 
     // --- Dark (primary target) -------------------------------------------------
-    val DarkBackground = Color(0xFF0E1012)
-    val DarkSurface = Color(0xFF14171A)
-    val DarkSurfaceContainer = Color(0xFF1A1E22)
-    val DarkSurfaceContainerHigh = Color(0xFF22272C)
-    val DarkOutline = Color(0xFF343A40)
-    val DarkOutlineVariant = Color(0xFF262B30)
-    val DarkOnSurface = Color(0xFFEDEFF1)
-    val DarkOnSurfaceVariant = Color(0xFF9BA3AB)
+    // Deep graphite with cards lit from above. Hairlines are white at 7% so they
+    // catch the light on any layer instead of reading as a grey stroke.
+    val DarkBackground = Color(0xFF0A0B0D)
+    val DarkSurface = Color(0xFF111317)
+    val DarkSurfaceContainer = Color(0xFF15181C)
+    val DarkSurfaceContainerHigh = Color(0xFF1D2126)
+    val DarkOutline = Color(0xFF30363D)
+    val DarkOutlineVariant = Color(0x12FFFFFF)
+    val DarkOnSurface = Color(0xFFF3F4F6)
+    val DarkOnSurfaceVariant = Color(0xFF9DA5AE)
     val DarkOnSurfaceFaint = Color(0xFF6B747C)
 
     // --- Light -----------------------------------------------------------------
@@ -85,10 +87,10 @@ object PawseColors {
     val NeutralLight = Color(0xFF6C757D)
 
     /** Fill of the mu +/- sigma band on the baseline row. Chrome, not signal. */
-    val BaselineBandDark = Color(0xFF2A3036)
+    val BaselineBandDark = Color(0xFF272C33)
     val BaselineBandLight = Color(0xFFE3E7EB)
 
     /** The fainter +/-2 sigma extent behind it. */
-    val BaselineOuterDark = Color(0xFF1C2126)
+    val BaselineOuterDark = Color(0xFF191C21)
     val BaselineOuterLight = Color(0xFFEFF2F5)
 }

@@ -58,6 +58,7 @@ import app.pawse.core.ui.component.PawseCard
 import app.pawse.core.ui.component.Segmented
 import app.pawse.core.ui.component.SplitBar
 import app.pawse.core.ui.component.UsualRangeKey
+import app.pawse.core.ui.component.aura
 import app.pawse.core.ui.component.cardSurface
 import app.pawse.core.ui.component.pressable
 import app.pawse.core.ui.theme.PawseTheme
@@ -93,7 +94,7 @@ fun BodyScreen(
 
     Scaffold(modifier = modifier, containerColor = MaterialTheme.colorScheme.background) { padding ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().aura(),
             contentPadding = PaddingValues(
                 start = 24.dp,
                 end = 24.dp,

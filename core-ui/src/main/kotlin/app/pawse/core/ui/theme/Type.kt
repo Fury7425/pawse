@@ -44,25 +44,34 @@ private fun style(size: Int, line: Int, weight: FontWeight, tracking: Double = 0
     fontFeatureSettings = TABULAR,
 )
 
+/**
+ * Big figures sit at 250 so they read light and exact. Pretendard Variable renders
+ * it as drawn; a static system face snaps to its nearest weight, Light.
+ */
+private val NumeralWeight = FontWeight(250)
+
 object PawseType {
 
     /** The one hero numeral on a screen: a day's kcal, a weight. */
-    val Hero = style(84, 88, FontWeight.Light, -4.0).copy(lineHeightStyle = tightLineHeight)
+    val Hero = style(84, 88, NumeralWeight, -4.0).copy(lineHeightStyle = tightLineHeight)
 
     /** Numerals inside a large ring, a portion's kcal, a BMR. */
-    val Numeral = style(36, 44, FontWeight.Light, -1.2)
+    val Numeral = style(36, 44, NumeralWeight, -1.44)
 
     /** Numerals on an "Also today" card. */
-    val NumeralSmall = style(32, 40, FontWeight.Light, -1.0)
+    val NumeralSmall = style(32, 40, NumeralWeight, -1.2)
 
     /** Numerals inside a small ring. */
-    val RingSmall = style(26, 30, FontWeight.Light, -1.0)
+    val RingSmall = style(26, 30, NumeralWeight, -1.04)
 
     /** Onboarding's one big heading. */
     val Display = style(32, 40, FontWeight.Medium, -0.8)
 
-    /** Screen titles and the warm line. */
-    val Title = style(24, 32, FontWeight.Medium, -0.2)
+    /** Today's warm line: larger and lighter than a title, so it reads as a sentence. */
+    val Guidance = style(28, 34, FontWeight.Normal, -0.6)
+
+    /** Screen titles. */
+    val Title = style(24, 32, FontWeight.Medium, -0.48)
 
     /** Section heads, dates, product names. */
     val Heading = style(16, 24, FontWeight.Medium)
@@ -88,8 +97,8 @@ object PawseType {
  */
 val PawseTypography = Typography().run {
     copy(
-        displayLarge = displayLarge.copy(fontFamily = PawseFontFamily, fontWeight = FontWeight.Light, fontFeatureSettings = TABULAR),
-        displayMedium = displayMedium.copy(fontFamily = PawseFontFamily, fontWeight = FontWeight.Light, fontFeatureSettings = TABULAR),
+        displayLarge = displayLarge.copy(fontFamily = PawseFontFamily, fontWeight = NumeralWeight, fontFeatureSettings = TABULAR),
+        displayMedium = displayMedium.copy(fontFamily = PawseFontFamily, fontWeight = NumeralWeight, fontFeatureSettings = TABULAR),
         displaySmall = PawseType.Numeral,
         headlineLarge = PawseType.Display,
         headlineMedium = PawseType.Title,

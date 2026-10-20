@@ -19,6 +19,7 @@ import app.pawse.scoring.model.DayTag
 import app.pawse.scoring.model.EnergyForecast
 import app.pawse.scoring.model.Insight
 import app.pawse.scoring.model.Metric
+import app.pawse.scoring.model.NightInput
 import app.pawse.scoring.model.UserProfile
 import app.pawse.scoring.tr
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +32,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import javax.inject.Inject
+import kotlin.math.exp
 import javax.inject.Singleton
 
 /**
@@ -41,8 +43,10 @@ data class ScoringSnapshot(
     /** The morning these numbers belong to. Not necessarily today. */
     val date: LocalDate,
     val today: DayReport,
-    /** Up to seven days ending on [date], oldest first. */
-    val week: List<DayReport>,
+    /** Up to ninety days ending on [date], oldest first: the explain screen's trends. */
+    val history: List<DayReport>,
+    /** Each night's stored figures by wake date, over the same days. */
+    val nights: Map<LocalDate, NightRecord>,
     val energy: EnergyForecast?,
     val insights: List<Insight>,
     val calibration: Calibration,
@@ -55,9 +59,29 @@ data class ScoringSnapshot(
     val scoringVersion: String,
     val configHash: String,
 ) {
+    /** Up to seven days ending on [date], oldest first. */
+    val week: List<DayReport>
+        get() = history.takeLast(7)
+
     /** Banister needs an HRmax; without age or a measured one, sessions fall back to effort. */
     val needsProfile: Boolean
         get() = profile.ageYears == null && profile.measuredMaxHeartRate == null
+}
+
+/**
+ * One night as it was stored and fed to the engine: the sleep it was assembled
+ * into and the nightly signals. The Sleep tab prints these, never its own sums.
+ */
+data class NightRecord(
+    val sleep: NightSummary,
+    val signals: NightInput,
+    /** Share of the night with heart-rate data, 0..1. Null until the night's series was read. */
+    val hrCoverage: Double?,
+    /** The app that wrote the sleep session. */
+    val source: String,
+) {
+    /** The night's median RMSSD, which the signal layer keeps as its log. */
+    val hrvMs: Double? get() = signals.lnHrv?.value?.let(::exp)
 }
 
 sealed interface ScoringState {
@@ -194,14 +218,23 @@ class ScoringRepository @Inject constructor(
             // screen that went blank until waking would hide a real reading.
             val newest = result.days.lastOrNull { it.body != null || it.sleep.lastNightMinutes != null }
                 ?: result.days.last()
-            val week = result.days.filter { !it.date.isAfter(newest.date) }.takeLast(WEEK)
+            val history = result.days.filter { !it.date.isAfter(newest.date) }.takeLast(HISTORY)
             val note = notes.firstOrNull { it.localDate == newest.date.toString() }
+            val coverage = samples.filter { it.metric == Metric.NIGHT_HR_COVERAGE.key }.associate { it.localDate to it.value }
+            val writers = sessions.filter { !it.isNap }.associate { it.localDate to it.sourceApp }
+            val nightRecords = history.mapNotNull { day ->
+                val key = day.date.toString()
+                val sleep = nights[key]?.takeIf { it.hasSession } ?: return@mapNotNull null
+                val signals = input.nights[day.date] ?: return@mapNotNull null
+                day.date to NightRecord(sleep, signals, coverage[key], writers[key].orEmpty())
+            }.toMap()
 
             lastComputedFor = today
             ScoringSnapshot(
                 date = newest.date,
                 today = newest,
-                week = week,
+                history = history,
+                nights = nightRecords,
                 energy = result.energy.takeIf { newest.date == result.days.last().date },
                 insights = result.insights,
                 calibration = result.calibration,
@@ -223,7 +256,8 @@ class ScoringRepository @Inject constructor(
 
         const val STALE_AFTER_MS = 120_000L
 
-        private const val WEEK = 7
+        /** The explain screen's longest trend. */
+        private const val HISTORY = 90
 
         private val LOADED_METRICS = listOf(
             Metric.HRV_RMSSD,

@@ -12,8 +12,14 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -47,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -65,9 +72,12 @@ import androidx.navigation.navArgument
 import app.pawse.core.data.profile.Appearance
 import app.pawse.core.data.profile.UserProfilePreferences
 import app.pawse.core.data.sync.SyncPreferences
+import app.pawse.core.ui.component.EaseDrawer
 import app.pawse.core.ui.component.EaseInOut
+import app.pawse.core.ui.component.EaseOut
 import app.pawse.core.ui.component.Glyph
 import app.pawse.core.ui.component.Glyphs
+import app.pawse.core.ui.component.ctaBrush
 import app.pawse.core.ui.component.lift
 import app.pawse.core.ui.component.pressable
 import app.pawse.core.ui.theme.PawseTheme
@@ -163,6 +173,26 @@ private fun AskForNotificationsOnce() {
 
 private const val BODY = "body"
 
+/** Screens opened on top of a tab. They slide in; the tabs themselves never move. */
+private val PUSHED = setOf(
+    HomeDestinations.EXPLAIN,
+    HomeDestinations.WEIGH_IN,
+    FoodDestinations.SCAN,
+    FoodDestinations.ADD,
+    FoodDestinations.MANUAL,
+)
+
+/** A pushed screen: 20 dp in from the right with a fade, 300 ms on the drawer curve. */
+private val pushIn = fadeIn(tween(300, easing = EaseDrawer)) +
+    slideInHorizontally(tween(300, easing = EaseDrawer)) { it / 18 }
+
+/** The camera grows out of the Scan button, so it is clear where it came from. */
+private val scanIn = fadeIn(tween(280, easing = EaseOut)) +
+    scaleIn(tween(280, easing = EaseOut), initialScale = 0.94f, transformOrigin = TransformOrigin(0.88f, 0.96f))
+
+/** Keeps the screen underneath in place while a pushed one slides over it. */
+private val holdUnder = fadeOut(tween(300), targetAlpha = 1f)
+
 /**
  * The whole app: Today, Food and Body as three tabs, the scanner one tap from any
  * of them, and every explanation one tap from the score it explains.
@@ -182,7 +212,16 @@ private fun PawseNavGraph(initialRoute: String?) {
     }
 
     Box(Modifier.fillMaxSize()) {
-        NavHost(navController = navController, startDestination = HomeDestinations.HOME) {
+        // Tabs swap at once, because they are switched many times a day. Back is
+        // instant too: leaving a screen should never wait on an animation.
+        NavHost(
+            navController = navController,
+            startDestination = HomeDestinations.HOME,
+            enterTransition = { EnterTransition.None },
+            exitTransition = { if (targetState.destination.route in PUSHED) holdUnder else ExitTransition.None },
+            popEnterTransition = { EnterTransition.None },
+            popExitTransition = { ExitTransition.None },
+        ) {
             composable(HomeDestinations.HOME) {
                 HomeScreen(onOpenExplain = { type -> navController.navigate(HomeDestinations.explain(type)) })
             }
@@ -190,6 +229,7 @@ private fun PawseNavGraph(initialRoute: String?) {
             composable(
                 route = HomeDestinations.EXPLAIN,
                 arguments = listOf(navArgument(HomeDestinations.EXPLAIN_ARG) { type = NavType.StringType }),
+                enterTransition = { pushIn },
             ) { backStackEntry ->
                 ExplainScreen(
                     type = HomeDestinations.scoreTypeOf(backStackEntry.arguments?.getString(HomeDestinations.EXPLAIN_ARG)),
@@ -206,14 +246,14 @@ private fun PawseNavGraph(initialRoute: String?) {
 
             composable(BODY) { BodyScreen(onAddWeighIn = { navController.navigate(HomeDestinations.WEIGH_IN) }) }
 
-            composable(HomeDestinations.WEIGH_IN) {
+            composable(HomeDestinations.WEIGH_IN, enterTransition = { pushIn }) {
                 WeighInScreen(
                     onDone = { navController.popBackStack() },
                     onBack = { navController.popBackStack() },
                 )
             }
 
-            composable(FoodDestinations.SCAN) {
+            composable(FoodDestinations.SCAN, enterTransition = { scanIn }) {
                 ScannerScreen(
                     onBack = { navController.popBackStack() },
                     onProductChosen = { productId ->
@@ -235,6 +275,7 @@ private fun PawseNavGraph(initialRoute: String?) {
             composable(
                 route = FoodDestinations.ADD,
                 arguments = listOf(navArgument(FoodDestinations.PRODUCT_ARG) { type = NavType.StringType }),
+                enterTransition = { pushIn },
             ) {
                 AddFoodScreen(
                     onDone = { navController.switchTab(FoodDestinations.LOG) },
@@ -242,7 +283,7 @@ private fun PawseNavGraph(initialRoute: String?) {
                 )
             }
 
-            composable(FoodDestinations.MANUAL) {
+            composable(FoodDestinations.MANUAL, enterTransition = { pushIn }) {
                 ManualEntryScreen(
                     onDone = { navController.switchTab(FoodDestinations.LOG) },
                     onBack = { navController.popBackStack() },
@@ -347,7 +388,7 @@ private fun Dock(
                     .size(64.dp)
                     .pressable(onClick = onScan)
                     .lift(CircleShape)
-                    .background(MaterialTheme.colorScheme.onSurface, CircleShape)
+                    .background(ctaBrush(), CircleShape)
                     .semantics { contentDescription = tr("Scan food", "음식 스캔") },
                 contentAlignment = Alignment.Center,
             ) {

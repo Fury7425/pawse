@@ -42,6 +42,7 @@ import app.pawse.core.ui.component.PawseCard
 import app.pawse.core.ui.component.PawseField
 import app.pawse.core.ui.component.Segmented
 import app.pawse.core.ui.component.SplitBar
+import app.pawse.core.ui.component.aura
 import app.pawse.core.ui.component.cardSurface
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.scoring.tr
@@ -69,7 +70,7 @@ fun AddFoodScreen(
     }
 
     Scaffold(modifier = modifier, containerColor = MaterialTheme.colorScheme.background) { padding ->
-        Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().aura()) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()

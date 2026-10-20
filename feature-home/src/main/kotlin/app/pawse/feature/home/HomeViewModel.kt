@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.pawse.core.data.profile.Appearance
 import app.pawse.core.data.profile.UserProfilePreferences
+import app.pawse.core.data.scoring.NightDetail
+import app.pawse.core.data.scoring.NightRepository
 import app.pawse.core.data.scoring.ScoringRepository
 import app.pawse.core.data.scoring.ScoringSnapshot
 import app.pawse.core.data.scoring.ScoringState
@@ -14,13 +16,16 @@ import app.pawse.scoring.model.BiologicalSex
 import app.pawse.scoring.model.DayTag
 import app.pawse.scoring.tr
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 import javax.inject.Inject
 
 sealed interface HomeUiState {
@@ -39,9 +44,26 @@ class HomeViewModel @Inject constructor(
     private val scoring: ScoringRepository,
     private val coordinator: SyncCoordinator,
     private val profilePreferences: UserProfilePreferences,
+    private val nights: NightRepository,
 ) : ViewModel() {
 
     private val dismissedAt = MutableStateFlow(0L)
+
+    /** The open night, and the snapshot it belongs to, so a fresh sync reads it again. */
+    private val nightKey = MutableStateFlow<Pair<LocalDate, Long>?>(null)
+
+    /**
+     * The night the Sleep tab has open, read when it is opened. The last one stays
+     * until the next arrives, so callers check its date.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val night: StateFlow<NightDetail?> = nightKey
+        .mapLatest { key -> key?.let { runCatching { nights.read(it.first) }.getOrNull() } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), null)
+
+    fun openNight(date: LocalDate, computedAtEpochMs: Long) {
+        nightKey.value = date to computedAtEpochMs
+    }
 
     val state: StateFlow<HomeUiState> = combine(scoring.state, coordinator.status) { scoringState, status ->
         when (scoringState) {

@@ -25,6 +25,7 @@ import app.pawse.core.ui.component.BackLink
 import app.pawse.core.ui.component.BottomAction
 import app.pawse.core.ui.component.ChoiceRow
 import app.pawse.core.ui.component.PawseField
+import app.pawse.core.ui.component.aura
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.scoring.tr
 
@@ -54,7 +55,7 @@ fun ManualEntryScreen(
     }
 
     Scaffold(modifier = modifier, containerColor = MaterialTheme.colorScheme.background) { padding ->
-        Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().aura()) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()

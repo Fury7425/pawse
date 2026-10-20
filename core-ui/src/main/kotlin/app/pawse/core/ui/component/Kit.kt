@@ -1,11 +1,18 @@
 package app.pawse.core.ui.component
 
+import android.os.Build
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -44,7 +51,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -53,15 +62,18 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -81,9 +93,13 @@ import kotlin.math.sin
  * same pill and the same ring rather than its own near-copy.
  */
 
-/** The canvas's two curves: a quick settle for presses, a slower glide for thumbs. */
+/**
+ * The canvas's curves: a quick settle for presses and entrances, a glide for
+ * thumbs moving on screen, and the drawer curve a pushed screen slides in on.
+ */
 val EaseOut = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)
 val EaseInOut = CubicBezierEasing(0.77f, 0f, 0.175f, 1f)
+val EaseDrawer = CubicBezierEasing(0.32f, 0.72f, 0f, 1f)
 
 /**
  * Line icons from the design canvas: 24-unit SVG path data, drawn as round strokes.
@@ -143,24 +159,40 @@ fun Glyph(
     }
 }
 
-/** The canvas's press: a 3% shrink that settles quickly, no ripple. */
+/**
+ * The canvas's press: a 3% shrink, no ripple. It goes down in 90 ms so the tap
+ * feels heard at once, and lets go a touch slower.
+ */
 @Composable
 fun Modifier.pressable(enabled: Boolean = true, role: Role = Role.Button, onClick: () -> Unit): Modifier {
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.97f else 1f, tween(160, easing = EaseOut), label = "press")
+    val scale by animateFloatAsState(if (pressed) 0.97f else 1f, tween(if (pressed) 90 else 160, easing = EaseOut), label = "press")
     return this
         .graphicsLayer { scaleX = scale; scaleY = scale }
         .clickable(interactionSource = source, indication = null, enabled = enabled, role = role, onClick = onClick)
 }
 
-/** A card's fill, hairline and the one-pixel highlight along its top edge. */
+/**
+ * A card: its fill lit softly from above, the hairline, the one-pixel highlight
+ * along its top edge, and one deep shadow under it. Bedside drops the light and
+ * the shadow.
+ */
 @Composable
 fun Modifier.cardSurface(shape: Shape = RoundedCornerShape(16.dp), radius: Dp = 16.dp): Modifier {
-    val highlight = PawseTheme.semantics.highlight
+    val semantics = PawseTheme.semantics
+    val highlight = semantics.highlight
     return this
+        .then(
+            if (semantics.cardShadow.alpha > 0f) {
+                Modifier.shadow(10.dp, shape, clip = false, ambientColor = semantics.cardShadow, spotColor = semantics.cardShadow)
+            } else {
+                Modifier
+            },
+        )
         .clip(shape)
         .background(MaterialTheme.colorScheme.surfaceContainer)
+        .background(Brush.verticalGradient(0f to semantics.sheen, 0.64f to Color.Transparent))
         .drawBehind {
             val inset = radius.toPx()
             drawLine(highlight, Offset(inset, 1.5f), Offset(size.width - inset, 1.5f), strokeWidth = 1.dp.toPx())
@@ -183,6 +215,13 @@ fun PawseCard(
             .padding(padding),
         content = content,
     )
+}
+
+/** The primary pill's satin: a touch lighter at the top, a touch deeper at the bottom. */
+@Composable
+fun ctaBrush(): Brush {
+    val on = MaterialTheme.colorScheme.onSurface
+    return Brush.verticalGradient(listOf(lerp(on, Color.White, 0.12f), lerp(on, Color.Black, 0.10f)))
 }
 
 /** The pill everything important ends on. */
@@ -208,7 +247,7 @@ fun PrimaryButton(
                     Modifier
                 },
             )
-            .background(MaterialTheme.colorScheme.onSurface, RoundedCornerShape(height / 2)),
+            .background(ctaBrush(), RoundedCornerShape(height / 2)),
         contentAlignment = Alignment.Center,
     ) {
         Text(text, style = PawseType.Heading, color = MaterialTheme.colorScheme.background)
@@ -341,7 +380,8 @@ fun <T> Segmented(
                 val isSelected = option == selected
                 val color by animateColorAsState(
                     if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                    tween(160),
+                    // In step with the thumb, so label and pill arrive together.
+                    tween(240),
                     label = "segment",
                 )
                 Row(
@@ -456,10 +496,7 @@ fun PawseField(
     )
 }
 
-/**
- * A score on a ring: the arc is the value, the faint ticks are the band edges at a
- * third and two thirds, and an optional bold tick marks a target.
- */
+/** A score on a ring: the arc is the value, and an optional bold tick marks a target. */
 @Composable
 fun ScoreRing(
     fraction: Float?,
@@ -468,12 +505,10 @@ fun ScoreRing(
     modifier: Modifier = Modifier,
     target: Float? = null,
     glow: Boolean = true,
-    ticks: Boolean = true,
     stroke: Float = 7f,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val track = PawseTheme.semantics.baselineOuter
-    val tickColor = MaterialTheme.colorScheme.outline
     val targetColor = MaterialTheme.colorScheme.onSurface
     val sweep = remember { Animatable(0f) }
     LaunchedEffect(fraction) { sweep.animateTo((fraction ?: 0f).coerceIn(0f, 1f), tween(760, easing = EaseOut)) }
@@ -503,10 +538,6 @@ fun ScoreRing(
                     strokeWidth = width * unit,
                     cap = StrokeCap.Round,
                 )
-            }
-            if (ticks) {
-                tick(0.33f, 49.5f, 47f, 1.5f, tickColor)
-                tick(0.66f, 49.5f, 47f, 1.5f, tickColor)
             }
             target?.let { tick(it.coerceIn(0f, 1f), 47f, 35f, 2.5f, targetColor) }
         }
@@ -557,7 +588,7 @@ fun UndoToast(text: String, onUndo: () -> Unit, modifier: Modifier = Modifier) {
             .fillMaxWidth()
             .heightIn(min = 52.dp)
             .lift(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.onSurface, RoundedCornerShape(16.dp))
+            .background(ctaBrush(), RoundedCornerShape(16.dp))
             .padding(start = 16.dp, top = 6.dp, end = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -628,3 +659,52 @@ fun PawseSheet(onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Uni
 
 /** The canvas's lift: a soft shadow under floating chrome. */
 fun Modifier.lift(shape: Shape): Modifier = shadow(12.dp, shape, clip = false)
+
+/** Dark theme's faint cool light from the top of a screen, drawn behind everything on it. */
+@Composable
+fun Modifier.aura(): Modifier {
+    val tint = PawseTheme.semantics.aura
+    if (tint.alpha == 0f) return this
+    return drawBehind {
+        val radius = size.width * 0.9f
+        drawRect(
+            Brush.radialGradient(listOf(tint, Color.Transparent), center = Offset(size.width / 2f, 0f), radius = radius),
+            size = Size(size.width, radius),
+        )
+    }
+}
+
+/** Expanding a row: the height snaps and only the new content fades in, 220 ms. Closing is instant. */
+val RevealEnter: EnterTransition = fadeIn(tween(220, easing = EaseOut)) + expandVertically(snap())
+val RevealExit: ExitTransition = ExitTransition.None
+
+/**
+ * A tab or range swap, 200 ms: the new content fades up 4 dp out of a 2 dp blur, so
+ * the old and new state never read as two objects. Seen many times a day, so it
+ * stays short, and the first composition does not animate at all.
+ */
+@Composable
+fun rememberSwap(key: Any?): Animatable<Float, AnimationVector1D> {
+    val reveal = remember { Animatable(1f) }
+    var last by remember { mutableStateOf(key) }
+    LaunchedEffect(key) {
+        if (key == last) return@LaunchedEffect
+        last = key
+        reveal.snapTo(0f)
+        reveal.animateTo(1f, tween(200, easing = EaseOut))
+    }
+    return reveal
+}
+
+/** Applies [rememberSwap] in the draw phase only, so a swap never recomposes what it moves. */
+fun Modifier.swapIn(reveal: Animatable<Float, AnimationVector1D>): Modifier = graphicsLayer {
+    val hidden = 1f - reveal.value
+    alpha = reveal.value
+    translationY = hidden * 4.dp.toPx()
+    // Blur needs Android 12; older phones get the fade and the lift alone.
+    renderEffect = if (hidden > 0f && Build.VERSION.SDK_INT >= 31) {
+        BlurEffect(hidden * 2.dp.toPx(), hidden * 2.dp.toPx(), TileMode.Decal)
+    } else {
+        null
+    }
+}
