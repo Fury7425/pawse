@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_description">오늘의 안내, 컨디션, 수면 부채, 부하를 오늘 아침 읽은 값으로 보여줘요.</string>
+    <string name="channel_weekly">주간 요약</string>
+    <string name="channel_weekly_description">일주일에 한 번, 차분한 요약만 보내요. 매일 점수 알림은 없어요.</string>
+    <string name="widget_label">컨디션</string>
+    <string name="widget_empty">Pawse를 열어 지난밤 기록을 읽어 주세요</string>
+
+    <string name="health_permission_rationale">
+        Pawse는 시계나 링이 이미 헬스 커넥트에 기록한 수면, 심박, 생리 주기 데이터를 읽고,
+        컨디션·수면·부하를 바탕으로 한 줄짜리 안내를 만들어요. 다시 기록하는 건 직접
+        입력한 음식과 체중뿐이에요. 모든 데이터는 이 휴대폰에만 남아요. Pawse는 의료기기가
+        아니며 어떤 것도 진단하지 않아요.
+    </string>
+</resources>

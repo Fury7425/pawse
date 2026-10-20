@@ -11,6 +11,7 @@ import app.pawse.core.data.food.FoodRepository
 import app.pawse.core.data.health.HealthConnectAvailability
 import app.pawse.core.data.health.HealthConnectGateway
 import app.pawse.core.data.health.HealthPermissions
+import app.pawse.scoring.tr
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -112,8 +113,13 @@ class FoodLogViewModel @Inject constructor(
     fun delete(entry: FoodLogEntry) {
         viewModelScope.launch {
             repository.remove(entry)
-            val where = if (entry.healthConnectId != null) ", here and in Health Connect" else ""
-            showUndo("Removed ${entry.name}$where") { repository.restore(entry) }
+            val inHc = entry.healthConnectId != null
+            showUndo(
+                tr(
+                    "Removed ${entry.name}" + if (inHc) ", here and in Health Connect" else "",
+                    "${entry.name} 삭제됨" + if (inHc) " (여기와 헬스 커넥트에서)" else "",
+                ),
+            ) { repository.restore(entry) }
         }
     }
 
@@ -122,7 +128,7 @@ class FoodLogViewModel @Inject constructor(
         viewModelScope.launch {
             val logged = repository.relog(entry)
             val kcal = logged.nutrients.kcal?.let { " · ${it.toInt()} kcal" }.orEmpty()
-            showUndo("Added ${logged.name} to Snack$kcal") {
+            showUndo(tr("Added ${logged.name} to Snack$kcal", "간식에 ${logged.name} 추가함$kcal")) {
                 repository.remove(logged)
                 repository.flushPendingRemovals()
             }

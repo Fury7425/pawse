@@ -94,6 +94,7 @@ import app.pawse.feature.food.camera.BarcodeFrameReader
 import app.pawse.feature.food.camera.CameraPreview
 import app.pawse.feature.food.camera.LabelFrameReader
 import app.pawse.feature.food.camera.hasCamera
+import app.pawse.scoring.tr
 import kotlin.math.roundToInt
 
 /** Camera chrome is light-on-dark whatever the app theme: it sits on a live picture. */
@@ -175,7 +176,7 @@ fun ScannerScreen(
                     .size(52.dp)
                     .pressable(onClick = onBack)
                     .glass(CircleShape)
-                    .semantics { contentDescription = "Back" },
+                    .semantics { contentDescription = tr("Back", "뒤로") },
                 contentAlignment = Alignment.Center,
             ) {
                 Glyph(Glyphs.ChevronLeft, color = Ink)
@@ -259,7 +260,7 @@ private fun ModeToggle(mode: ScanMode, onModeChange: (ScanMode) -> Unit) {
                 .background(Ink, RoundedCornerShape(20.dp)),
         )
         Row {
-            listOf(ScanMode.BARCODE to "Barcode", ScanMode.LABEL to "Label").forEach { (option, label) ->
+            listOf(ScanMode.BARCODE to tr("Barcode", "바코드"), ScanMode.LABEL to tr("Label", "라벨")).forEach { (option, label) ->
                 Box(
                     Modifier
                         .size(width = width, height = 40.dp)
@@ -349,21 +350,24 @@ private fun ScanStatePanel(
             is ScanState.Scanning -> {
                 Text(
                     text = when (mode) {
-                        ScanMode.BARCODE -> "Point at the barcode."
-                        ScanMode.LABEL -> "Point at the nutrition panel. Hold steady; it reads as you go."
+                        ScanMode.BARCODE -> tr("Point at the barcode.", "바코드를 비춰 주세요.")
+                        ScanMode.LABEL -> tr(
+                            "Point at the nutrition panel. Hold steady; it reads as you go.",
+                            "영양성분표를 비춰 주세요. 움직이지 않으면 바로 읽어요.",
+                        )
                     },
                     style = PawseType.Heading.copy(fontWeight = PawseType.Body.fontWeight),
                 )
                 Spacer(Modifier.height(6.dp))
-                Muted("Reads on this phone. No photo is saved and no frame leaves the device.")
+                Muted(tr("Reads on this phone. No photo is saved and no frame leaves the device.", "이 휴대폰에서 읽어요. 사진은 저장되지 않고 어떤 화면도 기기 밖으로 나가지 않아요."))
                 Spacer(Modifier.height(12.dp))
-                GhostButton("Type it in instead", onClick = onManualEntry, glyph = Glyphs.Pencil)
+                GhostButton(tr("Type it in instead", "대신 직접 입력"), onClick = onManualEntry, glyph = Glyphs.Pencil)
             }
 
             is ScanState.LookingUp -> Row(verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onSurface)
                 Spacer(Modifier.width(12.dp))
-                Text("Looking up ${state.barcode}", style = PawseType.Body)
+                Text(tr("Looking up ${state.barcode}", "${state.barcode} 찾는 중"), style = PawseType.Body)
             }
 
             is ScanState.Found -> {
@@ -376,9 +380,9 @@ private fun ScanStatePanel(
                         val n = product.per100g
                         listOf(
                             (n.kcal?.roundToInt()?.toString() ?: "—") to "kcal",
-                            (n.proteinGrams?.let(FoodCopy::grams) ?: "—") to "Protein",
-                            (n.carbsGrams?.let(FoodCopy::grams) ?: "—") to "Carbs",
-                            (n.fatGrams?.let(FoodCopy::grams) ?: "—") to "Fat",
+                            (n.proteinGrams?.let(FoodCopy::grams) ?: "—") to tr("Protein", "단백질"),
+                            (n.carbsGrams?.let(FoodCopy::grams) ?: "—") to tr("Carbs", "탄수화물"),
+                            (n.fatGrams?.let(FoodCopy::grams) ?: "—") to tr("Fat", "지방"),
                         ).forEachIndexed { i, (value, name) ->
                             if (i > 0) VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.fillMaxHeight())
                             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
@@ -389,15 +393,15 @@ private fun ScanStatePanel(
                     }
                 }
                 Spacer(Modifier.height(6.dp))
-                Muted("Per 100 g")
+                Muted(tr("Per 100 g", "100 g당"))
                 Spacer(Modifier.height(14.dp))
                 Chip(FoodCopy.source(product.source))
                 Spacer(Modifier.height(6.dp))
                 Muted(FoodCopy.sourceNote(product.source, state.fromCache))
                 Spacer(Modifier.height(20.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PrimaryButton("Choose how much", onClick = { onAdd(product.id) }, modifier = Modifier.weight(1f))
-                    SecondaryButton("Scan another", onClick = onScanAgain, modifier = Modifier.weight(1f))
+                    PrimaryButton(tr("Choose how much", "양 정하기"), onClick = { onAdd(product.id) }, modifier = Modifier.weight(1f))
+                    SecondaryButton(tr("Scan another", "다른 것 스캔"), onClick = onScanAgain, modifier = Modifier.weight(1f))
                 }
             }
 
@@ -418,19 +422,22 @@ private fun ScanStatePanel(
                     }
                     Spacer(Modifier.height(12.dp))
                 }
-                Text(if (offline) "Couldn’t reach the food database" else "Not in your foods", style = PawseType.Heading)
+                Text(
+                    if (offline) tr("Couldn’t reach the food database", "음식 데이터베이스에 연결하지 못했어요") else tr("Not in your foods", "저장한 음식에 없어요"),
+                    style = PawseType.Heading,
+                )
                 Spacer(Modifier.height(6.dp))
                 Text(FoodCopy.lookupFailure(state.reason), style = PawseType.Body, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(20.dp))
-                PrimaryButton("Read the label", onClick = onReadLabel)
+                PrimaryButton(tr("Read the label", "라벨 읽기"), onClick = onReadLabel)
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (state.reason == FoodLookupFailure.NETWORK_NOT_PERMITTED) {
-                        SecondaryButton("Look it up online", onClick = onEnableNetwork, modifier = Modifier.weight(1f))
+                        SecondaryButton(tr("Look it up online", "온라인에서 찾기"), onClick = onEnableNetwork, modifier = Modifier.weight(1f))
                     } else {
-                        SecondaryButton("Try again", onClick = onScanAgain, modifier = Modifier.weight(1f))
+                        SecondaryButton(tr("Try again", "다시 시도"), onClick = onScanAgain, modifier = Modifier.weight(1f))
                     }
-                    SecondaryButton("Type it in", onClick = onManualEntry, modifier = Modifier.weight(1f))
+                    SecondaryButton(tr("Type it in", "직접 입력"), onClick = onManualEntry, modifier = Modifier.weight(1f))
                 }
             }
 
@@ -454,25 +461,32 @@ private fun Consent(onAllow: () -> Unit, onDecline: () -> Unit) {
         Text(FoodCopy.CONSENT_TITLE, style = PawseType.Title)
         Spacer(Modifier.height(8.dp))
         Text(
-            "Pawse can ask Open Food Facts, a public food database, what a barcode is.",
+            tr(
+                "Pawse can ask Open Food Facts, a public food database, what a barcode is.",
+                "Pawse는 공개 음식 데이터베이스인 Open Food Facts에 바코드가 무슨 제품인지 물어볼 수 있어요.",
+            ),
             style = PawseType.Body,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(16.dp))
         PawseCard(padding = PaddingValues(0.dp)) {
-            ConsentLine(Glyphs.Check, "Sent: ", "the barcode, and nothing else")
+            ConsentLine(Glyphs.Check, tr("Sent: ", "보내는 것: "), tr("the barcode, and nothing else", "바코드뿐, 다른 건 없어요"))
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            ConsentLine(Glyphs.Close, "Never sent: ", "account, device identifier, history, health data")
+            ConsentLine(Glyphs.Close, tr("Never sent: ", "절대 보내지 않는 것: "), tr("account, device identifier, history, health data", "계정, 기기 식별자, 기록, 건강 데이터"))
         }
         Spacer(Modifier.height(12.dp))
         Muted(
-            "Each product is fetched once and saved, so it resolves instantly and offline afterwards. " +
-                "Reading the nutrition panel works without this.",
+            tr(
+                "Each product is fetched once and saved, so it resolves instantly and offline afterwards. " +
+                    "Reading the nutrition panel works without this.",
+                "제품마다 한 번만 가져와 저장하므로 다음부터는 오프라인에서도 바로 나와요. " +
+                    "영양성분표 읽기는 이 설정 없이도 돼요.",
+            ),
         )
         Spacer(Modifier.height(20.dp))
-        PrimaryButton("Allow lookups", onClick = onAllow)
+        PrimaryButton(tr("Allow lookups", "검색 허용"), onClick = onAllow)
         Spacer(Modifier.height(8.dp))
-        SecondaryButton("Keep it offline", onClick = onDecline, modifier = Modifier.fillMaxWidth())
+        SecondaryButton(tr("Keep it offline", "오프라인으로 두기"), onClick = onDecline, modifier = Modifier.fillMaxWidth())
     }
 }
 
@@ -513,7 +527,7 @@ private fun LabelConfirmation(
     val basisGrams = basisText.replace(',', '.').toDoubleOrNull()
 
     Column(Modifier.verticalScroll(rememberScrollState())) {
-        Text("Read from the label", style = PawseType.Heading)
+        Text(tr("Read from the label", "라벨에서 읽은 값"), style = PawseType.Heading)
         Spacer(Modifier.height(8.dp))
         Text(FoodCopy.summary(reading.nutrients), style = PawseType.Body)
         Spacer(Modifier.height(6.dp))
@@ -524,13 +538,13 @@ private fun LabelConfirmation(
         }
 
         Spacer(Modifier.height(16.dp))
-        Muted("What is it?")
+        Muted(tr("What is it?", "무엇인가요?"))
         Spacer(Modifier.height(6.dp))
         PawseField(value = name, onValueChange = { name = it })
 
         if (reading.basis == LabelBasis.UNKNOWN || reading.basisGrams == null) {
             Spacer(Modifier.height(12.dp))
-            Muted("These figures are per how many grams?")
+            Muted(tr("These figures are per how many grams?", "이 값은 몇 g 기준인가요?"))
             Spacer(Modifier.height(6.dp))
             PawseField(
                 value = basisText,
@@ -543,12 +557,12 @@ private fun LabelConfirmation(
         Spacer(Modifier.height(20.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             PrimaryButton(
-                "Save and add",
+                tr("Save and add", "저장하고 추가"),
                 onClick = { basisGrams?.let { onSave(name, reading, it) } },
                 enabled = basisGrams != null && basisGrams > 0.0,
                 modifier = Modifier.weight(1f),
             )
-            SecondaryButton("Read again", onClick = onScanAgain, modifier = Modifier.weight(1f))
+            SecondaryButton(tr("Read again", "다시 읽기"), onClick = onScanAgain, modifier = Modifier.weight(1f))
         }
     }
 }
@@ -560,24 +574,31 @@ private fun CameraUnavailable(
     onManualEntry: () -> Unit,
 ) {
     Column {
-        Text(if (hasCamera) "Camera access" else "No camera on this phone", style = PawseType.Heading)
+        Text(if (hasCamera) tr("Camera access", "카메라 접근") else tr("No camera on this phone", "이 휴대폰에는 카메라가 없어요"), style = PawseType.Heading)
         Spacer(Modifier.height(6.dp))
         Text(
             text = if (hasCamera) {
-                "The camera reads barcodes and nutrition panels on this phone. No photo is " +
-                    "saved and no frame leaves the device."
+                tr(
+                    "The camera reads barcodes and nutrition panels on this phone. No photo is " +
+                        "saved and no frame leaves the device.",
+                    "카메라로 이 휴대폰에서 바코드와 영양성분표를 읽어요. 사진은 저장되지 않고 어떤 화면도 " +
+                        "기기 밖으로 나가지 않아요.",
+                )
             } else {
-                "Barcode scanning needs a camera, but you can still type food in by hand."
+                tr(
+                    "Barcode scanning needs a camera, but you can still type food in by hand.",
+                    "바코드 스캔에는 카메라가 필요하지만, 음식은 직접 입력할 수 있어요.",
+                )
             },
             style = PawseType.Body,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(20.dp))
         if (hasCamera) {
-            PrimaryButton("Allow camera", onClick = onRequest)
+            PrimaryButton(tr("Allow camera", "카메라 허용"), onClick = onRequest)
             Spacer(Modifier.height(8.dp))
         }
-        SecondaryButton("Type it in", onClick = onManualEntry, modifier = Modifier.fillMaxWidth())
+        SecondaryButton(tr("Type it in", "직접 입력"), onClick = onManualEntry, modifier = Modifier.fillMaxWidth())
     }
 }
 

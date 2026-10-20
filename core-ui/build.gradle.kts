@@ -18,6 +18,9 @@ android {
 kotlin { jvmToolchain(17) }
 
 dependencies {
+    // Only for tr(), the English/Korean switch every module shares.
+    implementation(project(":core-scoring"))
+
     implementation(platform(libs.androidx.compose.bom))
     api(libs.androidx.compose.ui)
     api(libs.androidx.compose.ui.graphics)

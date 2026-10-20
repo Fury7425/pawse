@@ -56,6 +56,7 @@ import app.pawse.core.ui.component.ScoreRing
 import app.pawse.core.ui.theme.PawseTheme
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.scoring.model.ScoreType
+import app.pawse.scoring.tr
 import kotlin.math.roundToInt
 
 /**
@@ -92,15 +93,19 @@ fun OnboardingScreen(
                 -> Busy(state.step)
 
                 OnboardingStep.UNAVAILABLE -> Message(
-                    title = "Health Connect is not available",
-                    body = "This phone has no Health Connect, so there is no watch or ring " +
-                        "data to interpret. Nothing here would be accurate without it.",
+                    title = tr("Health Connect is not available", "헬스 커넥트를 사용할 수 없어요"),
+                    body = tr(
+                        "This phone has no Health Connect, so there is no watch or ring " +
+                            "data to interpret. Nothing here would be accurate without it.",
+                        "이 휴대폰에는 헬스 커넥트가 없어서 해석할 시계나 링 데이터가 없어요. " +
+                            "헬스 커넥트 없이는 여기 나오는 어떤 값도 정확할 수 없어요.",
+                    ),
                 )
 
                 OnboardingStep.NEEDS_UPDATE -> Message(
-                    title = "Health Connect needs updating",
-                    body = "Update Health Connect in the Play Store, then come back.",
-                    action = "Check again" to viewModel::refreshAvailability,
+                    title = tr("Health Connect needs updating", "헬스 커넥트 업데이트가 필요해요"),
+                    body = tr("Update Health Connect in the Play Store, then come back.", "Play 스토어에서 헬스 커넥트를 업데이트한 뒤 돌아오세요."),
+                    action = tr("Check again", "다시 확인") to viewModel::refreshAvailability,
                 )
 
                 OnboardingStep.EXPLAIN -> Explain(
@@ -113,9 +118,9 @@ fun OnboardingScreen(
                 OnboardingStep.REPORT -> state.report?.let {
                     Report(report = it, error = state.error, onContinue = viewModel::finish)
                 } ?: Message(
-                    title = "Could not read your data",
-                    body = state.error ?: "Something went wrong reading Health Connect.",
-                    action = "Try again" to viewModel::retryProbe,
+                    title = tr("Could not read your data", "데이터를 읽지 못했어요"),
+                    body = state.error ?: tr("Something went wrong reading Health Connect.", "헬스 커넥트를 읽는 중 문제가 생겼어요."),
+                    action = tr("Try again", "다시 시도") to viewModel::retryProbe,
                 )
 
                 OnboardingStep.DONE -> Unit
@@ -135,9 +140,9 @@ private fun Busy(step: OnboardingStep) {
         Spacer(Modifier.height(20.dp))
         Text(
             text = when (step) {
-                OnboardingStep.SYNCING -> "Reading your last 120 days"
-                OnboardingStep.PROBING -> "Working out what we can measure"
-                else -> "Checking Health Connect"
+                OnboardingStep.SYNCING -> tr("Reading your last 120 days", "최근 120일 기록을 읽는 중")
+                OnboardingStep.PROBING -> tr("Working out what we can measure", "측정할 수 있는 항목을 확인하는 중")
+                else -> tr("Checking Health Connect", "헬스 커넥트 확인 중")
             },
             style = PawseType.Body,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -167,7 +172,7 @@ private fun Message(title: String, body: String, action: Pair<String, () -> Unit
 @Composable
 private fun Steps(done: Int) {
     Row(
-        Modifier.semantics(mergeDescendants = true) { contentDescription = "Step $done of 3" },
+        Modifier.semantics(mergeDescendants = true) { contentDescription = tr("Step $done of 3", "3단계 중 ${done}단계") },
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         repeat(3) { i ->
@@ -211,20 +216,26 @@ private fun Mark() {
     }
 }
 
-private val READS = listOf(
-    Triple("Heart rate variability", "Overnight", Glyphs.Recovery),
-    Triple("Resting heart rate", "Overnight", Glyphs.Heart),
-    Triple("Sleep", "Stages, if recorded", Glyphs.Sleep),
-    Triple("Breathing rate", "Overnight", Glyphs.Breath),
-    Triple("Skin temperature", "Overnight", Glyphs.Thermometer),
-    Triple("Blood oxygen", "Overnight", Glyphs.Drop),
-    Triple("Workouts and steps", "All day", Glyphs.Strain),
-    Triple("Calories burned", "All day", Glyphs.Flame),
-    Triple("Weight and body composition", "When you weigh in", Glyphs.Body),
-    Triple("Basal metabolic rate", "If your scale writes it", Glyphs.Gauge),
-    Triple("Periods", "If you log them", Glyphs.Clock),
-    Triple("Past history", "So baselines start full", Glyphs.Synced),
-)
+/** A getter, not a list built once, so a language change while the app runs is picked up. */
+private val READS: List<Triple<String, String, String>>
+    get() {
+        val overnight = tr("Overnight", "밤사이")
+        val allDay = tr("All day", "하루 종일")
+        return listOf(
+            Triple(tr("Heart rate variability", "심박 변이도"), overnight, Glyphs.Recovery),
+            Triple(tr("Resting heart rate", "안정 시 심박수"), overnight, Glyphs.Heart),
+            Triple(tr("Sleep", "수면"), tr("Stages, if recorded", "기록됐다면 수면 단계까지"), Glyphs.Sleep),
+            Triple(tr("Breathing rate", "호흡수"), overnight, Glyphs.Breath),
+            Triple(tr("Skin temperature", "피부 온도"), overnight, Glyphs.Thermometer),
+            Triple(tr("Blood oxygen", "혈중 산소"), overnight, Glyphs.Drop),
+            Triple(tr("Workouts and steps", "운동과 걸음 수"), allDay, Glyphs.Strain),
+            Triple(tr("Calories burned", "소모 칼로리"), allDay, Glyphs.Flame),
+            Triple(tr("Weight and body composition", "체중과 체성분"), tr("When you weigh in", "체중을 잴 때"), Glyphs.Body),
+            Triple(tr("Basal metabolic rate", "기초대사량"), tr("If your scale writes it", "체중계가 기록한다면"), Glyphs.Gauge),
+            Triple(tr("Periods", "생리"), tr("If you log them", "기록한다면"), Glyphs.Clock),
+            Triple(tr("Past history", "과거 기록"), tr("So baselines start full", "기준을 처음부터 채우려고"), Glyphs.Synced),
+        )
+    }
 
 @Composable
 private fun Explain(onContinue: () -> Unit) {
@@ -242,10 +253,13 @@ private fun Explain(onContinue: () -> Unit) {
             Text("Pawse", style = PawseType.Heading)
 
             Spacer(Modifier.height(28.dp))
-            Text("What this reads", style = PawseType.Display)
+            Text(tr("What this reads", "읽는 데이터"), style = PawseType.Display)
             Spacer(Modifier.height(8.dp))
             Text(
-                "Pawse reads what your watch or ring already writes to Health Connect, and reads it against your own history.",
+                tr(
+                    "Pawse reads what your watch or ring already writes to Health Connect, and reads it against your own history.",
+                    "Pawse는 시계나 링이 이미 헬스 커넥트에 기록한 데이터를 읽고, 내 과거 기록과 비교해 해석해요.",
+                ),
                 style = PawseType.Body,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -253,7 +267,7 @@ private fun Explain(onContinue: () -> Unit) {
             Spacer(Modifier.height(20.dp))
             PawseCard(padding = PaddingValues(0.dp)) {
                 Text(
-                    "Reads",
+                    tr("Reads", "읽기"),
                     style = PawseType.Label,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
@@ -273,11 +287,11 @@ private fun Explain(onContinue: () -> Unit) {
             PawseCard(padding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)) {
                 Row(verticalAlignment = Alignment.Bottom) {
                     Column(Modifier.weight(1f)) {
-                        Text("Writes", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(tr("Writes", "쓰기"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(2.dp))
-                        Text("Only food and weigh-ins you type in", style = PawseType.Body)
+                        Text(tr("Only food and weigh-ins you type in", "직접 입력한 음식과 체중만"), style = PawseType.Body)
                     }
-                    Text("Optional", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(tr("Optional", "선택"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 
@@ -286,14 +300,18 @@ private fun Explain(onContinue: () -> Unit) {
                 Glyph(Glyphs.Shield, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    "Everything stays on this phone. No account, no server. Grant only what you want; " +
-                        "anything you leave out is dropped from the maths rather than guessed at.",
+                    tr(
+                        "Everything stays on this phone. No account, no server. Grant only what you want; " +
+                            "anything you leave out is dropped from the maths rather than guessed at.",
+                        "모든 데이터는 이 휴대폰에만 남아요. 계정도 서버도 없어요. 원하는 것만 허용하세요. " +
+                            "허용하지 않은 항목은 추측하지 않고 계산에서 빼요.",
+                    ),
                     style = PawseType.Label,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
-        BottomAction(text = "Choose what to share", onClick = onContinue)
+        BottomAction(text = tr("Choose what to share", "공유할 항목 고르기"), onClick = onContinue)
     }
 }
 
@@ -308,10 +326,13 @@ private fun Report(report: CapabilityReport, error: String?, onContinue: () -> U
         ) {
             Steps(done = 3)
             Spacer(Modifier.height(32.dp))
-            Text("What we can measure", style = PawseType.Display)
+            Text(tr("What we can measure", "측정할 수 있는 것"), style = PawseType.Display)
             Spacer(Modifier.height(8.dp))
             Text(
-                "Based on ${report.nightsWithSleep} nights found in the last ${report.probedDays} days.",
+                tr(
+                    "Based on ${report.nightsWithSleep} nights found in the last ${report.probedDays} days.",
+                    "최근 ${report.probedDays}일 동안 찾은 밤 ${report.nightsWithSleep}번을 바탕으로 했어요.",
+                ),
                 style = PawseType.Body,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -322,17 +343,24 @@ private fun Report(report: CapabilityReport, error: String?, onContinue: () -> U
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             }
             CapabilityRow(
-                name = "Body",
+                name = tr("Body", "신체"),
                 glyph = Glyphs.Body,
                 coverage = if (report.weighIns > 0) 1f else 0f,
                 dot = if (report.weighIns > 0) PawseTheme.semantics.better else PawseTheme.semantics.neutral,
-                state = if (report.weighIns > 0) "Available" else "No scale yet",
+                state = if (report.weighIns > 0) tr("Available", "사용 가능") else tr("No scale yet", "아직 체중계 없음"),
                 why = if (report.weighIns > 0) {
-                    "Your scale writes weight" +
-                        report.bodyParts.joinToString(prefix = if (report.bodyParts.isEmpty()) "" else ", ") +
-                        ": ${report.weighIns} weigh-ins in ${report.probedDays} days."
+                    tr(
+                        "Your scale writes weight" +
+                            report.bodyParts.joinToString(prefix = if (report.bodyParts.isEmpty()) "" else ", ") +
+                            ": ${report.weighIns} weigh-ins in ${report.probedDays} days.",
+                        "체중계가 " + (listOf("체중") + report.bodyParts).joinToString(", ") +
+                            "을 기록해요: ${report.probedDays}일 동안 ${report.weighIns}번 측정.",
+                    )
                 } else {
-                    "Nothing writes weight to Health Connect yet. The Body tab fills in on its own when a scale does."
+                    tr(
+                        "Nothing writes weight to Health Connect yet. The Body tab fills in on its own when a scale does.",
+                        "아직 헬스 커넥트에 체중을 기록하는 앱이 없어요. 체중계가 기록하면 신체 탭이 저절로 채워져요.",
+                    )
                 },
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -349,8 +377,12 @@ private fun Report(report: CapabilityReport, error: String?, onContinue: () -> U
                         Glyph(Glyphs.Info, size = 18.dp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 1.dp))
                         Spacer(Modifier.width(12.dp))
                         Text(
-                            "Two apps are writing the same records (${report.contestedTypes.joinToString()}). " +
-                                "We will use one source per night rather than double-counting. You can change which one in settings.",
+                            tr(
+                                "Two apps are writing the same records (${report.contestedTypes.joinToString()}). " +
+                                    "We will use one source per night rather than double-counting. You can change which one in settings.",
+                                "두 앱이 같은 기록을 쓰고 있어요(${report.contestedTypes.joinToString()}). 중복으로 세지 않도록 " +
+                                    "밤마다 한 출처만 써요. 어느 쪽을 쓸지는 설정에서 바꿀 수 있어요.",
+                            ),
                             style = PawseType.Label,
                         )
                     }
@@ -362,9 +394,12 @@ private fun Report(report: CapabilityReport, error: String?, onContinue: () -> U
                 Text(error, style = PawseType.Label, color = PawseTheme.semantics.worse)
             }
         }
-        BottomAction(text = "Start", onClick = onContinue) {
+        BottomAction(text = tr("Start", "시작하기"), onClick = onContinue) {
             Text(
-                "Body needs seven nights before it reads anything, and settles over a few weeks. Until then it says “settling”.",
+                tr(
+                    "Body needs seven nights before it reads anything, and settles over a few weeks. Until then it says “settling”.",
+                    "컨디션은 7일 밤이 쌓여야 값을 읽고, 몇 주에 걸쳐 안정돼요. 그때까지는 ‘기준 잡는 중’이라고 표시해요.",
+                ),
                 style = PawseType.Label,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -390,9 +425,9 @@ private fun ScoreCapabilityRow(capability: ScoreCapability) {
         },
         // Never hue alone: the dot is always paired with this word.
         state = when {
-            !capability.computable -> "Not available"
-            capability.degraded -> "Lower confidence"
-            else -> "Available"
+            !capability.computable -> tr("Not available", "사용 불가")
+            capability.degraded -> tr("Lower confidence", "신뢰도 낮음")
+            else -> tr("Available", "사용 가능")
         },
         why = capability.explanation,
     )
@@ -405,7 +440,9 @@ private fun CapabilityRow(name: String, glyph: String, coverage: Float, dot: Col
     Row(
         Modifier
             .padding(vertical = 14.dp)
-            .semantics(mergeDescendants = true) { contentDescription = "$name: $state, $percent% of its inputs found. $why" },
+            .semantics(mergeDescendants = true) {
+                contentDescription = tr("$name: $state, $percent% of its inputs found. $why", "$name: $state, 입력값의 $percent% 확인. $why")
+            },
     ) {
         ScoreRing(fraction = coverage, color = dot, size = 52.dp, glow = false, ticks = false, stroke = 8f) {
             Text("$percent%", style = PawseType.Label.copy(fontWeight = PawseType.BodyStrong.fontWeight))
@@ -427,9 +464,9 @@ private fun CapabilityRow(name: String, glyph: String, coverage: Float, dot: Col
 }
 
 private fun ScoreType.displayName(): String = when (this) {
-    ScoreType.BODY -> "Body"
-    ScoreType.SLEEP -> "Sleep"
-    ScoreType.LOAD -> "Load"
+    ScoreType.BODY -> tr("Body", "컨디션")
+    ScoreType.SLEEP -> tr("Sleep", "수면")
+    ScoreType.LOAD -> tr("Load", "부하")
 }
 
 private fun ScoreType.glyph(): String = when (this) {
@@ -446,11 +483,15 @@ private fun ScoreType.glyph(): String = when (this) {
 @Composable
 private fun SamsungChecklist(items: List<Pair<String, Boolean>>) {
     PawseCard(padding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)) {
-        Text("Samsung Health checklist", style = PawseType.Heading)
+        Text(tr("Samsung Health checklist", "삼성 헬스 체크리스트"), style = PawseType.Heading)
         Spacer(Modifier.height(4.dp))
         Text(
-            "In Samsung Health, open Settings › Health Connect and allow each of these to be shared. " +
-                "Watch data reaches the phone when the watch reconnects or Samsung Health is opened.",
+            tr(
+                "In Samsung Health, open Settings › Health Connect and allow each of these to be shared. " +
+                    "Watch data reaches the phone when the watch reconnects or Samsung Health is opened.",
+                "삼성 헬스에서 설정 › 헬스 커넥트를 열고 아래 항목을 하나씩 공유하도록 허용하세요. " +
+                    "시계 데이터는 시계가 다시 연결되거나 삼성 헬스를 열 때 휴대폰으로 넘어와요.",
+            ),
             style = PawseType.Label,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -460,7 +501,7 @@ private fun SamsungChecklist(items: List<Pair<String, Boolean>>) {
                 Glyph(if (found) Glyphs.Check else Glyphs.Close, size = 16.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.width(10.dp))
                 Text(name, style = PawseType.Body, modifier = Modifier.weight(1f))
-                Text(if (found) "Shared" else "Not seen yet", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(if (found) tr("Shared", "공유됨") else tr("Not seen yet", "아직 안 보임"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

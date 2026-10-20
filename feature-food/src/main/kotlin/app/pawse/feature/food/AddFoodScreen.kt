@@ -44,6 +44,7 @@ import app.pawse.core.ui.component.Segmented
 import app.pawse.core.ui.component.SplitBar
 import app.pawse.core.ui.component.cardSurface
 import app.pawse.core.ui.theme.PawseType
+import app.pawse.scoring.tr
 import kotlin.math.roundToInt
 
 /**
@@ -76,13 +77,13 @@ fun AddFoodScreen(
                     .padding(top = padding.calculateTopPadding() + 12.dp, bottom = 140.dp)
                     .padding(horizontal = 24.dp),
             ) {
-                BackLink("Back", onClick = onBack)
+                BackLink(tr("Back", "뒤로"), onClick = onBack)
 
                 val product = state.product
                 if (product == null) {
                     Spacer(Modifier.height(16.dp))
                     Text(
-                        text = if (state.loading) "Loading…" else "That food is no longer saved.",
+                        text = if (state.loading) tr("Loading…", "불러오는 중…") else tr("That food is no longer saved.", "이 음식은 더 이상 저장되어 있지 않아요."),
                         style = PawseType.Body,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -94,13 +95,13 @@ fun AddFoodScreen(
                 NutritionPanel(product)
 
                 Spacer(Modifier.height(28.dp))
-                Caption("How much?")
+                Caption(tr("How much?", "얼마나 먹었나요?"))
                 Spacer(Modifier.height(8.dp))
                 PawseField(
                     value = state.amountText,
                     onValueChange = viewModel::setAmount,
                     suffix = if (state.usingServings) {
-                        if (state.amountText == "1") "serving" else "servings"
+                        tr(if (state.amountText == "1") "serving" else "servings", "회 제공량")
                     } else {
                         "g"
                     },
@@ -130,15 +131,15 @@ fun AddFoodScreen(
                         selected = state.usingServings,
                         onSelect = viewModel::setUsingServings,
                         label = { servings ->
-                            if (servings) "Servings" + (product.servingLabel?.let { " · $it" } ?: "") else "Grams"
+                            if (servings) tr("Servings", "제공량") + (product.servingLabel?.let { " · $it" } ?: "") else tr("Grams", "그램")
                         },
                     )
                     Spacer(Modifier.height(6.dp))
-                    Caption("One serving is ${FoodCopy.grams(serving)}.")
+                    Caption(tr("One serving is ${FoodCopy.grams(serving)}.", "1회 제공량은 ${FoodCopy.grams(serving)}이에요."))
                 }
 
                 Spacer(Modifier.height(24.dp))
-                Caption("Which meal?")
+                Caption(tr("Which meal?", "어느 끼니인가요?"))
                 Spacer(Modifier.height(8.dp))
                 ChoiceRow(
                     options = Meal.entries,
@@ -149,13 +150,18 @@ fun AddFoodScreen(
 
                 state.portion?.caffeineMg?.let { mg ->
                     Spacer(Modifier.height(24.dp))
-                    Caption("About ${mg.roundToInt()} mg of caffeine, by the label. Count it toward tonight?")
+                    Caption(
+                        tr(
+                            "About ${mg.roundToInt()} mg of caffeine, by the label. Count it toward tonight?",
+                            "라벨 기준 카페인 약 ${mg.roundToInt()} mg이에요. 오늘 밤 계산에 넣을까요?",
+                        ),
+                    )
                     Spacer(Modifier.height(8.dp))
                     ChoiceRow(
                         options = listOf(true, false),
                         selected = state.countCaffeine,
                         onSelect = viewModel::setCountCaffeine,
-                        label = { if (it) "Count it" else "Leave it out" },
+                        label = { if (it) tr("Count it", "넣기") else tr("Leave it out", "빼기") },
                     )
                 }
 
@@ -166,9 +172,9 @@ fun AddFoodScreen(
             val kcal = state.portion?.kcal?.roundToInt()
             BottomAction(
                 text = when {
-                    !state.canLog -> "Enter an amount"
-                    kcal != null -> "Add $kcal kcal to ${FoodCopy.meal(state.meal)}"
-                    else -> "Add to ${FoodCopy.meal(state.meal)}"
+                    !state.canLog -> tr("Enter an amount", "양을 입력하세요")
+                    kcal != null -> tr("Add $kcal kcal to ${FoodCopy.meal(state.meal)}", "${FoodCopy.meal(state.meal)}에 $kcal kcal 추가")
+                    else -> tr("Add to ${FoodCopy.meal(state.meal)}", "${FoodCopy.meal(state.meal)}에 추가")
                 },
                 onClick = viewModel::log,
                 enabled = state.canLog,
@@ -193,7 +199,9 @@ private fun ProductHeader(product: FoodProduct) {
             Text(product.name, style = PawseType.Title)
             val sub = listOfNotNull(
                 product.brand,
-                product.servingGrams?.let { g -> (product.servingLabel ?: "1 serving") + " is " + FoodCopy.grams(g) },
+                product.servingGrams?.let { g ->
+                    (product.servingLabel ?: tr("1 serving", "1회 제공량")) + tr(" is ", " = ") + FoodCopy.grams(g)
+                },
             )
             if (sub.isNotEmpty()) Caption(sub.joinToString(" · "))
         }
@@ -205,19 +213,19 @@ private fun ProductHeader(product: FoodProduct) {
 private fun NutritionPanel(product: FoodProduct) {
     val n = product.per100g
     val rows = listOfNotNull(
-        n.kcal?.let { "Energy" to "${it.roundToInt()} kcal" },
-        n.proteinGrams?.let { "Protein" to FoodCopy.grams(it) },
-        n.carbsGrams?.let { "Carbohydrate" to FoodCopy.grams(it) },
-        n.fatGrams?.let { "Fat" to FoodCopy.grams(it) },
-        n.sugarGrams?.let { "Sugars" to FoodCopy.grams(it) },
-        n.sodiumMilligrams?.let { "Sodium" to "${it.roundToInt()} mg" },
-        n.caffeineMg?.let { "Caffeine" to "${it.roundToInt()} mg" },
-        n.alcoholGrams?.let { "Alcohol" to FoodCopy.grams(it) },
+        n.kcal?.let { tr("Energy", "열량") to "${it.roundToInt()} kcal" },
+        n.proteinGrams?.let { tr("Protein", "단백질") to FoodCopy.grams(it) },
+        n.carbsGrams?.let { tr("Carbohydrate", "탄수화물") to FoodCopy.grams(it) },
+        n.fatGrams?.let { tr("Fat", "지방") to FoodCopy.grams(it) },
+        n.sugarGrams?.let { tr("Sugars", "당류") to FoodCopy.grams(it) },
+        n.sodiumMilligrams?.let { tr("Sodium", "나트륨") to "${it.roundToInt()} mg" },
+        n.caffeineMg?.let { tr("Caffeine", "카페인") to "${it.roundToInt()} mg" },
+        n.alcoholGrams?.let { tr("Alcohol", "알코올") to FoodCopy.grams(it) },
     )
     PawseCard(padding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 12.dp)) {
         Row(verticalAlignment = Alignment.Bottom) {
-            Text("Nutrition", style = PawseType.Heading, modifier = Modifier.weight(1f))
-            Caption("per 100 g")
+            Text(tr("Nutrition", "영양 정보"), style = PawseType.Heading, modifier = Modifier.weight(1f))
+            Caption(tr("per 100 g", "100 g당"))
         }
         Spacer(Modifier.height(8.dp))
         Box(Modifier.fillMaxWidth().height(3.dp).background(MaterialTheme.colorScheme.onSurface))
@@ -241,7 +249,7 @@ private fun NutritionPanel(product: FoodProduct) {
 @Composable
 private fun PortionCard(portion: Nutrients?) {
     PawseCard {
-        Caption("This portion")
+        Caption(tr("This portion", "이번 양"))
         Spacer(Modifier.height(4.dp))
         Row(verticalAlignment = Alignment.Bottom) {
             Text(portion?.kcal?.roundToInt()?.toString() ?: "—", style = PawseType.Numeral)
@@ -257,11 +265,11 @@ private fun PortionCard(portion: Nutrients?) {
         Caption(
             portion?.let { p ->
                 listOfNotNull(
-                    p.proteinGrams?.let { "${FoodCopy.trim(it)} g protein" },
-                    p.carbsGrams?.let { "${FoodCopy.trim(it)} g carbs" },
-                    p.fatGrams?.let { "${FoodCopy.trim(it)} g fat" },
-                ).joinToString(" · ").ifEmpty { "No protein, carbs or fat figures." }
-            } ?: "Enter an amount.",
+                    p.proteinGrams?.let { tr("${FoodCopy.trim(it)} g protein", "단백질 ${FoodCopy.trim(it)} g") },
+                    p.carbsGrams?.let { tr("${FoodCopy.trim(it)} g carbs", "탄수화물 ${FoodCopy.trim(it)} g") },
+                    p.fatGrams?.let { tr("${FoodCopy.trim(it)} g fat", "지방 ${FoodCopy.trim(it)} g") },
+                ).joinToString(" · ").ifEmpty { tr("No protein, carbs or fat figures.", "단백질·탄수화물·지방 값이 없어요.") }
+            } ?: tr("Enter an amount.", "양을 입력하세요."),
         )
         val p = (portion?.proteinGrams ?: 0.0) * 4
         val c = (portion?.carbsGrams ?: 0.0) * 4
@@ -278,9 +286,9 @@ private fun PortionCard(portion: Nutrients?) {
             SplitBar(listOf(ps.toFloat() to on, cs.toFloat() to onv, fs.toFloat() to ol))
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                KeySwatch(on, "Protein $ps%")
-                KeySwatch(onv, "Carbs $cs%")
-                KeySwatch(ol, "Fat $fs%")
+                KeySwatch(on, tr("Protein", "단백질") + " $ps%")
+                KeySwatch(onv, tr("Carbs", "탄수화물") + " $cs%")
+                KeySwatch(ol, tr("Fat", "지방") + " $fs%")
             }
         }
     }

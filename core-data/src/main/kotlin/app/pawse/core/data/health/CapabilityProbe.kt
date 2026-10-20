@@ -16,6 +16,7 @@ import androidx.health.connect.client.records.SkinTemperatureRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import app.pawse.scoring.model.Metric
 import app.pawse.scoring.model.ScoreType
+import app.pawse.scoring.tr
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.Instant
@@ -59,10 +60,10 @@ class CapabilityProbe @Inject constructor(
         val exercise = gateway.readOrEmpty(ExerciseSessionRecord::class, start, end)
         val weight = gateway.readOrEmpty(WeightRecord::class, start, end)
         val bodyParts = listOfNotNull(
-            "body fat".takeIf { gateway.readOrEmpty(BodyFatRecord::class, start, end).isNotEmpty() },
-            "lean mass".takeIf { gateway.readOrEmpty(LeanBodyMassRecord::class, start, end).isNotEmpty() },
-            "water".takeIf { gateway.readOrEmpty(BodyWaterMassRecord::class, start, end).isNotEmpty() },
-            "bone".takeIf { gateway.readOrEmpty(BoneMassRecord::class, start, end).isNotEmpty() },
+            tr("body fat", "체지방").takeIf { gateway.readOrEmpty(BodyFatRecord::class, start, end).isNotEmpty() },
+            tr("lean mass", "제지방량").takeIf { gateway.readOrEmpty(LeanBodyMassRecord::class, start, end).isNotEmpty() },
+            tr("water", "체수분").takeIf { gateway.readOrEmpty(BodyWaterMassRecord::class, start, end).isNotEmpty() },
+            tr("bone", "골량").takeIf { gateway.readOrEmpty(BoneMassRecord::class, start, end).isNotEmpty() },
         )
 
         val sleepDays = sleep.map { it.endTime.localDate(zone) }.toSet()
@@ -127,10 +128,10 @@ class CapabilityProbe @Inject constructor(
             bodyParts = bodyParts,
             samsungChecklist = if (SAMSUNG_HEALTH in writerApps) {
                 listOf(
-                    "Heart rate variability" to (hrv.isNotEmpty()),
-                    "Skin temperature" to (temp.isNotEmpty()),
-                    "Respiratory rate" to (resp.isNotEmpty()),
-                    "Resting heart rate" to (rhr.isNotEmpty()),
+                    tr("Heart rate variability", "심박 변이도") to (hrv.isNotEmpty()),
+                    tr("Skin temperature", "피부 온도") to (temp.isNotEmpty()),
+                    tr("Respiratory rate", "호흡수") to (resp.isNotEmpty()),
+                    tr("Resting heart rate", "안정 시 심박수") to (rhr.isNotEmpty()),
                 )
             } else {
                 null
@@ -162,13 +163,28 @@ class CapabilityProbe @Inject constructor(
                     Metric.RESTING_HEART_RATE.takeIf { !hrOk },
                 ),
                 explanation = when {
-                    hrvOk && hrOk -> "Overnight HRV and heart rate are both there, so Body reads both."
-                    hrvShape == HrvShape.DAYTIME_SPOT_ONLY ->
+                    hrvOk && hrOk -> tr(
+                        "Overnight HRV and heart rate are both there, so Body reads both.",
+                        "밤사이 HRV와 심박수가 모두 있어서 컨디션이 둘 다 읽어요.",
+                    )
+                    hrvShape == HrvShape.DAYTIME_SPOT_ONLY -> tr(
                         "Your device writes HRV only as daytime readings. Body needs overnight values, " +
-                            "so it will read your sleeping heart rate alone."
-                    hrOk -> "No overnight HRV, so Body reads your sleeping heart rate alone, with a wider range."
-                    hrvOk -> "No overnight heart rate, so Body reads HRV alone, with a wider range."
-                    else -> "Neither overnight HRV nor heart rate is written to Health Connect, so Body has nothing to read."
+                            "so it will read your sleeping heart rate alone.",
+                        "기기가 HRV를 낮 시간 측정값으로만 기록해요. 컨디션에는 밤사이 값이 필요해서 " +
+                            "수면 중 심박수만 읽어요.",
+                    )
+                    hrOk -> tr(
+                        "No overnight HRV, so Body reads your sleeping heart rate alone, with a wider range.",
+                        "밤사이 HRV가 없어서 컨디션은 수면 중 심박수만 읽고, 범위를 더 넓게 잡아요.",
+                    )
+                    hrvOk -> tr(
+                        "No overnight heart rate, so Body reads HRV alone, with a wider range.",
+                        "밤사이 심박수가 없어서 컨디션은 HRV만 읽고, 범위를 더 넓게 잡아요.",
+                    )
+                    else -> tr(
+                        "Neither overnight HRV nor heart rate is written to Health Connect, so Body has nothing to read.",
+                        "헬스 커넥트에 밤사이 HRV도 심박수도 기록되지 않아서 컨디션이 읽을 게 없어요.",
+                    )
                 },
             ),
             ScoreCapability(
@@ -177,9 +193,12 @@ class CapabilityProbe @Inject constructor(
                 expectedCoverage = if (nightsWithSleep == 0) 0f else 1f,
                 degraded = false,
                 explanation = if (nightsWithSleep == 0) {
-                    "No sleep sessions found yet."
+                    tr("No sleep sessions found yet.", "아직 수면 기록을 찾지 못했어요.")
                 } else {
-                    "Sleep debt in hours and how regular your timing is. Stages are shown, never scored."
+                    tr(
+                        "Sleep debt in hours and how regular your timing is. Stages are shown, never scored.",
+                        "수면 부채를 시간 단위로, 수면 시간이 얼마나 규칙적인지 보여줘요. 수면 단계는 보여주기만 하고 점수에 넣지 않아요.",
+                    )
                 },
             ),
             ScoreCapability(
@@ -188,9 +207,9 @@ class CapabilityProbe @Inject constructor(
                 expectedCoverage = if (exerciseSessions > 0) 1f else 0f,
                 degraded = false,
                 explanation = if (exerciseSessions > 0) {
-                    "Workouts found, so Load can build fitness and fatigue from your training."
+                    tr("Workouts found, so Load can build fitness and fatigue from your training.", "운동 기록이 있어서 부하가 훈련으로 체력과 피로를 계산할 수 있어요.")
                 } else {
-                    "No workouts recorded yet. Load fills in from your first one."
+                    tr("No workouts recorded yet. Load fills in from your first one.", "아직 기록된 운동이 없어요. 첫 운동부터 부하가 채워져요.")
                 },
             ),
         )
@@ -221,10 +240,10 @@ class CapabilityProbe @Inject constructor(
     }
 
     private fun HrvShape.note(): String = when (this) {
-        HrvShape.ABSENT -> "No HRV records from any app."
-        HrvShape.OVERNIGHT_SERIES -> "Overnight HRV on most nights."
-        HrvShape.DAYTIME_SPOT_ONLY -> "Daytime spot readings only, not usable overnight."
-        HrvShape.SPARSE_OVERNIGHT -> "Overnight HRV on some nights only."
+        HrvShape.ABSENT -> tr("No HRV records from any app.", "어떤 앱에도 HRV 기록이 없어요.")
+        HrvShape.OVERNIGHT_SERIES -> tr("Overnight HRV on most nights.", "대부분의 밤에 밤사이 HRV가 있어요.")
+        HrvShape.DAYTIME_SPOT_ONLY -> tr("Daytime spot readings only, not usable overnight.", "낮 시간 측정값만 있어서 밤사이 값으로 쓸 수 없어요.")
+        HrvShape.SPARSE_OVERNIGHT -> tr("Overnight HRV on some nights only.", "일부 밤에만 밤사이 HRV가 있어요.")
     }
 
     private fun List<Record>.distinctOrigins(): Int =

@@ -20,6 +20,7 @@ import app.pawse.scoring.model.EnergyForecast
 import app.pawse.scoring.model.Insight
 import app.pawse.scoring.model.Metric
 import app.pawse.scoring.model.UserProfile
+import app.pawse.scoring.tr
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -115,7 +116,7 @@ class ScoringRepository @Inject constructor(
         val result = runCatching { compute(today, windowDays, onStep) }
         val next = result.fold(
             onSuccess = { ScoringState.Ready(it) },
-            onFailure = { ScoringState.Failed(it.message ?: "Could not work out today") },
+            onFailure = { ScoringState.Failed(it.message ?: tr("Could not work out today", "오늘 값을 계산하지 못했어요")) },
         )
         _state.value = next
         next

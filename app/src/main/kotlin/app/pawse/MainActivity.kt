@@ -84,6 +84,7 @@ import app.pawse.feature.home.HomeScreen
 import app.pawse.feature.home.WeighInScreen
 import app.pawse.feature.onboarding.OnboardingScreen
 import app.pawse.scoring.model.ScoreType
+import app.pawse.scoring.tr
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -269,11 +270,13 @@ private fun NavController.switchTab(route: String) {
     }
 }
 
-private val TABS = listOf(
-    Triple(HomeDestinations.HOME, "Today", Glyphs.Today),
-    Triple(FoodDestinations.LOG, "Food", Glyphs.Food),
-    Triple(BODY, "Body", Glyphs.Body),
-)
+/** A getter so the labels follow a language change made while the app runs. */
+private val TABS: List<Triple<String, String, String>>
+    get() = listOf(
+        Triple(HomeDestinations.HOME, tr("Today", "오늘"), Glyphs.Today),
+        Triple(FoodDestinations.LOG, tr("Food", "음식"), Glyphs.Food),
+        Triple(BODY, tr("Body", "신체"), Glyphs.Body),
+    )
 
 /**
  * Three tabs in a glass pill whose highlight slides between them, and the scanner
@@ -328,7 +331,7 @@ private fun Dock(
                                 .weight(1f)
                                 .fillMaxHeight()
                                 .pressable(role = Role.Tab) { onTab(route) }
-                                .semantics { contentDescription = if (selected) "$label, current tab" else label },
+                                .semantics { contentDescription = if (selected) label + tr(", current tab", ", 현재 탭") else label },
                             horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -345,7 +348,7 @@ private fun Dock(
                     .pressable(onClick = onScan)
                     .lift(CircleShape)
                     .background(MaterialTheme.colorScheme.onSurface, CircleShape)
-                    .semantics { contentDescription = "Scan food" },
+                    .semantics { contentDescription = tr("Scan food", "음식 스캔") },
                 contentAlignment = Alignment.Center,
             ) {
                 Glyph(Glyphs.Scan, size = 22.dp, color = MaterialTheme.colorScheme.background)

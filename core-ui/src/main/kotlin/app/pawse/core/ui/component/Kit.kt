@@ -72,6 +72,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.pawse.core.ui.theme.PawseTheme
 import app.pawse.core.ui.theme.PawseType
+import app.pawse.scoring.tr
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -515,7 +516,7 @@ fun ScoreRing(
 
 /** The swatch that says what the shaded band means. */
 @Composable
-fun UsualRangeKey(text: String = "Your usual range", modifier: Modifier = Modifier) {
+fun UsualRangeKey(text: String = tr("Your usual range", "평소 범위"), modifier: Modifier = Modifier) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         Box(
             Modifier
@@ -569,7 +570,7 @@ fun UndoToast(text: String, onUndo: () -> Unit, modifier: Modifier = Modifier) {
                 .padding(horizontal = 14.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text("Undo", style = PawseType.Delta, color = MaterialTheme.colorScheme.background)
+            Text(tr("Undo", "되돌리기"), style = PawseType.Delta, color = MaterialTheme.colorScheme.background)
         }
     }
 }

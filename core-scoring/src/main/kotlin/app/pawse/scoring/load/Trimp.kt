@@ -4,6 +4,7 @@ import app.pawse.scoring.config.LoadConfig
 import app.pawse.scoring.model.BiologicalSex
 import app.pawse.scoring.model.LoadResult
 import app.pawse.scoring.model.Provenance
+import app.pawse.scoring.tr
 import kotlin.math.exp
 
 /**
@@ -47,8 +48,12 @@ object Trimp {
                         curve(config.banisterFemaleA, config.banisterFemaleB)
                     ) / 2.0,
                 provenance = Provenance.OUR_CHOICE,
-                citation = "Midpoint of Banister's two published curves, because you have not " +
-                    "said which to use. Add it in settings for the published coefficients.",
+                citation = tr(
+                    "Midpoint of Banister's two published curves, because you have not " +
+                        "said which to use. Add it in settings for the published coefficients.",
+                    "어느 곡선을 쓸지 정하지 않아서 Banister가 발표한 두 곡선의 중간값을 썼어요. " +
+                        "설정에서 성별을 입력하면 논문의 계수를 그대로 써요.",
+                ),
             )
         }
     }
@@ -61,7 +66,7 @@ object Trimp {
         return LoadResult(
             load = load,
             provenance = Provenance.PUBLISHED,
-            citation = "Edwards five-zone TRIMP by %HRmax band. Sex-neutral.",
+            citation = tr("Edwards five-zone TRIMP by %HRmax band. Sex-neutral.", "%HRmax 구간별 Edwards 5구간 TRIMP. 성별과 무관해요."),
         )
     }
 }

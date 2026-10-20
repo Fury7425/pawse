@@ -72,6 +72,7 @@ import app.pawse.core.ui.component.UndoToast
 import app.pawse.core.ui.component.cardSurface
 import app.pawse.core.ui.component.pressable
 import app.pawse.core.ui.theme.PawseType
+import app.pawse.scoring.tr
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -140,8 +141,8 @@ fun FoodLogScreen(
             ) {
                 item {
                     Row(pad.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Food", style = PawseType.Title, modifier = Modifier.weight(1f))
-                        GlyphButton(Glyphs.Sliders, "Food settings", onClick = { showSettings = true })
+                        Text(tr("Food", "음식"), style = PawseType.Title, modifier = Modifier.weight(1f))
+                        GlyphButton(Glyphs.Sliders, tr("Food settings", "음식 설정"), onClick = { showSettings = true })
                     }
                     WeekStrip(
                         week = week,
@@ -176,7 +177,7 @@ fun FoodLogScreen(
                     if (again.isNotEmpty()) {
                         item {
                             Text(
-                                text = "Again · one tap logs it as a snack",
+                                text = tr("Again · one tap logs it as a snack", "다시 먹기 · 한 번 누르면 간식으로 기록돼요"),
                                 style = PawseType.Label,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = pad.padding(top = 24.dp, bottom = 8.dp),
@@ -222,7 +223,7 @@ fun FoodLogScreen(
 
                 item {
                     GhostButton(
-                        "Add something without a barcode",
+                        tr("Add something without a barcode", "바코드 없이 추가하기"),
                         onClick = onManualEntry,
                         glyph = Glyphs.Pencil,
                         modifier = pad.padding(top = 16.dp),
@@ -262,7 +263,7 @@ private fun DayHeader(date: LocalDate, modifier: Modifier = Modifier) {
     Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
         Text(dayTitle(date), style = PawseType.Heading, modifier = Modifier.weight(1f))
         Text(
-            text = date.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.getDefault())),
+            text = date.format(DateTimeFormatter.ofPattern(tr("EEE d MMM", "M월 d일 (E)"), Locale.getDefault())),
             style = PawseType.Label,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -270,8 +271,8 @@ private fun DayHeader(date: LocalDate, modifier: Modifier = Modifier) {
 }
 
 private fun dayTitle(date: LocalDate): String = when (date) {
-    LocalDate.now() -> "Today"
-    LocalDate.now().minusDays(1) -> "Yesterday"
+    LocalDate.now() -> tr("Today", "오늘")
+    LocalDate.now().minusDays(1) -> tr("Yesterday", "어제")
     else -> date.format(DateTimeFormatter.ofPattern("EEEE", Locale.getDefault()))
 }
 
@@ -295,8 +296,8 @@ private fun WeekStrip(
                     .then(if (isSelected) Modifier.cardSurface(RoundedCornerShape(12.dp), 12.dp) else Modifier)
                     .padding(top = 8.dp)
                     .semantics(mergeDescendants = true) {
-                        contentDescription = foodDay.date.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.getDefault())) +
-                            if (logged) "" else ", nothing logged"
+                        contentDescription = foodDay.date.format(DateTimeFormatter.ofPattern(tr("EEE d MMM", "M월 d일 (E)"), Locale.getDefault())) +
+                            if (logged) "" else tr(", nothing logged", ", 기록 없음")
                     },
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -335,7 +336,7 @@ private fun DayTotal(day: FoodDay?, modifier: Modifier = Modifier) {
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            text = totals?.let { FoodCopy.totalsNote(it) } ?: "Nothing logged yet.",
+            text = totals?.let { FoodCopy.totalsNote(it) } ?: tr("Nothing logged yet.", "아직 기록이 없어요."),
             style = PawseType.Label,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -361,7 +362,7 @@ private fun MacroCard(n: Nutrients) {
     val ol = MaterialTheme.colorScheme.outline
     PawseCard(padding = PaddingValues(vertical = 14.dp)) {
         Row(Modifier.height(IntrinsicSize.Min)) {
-            listOf("Protein" to p, "Carbs" to c, "Fat" to f).forEachIndexed { i, (name, grams) ->
+            listOf(tr("Protein", "단백질") to p, tr("Carbs", "탄수화물") to c, tr("Fat", "지방") to f).forEachIndexed { i, (name, grams) ->
                 if (i > 0) VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.fillMaxHeight())
                 Column(Modifier.weight(1f).padding(horizontal = 16.dp)) {
                     Text("${grams.roundToInt()} g", style = PawseType.MetricValue)
@@ -375,13 +376,16 @@ private fun MacroCard(n: Nutrients) {
                 Modifier
                     .padding(start = 16.dp, end = 16.dp, top = 14.dp)
                     .semantics(mergeDescendants = true) {
-                        contentDescription = "Share of energy: protein $ps%, carbs $cs%, fat $fs%"
+                        contentDescription = tr(
+                            "Share of energy: protein $ps%, carbs $cs%, fat $fs%",
+                            "열량 비율: 단백질 $ps%, 탄수화물 $cs%, 지방 $fs%",
+                        )
                     },
             ) {
                 SplitBar(listOf(ps.toFloat() to on, cs.toFloat() to onv, fs.toFloat() to ol))
                 Spacer(Modifier.height(8.dp))
                 Row {
-                    KeySwatch(on, "$ps% of energy", Modifier.weight(1f))
+                    KeySwatch(on, tr("$ps% of energy", "열량의 $ps%"), Modifier.weight(1f))
                     KeySwatch(onv, "$cs%", Modifier.weight(1f).padding(start = 16.dp))
                     KeySwatch(ol, "$fs%", Modifier.weight(1f).padding(start = 16.dp))
                 }
@@ -400,12 +404,18 @@ private fun BurnedCard(
     PawseCard(modifier = modifier, onClick = onClick, padding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Burned so far", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(tr("Burned so far", "지금까지 소모"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                     text = "${"%,d".format(burnedKcal.roundToInt())} kcal · " + when {
-                        differenceKcal >= 0.5 -> "${"%,d".format(differenceKcal.roundToInt())} more than eaten"
-                        differenceKcal <= -0.5 -> "${"%,d".format((-differenceKcal).roundToInt())} less than eaten"
-                        else -> "the same as eaten"
+                        differenceKcal >= 0.5 -> {
+                            val more = "%,d".format(differenceKcal.roundToInt())
+                            tr("$more more than eaten", "섭취보다 $more 많음")
+                        }
+                        differenceKcal <= -0.5 -> {
+                            val less = "%,d".format((-differenceKcal).roundToInt())
+                            tr("$less less than eaten", "섭취보다 $less 적음")
+                        }
+                        else -> tr("the same as eaten", "섭취와 같음")
                     },
                     style = PawseType.BodyStrong,
                 )
@@ -420,12 +430,18 @@ private fun WriteBlockedCard(askedBefore: Boolean, onClick: () -> Unit, modifier
     PawseCard(modifier = modifier, onClick = onClick, padding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Not reaching Health Connect", style = PawseType.BodyStrong)
+                Text(tr("Not reaching Health Connect", "헬스 커넥트에 저장되지 않아요"), style = PawseType.BodyStrong)
                 Text(
                     text = if (askedBefore) {
-                        "Still not allowed. Open Health Connect and let Pawse write nutrition."
+                        tr(
+                            "Still not allowed. Open Health Connect and let Pawse write nutrition.",
+                            "아직 허용되지 않았어요. 헬스 커넥트를 열고 Pawse의 영양 정보 기록을 허용하세요.",
+                        )
                     } else {
-                        "Health Connect hasn't allowed Pawse to save food. Tap to allow it."
+                        tr(
+                            "Health Connect hasn't allowed Pawse to save food. Tap to allow it.",
+                            "헬스 커넥트에서 Pawse의 음식 저장을 허용하지 않았어요. 눌러서 허용하세요.",
+                        )
                     },
                     style = PawseType.Label,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -471,16 +487,20 @@ private fun EmptyDay(isToday: Boolean, date: LocalDate, modifier: Modifier = Mod
         }
         Spacer(Modifier.height(12.dp))
         Text(
-            if (isToday) "Nothing logged yet" else "Nothing logged on ${dayTitle(date)}",
+            if (isToday) tr("Nothing logged yet", "아직 기록이 없어요") else tr("Nothing logged on ${dayTitle(date)}", "${dayTitle(date)}에는 기록이 없어요"),
             style = PawseType.Heading,
         )
         Spacer(Modifier.height(4.dp))
         Text(
             text = if (isToday) {
-                "Scan a barcode, photograph a nutrition panel, or type it in. " +
-                    "Everything you scan is saved on this phone, so the second time is instant."
+                tr(
+                    "Scan a barcode, photograph a nutrition panel, or type it in. " +
+                        "Everything you scan is saved on this phone, so the second time is instant.",
+                    "바코드를 스캔하거나, 영양성분표를 찍거나, 직접 입력하세요. 스캔한 건 모두 이 휴대폰에 " +
+                        "저장되니 두 번째부터는 바로 나와요.",
+                )
             } else {
-                "A gap is a true record too. Add what you remember, or leave it."
+                tr("A gap is a true record too. Add what you remember, or leave it.", "빈 날도 사실 그대로의 기록이에요. 기억나는 걸 추가하거나 그대로 두세요.")
             },
             style = PawseType.Label,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -537,7 +557,7 @@ private fun EntryRow(
                             size = 13.dp,
                             strokeWidth = 2f,
                             color = onv,
-                            modifier = Modifier.semantics { contentDescription = "In Health Connect" },
+                            modifier = Modifier.semantics { contentDescription = tr("In Health Connect", "헬스 커넥트에 있음") },
                         )
                     }
                 }
@@ -552,14 +572,15 @@ private fun EntryRow(
         AnimatedVisibility(expanded, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
             Column(Modifier.padding(start = 52.dp, bottom = 16.dp)) {
                 Text(
-                    FoodCopy.source(entry.source) + if (inHc) " · in Health Connect" else " · only on this phone",
+                    FoodCopy.source(entry.source) +
+                        if (inHc) tr(" · in Health Connect", " · 헬스 커넥트에 있음") else tr(" · only on this phone", " · 이 휴대폰에만 있음"),
                     style = PawseType.Label,
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(FoodCopy.summary(entry.nutrients), style = PawseType.Label, color = onv)
                 Spacer(Modifier.height(12.dp))
                 SecondaryButton(
-                    text = if (inHc) "Remove · also from Health Connect" else "Remove",
+                    text = if (inHc) tr("Remove · also from Health Connect", "삭제 · 헬스 커넥트에서도") else tr("Remove", "삭제"),
                     onClick = onDelete,
                     height = 44.dp,
                     radius = 12.dp,
@@ -584,27 +605,42 @@ private fun FoodSettingsSheet(
 ) {
     PawseSheet(onDismiss = onDismiss) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Food settings", style = PawseType.Title, modifier = Modifier.weight(1f))
-            GlyphButton(Glyphs.Close, "Close", onClick = onDismiss)
+            Text(tr("Food settings", "음식 설정"), style = PawseType.Title, modifier = Modifier.weight(1f))
+            GlyphButton(Glyphs.Close, tr("Close", "닫기"), onClick = onDismiss)
         }
         SettingRow(
-            title = "Look barcodes up online",
-            body = "Sends the barcode to Open Food Facts and nothing else. Off by default. " +
-                "Reading the label with the camera works either way.",
-            now = if (networkEnabled) "Unknown barcodes are looked up once, then saved" else "Unknown barcodes ask you first",
+            title = tr("Look barcodes up online", "바코드 온라인 검색"),
+            body = tr(
+                "Sends the barcode to Open Food Facts and nothing else. Off by default. " +
+                    "Reading the label with the camera works either way.",
+                "Open Food Facts에 바코드만 보내요. 기본값은 꺼짐이에요. 카메라로 라벨을 읽는 기능은 " +
+                    "어느 쪽이든 쓸 수 있어요.",
+            ),
+            now = if (networkEnabled) {
+                tr("Unknown barcodes are looked up once, then saved", "모르는 바코드는 한 번 찾아본 뒤 저장해요")
+            } else {
+                tr("Unknown barcodes ask you first", "모르는 바코드는 먼저 물어봐요")
+            },
             checked = networkEnabled,
             onCheckedChange = onNetworkChange,
         )
         SettingRow(
-            title = "Copy food into Health Connect",
-            body = "Removing an entry here removes it there too.",
-            now = if (mirroring) "New entries are copied as you log them" else "Entries stay only on this phone",
+            title = tr("Copy food into Health Connect", "헬스 커넥트에 음식 복사"),
+            body = tr("Removing an entry here removes it there too.", "여기서 기록을 지우면 헬스 커넥트에서도 지워져요."),
+            now = if (mirroring) {
+                tr("New entries are copied as you log them", "새 기록은 입력할 때마다 복사해요")
+            } else {
+                tr("Entries stay only on this phone", "기록은 이 휴대폰에만 남아요")
+            },
             checked = mirroring,
             onCheckedChange = onMirroringChange,
         )
         Spacer(Modifier.height(14.dp))
         Text(
-            "Your health data never leaves this phone, with either switch on or off.",
+            tr(
+                "Your health data never leaves this phone, with either switch on or off.",
+                "어떤 스위치를 켜거나 꺼도 건강 데이터는 이 휴대폰을 떠나지 않아요.",
+            ),
             style = PawseType.Label,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

@@ -85,6 +85,7 @@ import app.pawse.core.ui.component.cardSurface
 import app.pawse.core.ui.component.pressable
 import app.pawse.core.ui.theme.PawseTheme
 import app.pawse.core.ui.theme.PawseType
+import app.pawse.scoring.tr
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -134,18 +135,21 @@ fun WeighInScreen(
                     .padding(top = padding.calculateTopPadding() + 12.dp, bottom = 140.dp)
                     .padding(horizontal = 24.dp),
             ) {
-                BackLink("Body", onClick = onBack)
+                BackLink(tr("Body", "신체"), onClick = onBack)
                 Spacer(Modifier.height(12.dp))
-                Text("Add a weigh-in", style = PawseType.Title)
+                Text(tr("Add a weigh-in", "체중 입력"), style = PawseType.Title)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "For a scale that doesn’t talk to Health Connect, or a day without one.",
+                    tr(
+                        "For a scale that doesn’t talk to Health Connect, or a day without one.",
+                        "헬스 커넥트와 연결되지 않는 체중계를 쓰거나, 체중계가 없는 날을 위해.",
+                    ),
                     style = PawseType.Body,
                     color = onv,
                 )
 
                 Spacer(Modifier.height(28.dp))
-                Caption("Weight")
+                Caption(tr("Weight", "체중"))
                 Spacer(Modifier.height(8.dp))
                 PawseField(
                     value = state.weightText,
@@ -159,20 +163,20 @@ fun WeighInScreen(
                 WeightRuler(kg = state.weightKg, onKg = viewModel::setWeightKg)
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    text = if (state.weightBad) "Between 20 and 300 kg" else weightHint(state.recent.firstOrNull()),
+                    text = if (state.weightBad) tr("Between 20 and 300 kg", "20–300 kg 사이로 입력하세요") else weightHint(state.recent.firstOrNull()),
                     style = PawseType.Label,
                     color = if (state.weightBad) low else onv,
                 )
 
                 Spacer(Modifier.height(24.dp))
-                Caption("When")
+                Caption(tr("When", "언제"))
                 Spacer(Modifier.height(8.dp))
                 val now = remember { ScoreCopy.clock(System.currentTimeMillis()) }
                 Segmented(
                     options = listOf(false, true),
                     selected = state.earlier,
                     onSelect = viewModel::setEarlier,
-                    label = { if (it) "Earlier" else "Now · $now" },
+                    label = { if (it) tr("Earlier", "이전 시간") else tr("Now", "지금") + " · $now" },
                 )
                 AnimatedVisibility(state.earlier, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
                     Column {
@@ -180,8 +184,8 @@ fun WeighInScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             val at = state.earlierAt
                             PickerBox(
-                                label = "Day",
-                                value = at.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.getDefault())),
+                                label = tr("Day", "날짜"),
+                                value = at.format(DateTimeFormatter.ofPattern(tr("EEE d MMM", "M월 d일 (E)"), Locale.getDefault())),
                                 onClick = {
                                     DatePickerDialog(
                                         context,
@@ -194,7 +198,7 @@ fun WeighInScreen(
                                 modifier = Modifier.weight(1f),
                             )
                             PickerBox(
-                                label = "Time",
+                                label = tr("Time", "시간"),
                                 value = ScoreCopy.clock(at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()),
                                 onClick = {
                                     TimePickerDialog(
@@ -210,7 +214,7 @@ fun WeighInScreen(
                         }
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "Not later than now. A weigh-in in the future can’t be true yet.",
+                            tr("Not later than now. A weigh-in in the future can’t be true yet.", "지금 이후는 안 돼요. 미래의 체중은 아직 사실일 수 없으니까요."),
                             style = PawseType.Label,
                             color = if (state.timeBad) low else onv,
                         )
@@ -242,15 +246,19 @@ fun WeighInScreen(
                         }
                         Spacer(Modifier.height(8.dp))
                         Caption(
-                            "Leave any blank. Pawse saves only what you type and never fills a gap with a guess. " +
-                                "No muscle field: Health Connect has no record for it.",
+                            tr(
+                                "Leave any blank. Pawse saves only what you type and never fills a gap with a guess. " +
+                                    "No muscle field: Health Connect has no record for it.",
+                                "비워 둬도 괜찮아요. Pawse는 입력한 값만 저장하고 빈칸을 추측으로 채우지 않아요. " +
+                                    "근육량 칸은 없어요. 헬스 커넥트에 해당 기록 항목이 없거든요.",
+                            ),
                         )
                     }
                 }
 
                 if (state.recent.isNotEmpty()) {
                     Spacer(Modifier.height(32.dp))
-                    Caption("Recent weigh-ins")
+                    Caption(tr("Recent weigh-ins", "최근 체중 기록"))
                     Spacer(Modifier.height(4.dp))
                     state.recent.forEach { entry ->
                         RecentRow(
@@ -262,11 +270,21 @@ fun WeighInScreen(
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     }
                     Spacer(Modifier.height(12.dp))
-                    Caption("Only what you typed here can be removed here. A scale’s readings belong to the scale’s app.")
+                    Caption(
+                        tr(
+                            "Only what you typed here can be removed here. A scale’s readings belong to the scale’s app.",
+                            "여기서 입력한 기록만 여기서 지울 수 있어요. 체중계 기록은 체중계 앱의 몫이에요.",
+                        ),
+                    )
                 }
 
                 Spacer(Modifier.height(24.dp))
-                Caption("Saved to Health Connect, marked as typed in by hand, so other apps see it and can tell it apart from a scale.")
+                Caption(
+                    tr(
+                        "Saved to Health Connect, marked as typed in by hand, so other apps see it and can tell it apart from a scale.",
+                        "헬스 커넥트에 직접 입력한 값으로 표시해 저장해요. 다른 앱도 이 값을 보고 체중계 기록과 구별할 수 있어요.",
+                    ),
+                )
             }
 
             BottomAction(
@@ -278,7 +296,7 @@ fun WeighInScreen(
                         Text(problem, style = PawseType.Label, color = low)
                         if (problem == WeighInViewModel.NOT_ALLOWED) {
                             GhostButton(
-                                "Open Health Connect",
+                                tr("Open Health Connect", "헬스 커넥트 열기"),
                                 onClick = {
                                     runCatching { context.startActivity(Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS)) }
                                 },
@@ -298,28 +316,32 @@ private fun Caption(text: String, modifier: Modifier = Modifier) {
 }
 
 private fun weightHint(last: RecentWeighIn?): String {
-    last ?: return "Scroll the ruler or type it."
+    last ?: return tr("Scroll the ruler or type it.", "눈금자를 밀거나 직접 입력하세요.")
     val date = Instant.ofEpochMilli(last.atEpochMs).atZone(ZoneId.systemDefault()).toLocalDate()
     val day = when (date) {
-        LocalDate.now() -> "today"
-        LocalDate.now().minusDays(1) -> "yesterday"
-        else -> "on " + date.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.getDefault()))
+        LocalDate.now() -> tr("today", "오늘")
+        LocalDate.now().minusDays(1) -> tr("yesterday", "어제")
+        else -> tr("on ", "") + date.format(DateTimeFormatter.ofPattern(tr("EEE d MMM", "M월 d일 (E)"), Locale.getDefault()))
     }
-    return "Last: ${WeighInUiState.oneDecimal(last.weightKg)} kg $day, ${source(last).replaceFirstChar { it.lowercase() }}."
+    val kg = WeighInUiState.oneDecimal(last.weightKg)
+    return tr(
+        "Last: $kg kg $day, ${source(last).replaceFirstChar { it.lowercase() }}.",
+        "지난 기록: $day $kg kg, ${source(last)}.",
+    )
 }
 
 private fun source(entry: RecentWeighIn): String = when {
-    entry.typedIn -> "Typed in"
-    entry.sourceLabel != null -> "From ${entry.sourceLabel}"
-    else -> "From another app"
+    entry.typedIn -> tr("Typed in", "직접 입력")
+    entry.sourceLabel != null -> tr("From ${entry.sourceLabel}", "${entry.sourceLabel}에서")
+    else -> tr("From another app", "다른 앱에서")
 }
 
 private fun whenText(epochMs: Long): String {
     val date = Instant.ofEpochMilli(epochMs).atZone(ZoneId.systemDefault()).toLocalDate()
     val day = when (date) {
-        LocalDate.now() -> "Today"
-        LocalDate.now().minusDays(1) -> "Yesterday"
-        else -> date.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.getDefault()))
+        LocalDate.now() -> tr("Today", "오늘")
+        LocalDate.now().minusDays(1) -> tr("Yesterday", "어제")
+        else -> date.format(DateTimeFormatter.ofPattern(tr("EEE d MMM", "M월 d일 (E)"), Locale.getDefault()))
     }
     return "$day, ${ScoreCopy.clock(epochMs)}"
 }
@@ -328,16 +350,27 @@ private fun whenText(epochMs: Long): String {
 private fun derivedLine(s: WeighInUiState): Pair<String, Boolean> {
     val w = s.weightKg
     val fat = s.figure(BodyFigure.FAT)?.takeIf { s.figureError(BodyFigure.FAT) == null }
-    if (w == null || fat == null) return "Type a body fat figure and Pawse shows what it means in kilograms." to false
+    if (w == null || fat == null) {
+        return tr(
+            "Type a body fat figure and Pawse shows what it means in kilograms.",
+            "체지방률을 입력하면 몇 kg인지 보여 드려요.",
+        ) to false
+    }
     val fatKg = w * fat / 100.0
     val rest = w - fatKg
     val lean = s.figure(BodyFigure.LEAN)?.takeIf { s.figureError(BodyFigure.LEAN) == null }
     if (lean != null && abs(rest - lean) > 1.0) {
-        return "Body fat and lean mass disagree by ${WeighInUiState.oneDecimal(abs(rest - lean))} kg. " +
-            "A scale reports both from one reading, so check the display." to true
+        val gap = WeighInUiState.oneDecimal(abs(rest - lean))
+        return tr(
+            "Body fat and lean mass disagree by $gap kg. A scale reports both from one reading, so check the display.",
+            "체지방률과 제지방량이 $gap kg 어긋나요. 체중계는 한 번 측정으로 둘 다 알려 주니 화면을 다시 확인하세요.",
+        ) to true
     }
     fun one(v: Double) = WeighInUiState.oneDecimal(v)
-    return "At ${one(w)} kg, ${one(fat)}% is ${one(fatKg)} kg of fat and ${one(rest)} kg of everything else." to false
+    return tr(
+        "At ${one(w)} kg, ${one(fat)}% is ${one(fatKg)} kg of fat and ${one(rest)} kg of everything else.",
+        "${one(w)} kg 중 ${one(fat)}%는 지방 ${one(fatKg)} kg, 나머지는 ${one(rest)} kg이에요.",
+    ) to false
 }
 
 @Composable
@@ -368,9 +401,9 @@ private fun CompositionHeader(open: Boolean, onToggle: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text("Body composition", style = PawseType.Heading)
+            Text(tr("Body composition", "체성분"), style = PawseType.Heading)
             Text(
-                "Optional. From a scale’s display or a DEXA report.",
+                tr("Optional. From a scale’s display or a DEXA report.", "선택 사항. 체중계 화면이나 DEXA 결과지를 보고 입력하세요."),
                 style = PawseType.Label,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -416,7 +449,7 @@ private fun RecentRow(entry: RecentWeighIn, removed: Boolean, onRemove: () -> Un
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (removed) {
-            Text("Removed, here and in Health Connect", style = PawseType.Body, color = onv, modifier = Modifier.weight(1f))
+            Text(tr("Removed, here and in Health Connect", "여기와 헬스 커넥트에서 삭제됨"), style = PawseType.Body, color = onv, modifier = Modifier.weight(1f))
             Box(
                 Modifier
                     .offset(x = 10.dp)
@@ -426,7 +459,7 @@ private fun RecentRow(entry: RecentWeighIn, removed: Boolean, onRemove: () -> Un
                     .padding(horizontal = 14.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("Undo", style = PawseType.BodyStrong)
+                Text(tr("Undo", "되돌리기"), style = PawseType.BodyStrong)
             }
         } else {
             val whenText = whenText(entry.atEpochMs)
@@ -437,7 +470,7 @@ private fun RecentRow(entry: RecentWeighIn, removed: Boolean, onRemove: () -> Un
             }
             Text(kg, style = PawseType.MetricValue)
             if (entry.typedIn) {
-                GlyphButton(Glyphs.Trash, "Remove $kg from $whenText", onClick = onRemove, modifier = Modifier.offset(x = 10.dp))
+                GlyphButton(Glyphs.Trash, tr("Remove $kg from $whenText", "$whenText $kg 삭제"), onClick = onRemove, modifier = Modifier.offset(x = 10.dp))
             }
         }
     }

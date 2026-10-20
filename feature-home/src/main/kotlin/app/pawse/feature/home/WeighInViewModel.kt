@@ -6,6 +6,7 @@ import app.pawse.core.data.body.BodyWriter
 import app.pawse.core.data.body.RecentWeighIn
 import app.pawse.core.data.body.WeighIn
 import app.pawse.core.data.health.HealthConnectGateway
+import app.pawse.scoring.tr
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,11 +19,13 @@ import java.util.Locale
 import javax.inject.Inject
 
 /** The optional figures under "Body composition", with the range a real one falls in. */
-enum class BodyFigure(val label: String, val unit: String) {
-    FAT("Body fat", "%"),
-    LEAN("Lean mass", "kg"),
-    WATER("Body water", "kg"),
-    BONE("Bone mass", "kg");
+enum class BodyFigure(private val en: String, private val ko: String, val unit: String) {
+    FAT("Body fat", "체지방률", "%"),
+    LEAN("Lean mass", "제지방량", "kg"),
+    WATER("Body water", "체수분", "kg"),
+    BONE("Bone mass", "골량", "kg");
+
+    val label: String get() = tr(en, ko)
 
     /** Lean and water can't outweigh the person they were measured on. */
     fun range(weightKg: Double?): ClosedFloatingPointRange<Double> = when (this) {
@@ -60,9 +63,13 @@ data class WeighInUiState(
         val value = parse(text)
         if (value != null && value in range) return null
         return if (figure.unit == "%") {
-            "Between ${range.start.toInt()} and ${range.endInclusive.toInt()}%"
+            val lo = range.start.toInt()
+            val hi = range.endInclusive.toInt()
+            tr("Between $lo and $hi%", "$lo–$hi% 사이로 입력하세요")
         } else {
-            "Between ${oneDecimal(range.start)} and ${oneDecimal(range.endInclusive)} kg"
+            val lo = oneDecimal(range.start)
+            val hi = oneDecimal(range.endInclusive)
+            tr("Between $lo and $hi kg", "$lo–$hi kg 사이로 입력하세요")
         }
     }
 
@@ -76,10 +83,16 @@ data class WeighInUiState(
 
     val saveLabel: String
         get() = when {
-            weightKg == null -> "Enter a weight"
-            anyFigureBad -> "Check the figure in red"
-            timeBad -> "Pick a time before now"
-            else -> "Save ${oneDecimal(weightKg!!)} kg" + if (filledFigures > 0) " and $filledFigures more" else ""
+            weightKg == null -> tr("Enter a weight", "체중을 입력하세요")
+            anyFigureBad -> tr("Check the figure in red", "빨간색 값을 확인하세요")
+            timeBad -> tr("Pick a time before now", "지금보다 이전 시간을 고르세요")
+            else -> {
+                val kg = oneDecimal(weightKg!!)
+                tr(
+                    "Save $kg kg" + if (filledFigures > 0) " and $filledFigures more" else "",
+                    "$kg kg" + (if (filledFigures > 0) " 외 ${filledFigures}개" else "") + " 저장",
+                )
+            }
         }
 
     fun toWeighIn(zone: ZoneId = ZoneId.systemDefault()): WeighIn {
@@ -167,7 +180,7 @@ class WeighInViewModel @Inject constructor(
             val removed = writer.remove(entry.atEpochMs)
             _state.update {
                 if (removed == null) {
-                    it.copy(problem = "Couldn't remove it from Health Connect, so it's still there.")
+                    it.copy(problem = tr("Couldn't remove it from Health Connect, so it's still there.", "헬스 커넥트에서 삭제하지 못해서 그대로 남아 있어요."))
                 } else {
                     it.copy(removed = it.removed + (entry.atEpochMs to removed))
                 }
@@ -182,7 +195,7 @@ class WeighInViewModel @Inject constructor(
                 val recent = writer.recent()
                 _state.update { it.copy(removed = it.removed - atEpochMs, recent = recent) }
             } else {
-                _state.update { it.copy(problem = "Health Connect didn't take it back. It stays removed.") }
+                _state.update { it.copy(problem = tr("Health Connect didn't take it back. It stays removed.", "헬스 커넥트가 되돌리기를 받지 않아서 삭제된 채로 있어요.")) }
             }
         }
     }
@@ -191,7 +204,11 @@ class WeighInViewModel @Inject constructor(
         _state.update { it.copy(busy = true, problem = null) }
         val ok = writer.write(_state.value.toWeighIn())
         _state.update {
-            if (ok) it.copy(busy = false, saved = true) else it.copy(busy = false, problem = "Health Connect didn't take it. Nothing was saved.")
+            if (ok) {
+                it.copy(busy = false, saved = true)
+            } else {
+                it.copy(busy = false, problem = tr("Health Connect didn't take it. Nothing was saved.", "헬스 커넥트가 받지 않아서 아무것도 저장되지 않았어요."))
+            }
         }
     }
 
@@ -200,6 +217,10 @@ class WeighInViewModel @Inject constructor(
     private fun clean(text: String) = text.filter { it.isDigit() || it == '.' || it == ',' }.take(6)
 
     companion object {
-        const val NOT_ALLOWED = "Health Connect hasn't allowed Pawse to save body measurements."
+        val NOT_ALLOWED: String
+            get() = tr(
+                "Health Connect hasn't allowed Pawse to save body measurements.",
+                "헬스 커넥트에서 Pawse의 신체 측정값 저장을 허용하지 않았어요.",
+            )
     }
 }

@@ -185,8 +185,10 @@ class PawseEngine(private val config: ScoringConfig = ScoringConfig.DEFAULT) {
                     kRows.map { debts[it]!! }, kRows.map { input.checkIns.getValue(days[it]).toDouble() },
                     config.energy.kappa, config.learning,
                 )
-                if (abs(nextW - w) >= 0.01) changes += ModelChange(d, "HRV's share of Body", w, nextW)
-                if (abs(nextK - kappa) >= 0.001) changes += ModelChange(d, "How much sleep debt lowers your energy", kappa, nextK)
+                if (abs(nextW - w) >= 0.01) changes += ModelChange(d, tr("HRV's share of Body", "컨디션 내 HRV 비중"), w, nextW)
+                if (abs(nextK - kappa) >= 0.001) {
+                    changes += ModelChange(d, tr("How much sleep debt lowers your energy", "수면 부채가 에너지를 낮추는 정도"), kappa, nextK)
+                }
                 w = nextW
                 kappa = nextK
             }

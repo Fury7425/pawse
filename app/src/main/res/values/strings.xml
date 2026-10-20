@@ -4,6 +4,8 @@
     <string name="widget_description">Today\'s guidance, Body, sleep debt and load from this morning\'s read.</string>
     <string name="channel_weekly">Weekly summary</string>
     <string name="channel_weekly_description">One calm summary a week. No daily score pushes.</string>
+    <string name="widget_label">Body</string>
+    <string name="widget_empty">Open Pawse to read last night</string>
 
     <!--
       Shown by Health Connect on its own permission screen. This is the only place

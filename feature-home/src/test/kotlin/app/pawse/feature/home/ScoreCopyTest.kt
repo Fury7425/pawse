@@ -9,10 +9,31 @@ import app.pawse.scoring.model.ReasonKind
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
+import org.junit.After
+import org.junit.Before
 import org.junit.Test
+import java.util.Locale
 
 /** The app's voice is a feature, so it gets tests. */
 class ScoreCopyTest {
+
+    private val original = Locale.getDefault()
+
+    // The words follow the phone's language, so the English checks pin English.
+    @Before
+    fun english() = Locale.setDefault(Locale.ENGLISH)
+
+    @After
+    fun restore() = Locale.setDefault(original)
+
+    @Test
+    fun `korean phones read korean, with korean word order and units`() {
+        Locale.setDefault(Locale.KOREAN)
+        ScoreCopy.bandWord(BodyBand.BELOW_NORMAL) shouldBe "평소보다 낮음"
+        ScoreCopy.debt(3.1667) shouldBe "3시간 10분 부족"
+        ScoreCopy.formatHours(8.0) shouldBe "8시간"
+        ScoreCopy.reasons(listOf(BodyReason(ReasonKind.DRINKS, 2.0))) shouldBe "술 2잔 기록됨"
+    }
 
     @Test
     fun `never poor or bad`() {

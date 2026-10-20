@@ -8,6 +8,7 @@ import app.pawse.core.ui.theme.PawseTheme
 import app.pawse.scoring.model.BodyBand
 import app.pawse.scoring.model.IllnessLevel
 import app.pawse.scoring.model.SignalDetail
+import app.pawse.scoring.tr
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.exp
@@ -37,13 +38,13 @@ fun SignalDetail.toRowState(hrv: Boolean): BaselineRowState {
         String.format(Locale.getDefault(), "± %.1f bpm", spread)
     }
     return BaselineRowState(
-        label = if (hrv) "Heart rate variability" else "Sleeping heart rate",
-        valueText = tonight?.let { "${it.roundToInt()} $unit" } ?: "Not recorded",
-        baselineText = "Usually ${baseline.roundToInt()} $unit $spreadText",
+        label = if (hrv) tr("Heart rate variability", "심박 변이도") else tr("Sleeping heart rate", "수면 중 심박수"),
+        valueText = tonight?.let { "${it.roundToInt()} $unit" } ?: tr("Not recorded", "기록 없음"),
+        baselineText = tr("Usually", "평소") + " ${baseline.roundToInt()} $unit $spreadText",
         deltaText = when {
-            abs(z) < ScoreCopy.NEUTRAL_Z -> "About your normal"
-            z > 0 -> "Better than your normal"
-            else -> "Below your normal"
+            abs(z) < ScoreCopy.NEUTRAL_Z -> tr("About your normal", "평소와 비슷함")
+            z > 0 -> tr("Better than your normal", "평소보다 좋음")
+            else -> tr("Below your normal", "평소보다 낮음")
         },
         z = z.toFloat(),
         direction = when {

@@ -4,6 +4,7 @@ import app.pawse.scoring.config.LoadConfig
 import app.pawse.scoring.model.MaxHeartRate
 import app.pawse.scoring.model.Provenance
 import app.pawse.scoring.model.UserProfile
+import app.pawse.scoring.tr
 
 /**
  * Heart-rate reserve, and the HRmax that anchors it. When HRmax is estimated the
@@ -26,7 +27,7 @@ object HeartRateModel {
         observedMaxHeartRate: Double? = null,
     ): MaxHeartRate? {
         profile.measuredMaxHeartRate?.let {
-            return MaxHeartRate(it, Provenance.PUBLISHED, "Measured maximum you entered.", estimated = false)
+            return MaxHeartRate(it, Provenance.PUBLISHED, tr("Measured maximum you entered.", "직접 입력한 측정 최대 심박수예요."), estimated = false)
         }
         val age = profile.ageYears ?: return null
         val tanaka = tanakaMax(age, config)
@@ -34,16 +35,20 @@ object HeartRateModel {
             return MaxHeartRate(
                 bpm = observedMaxHeartRate,
                 provenance = Provenance.INFERRED,
-                citation = "Your age-based estimate was ${tanaka.toInt()}, but your watch has recorded " +
-                    "${observedMaxHeartRate.toInt()}, so the higher number is used.",
+                citation = tr(
+                    "Your age-based estimate was ${tanaka.toInt()}, but your watch has recorded " +
+                        "${observedMaxHeartRate.toInt()}, so the higher number is used.",
+                    "나이로 추정한 값은 ${tanaka.toInt()}이지만 시계가 ${observedMaxHeartRate.toInt()}까지 " +
+                        "기록해서 더 높은 값을 써요.",
+                ),
                 estimated = true,
             )
         }
         return MaxHeartRate(
             bpm = tanaka,
             provenance = Provenance.PUBLISHED,
-            citation = "Estimated from your age: Tanaka 2001, HRmax = " +
-                "${config.tanakaIntercept.toInt()} - ${config.tanakaSlope} x age.",
+            citation = tr("Estimated from your age: Tanaka 2001, HRmax = ", "나이로 추정: Tanaka 2001, HRmax = ") +
+                "${config.tanakaIntercept.toInt()} - ${config.tanakaSlope} x " + tr("age.", "나이."),
             estimated = true,
         )
     }

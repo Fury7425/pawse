@@ -84,6 +84,7 @@ import app.pawse.scoring.model.IllnessLevel
 import app.pawse.scoring.model.LoadReading
 import app.pawse.scoring.model.ScoreType
 import app.pawse.scoring.model.SleepReading
+import app.pawse.scoring.tr
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -120,11 +121,11 @@ fun HomeScreen(
                     .padding(24.dp),
                 verticalArrangement = Arrangement.Center,
             ) {
-                Text("Could not work out today", style = PawseType.Title)
+                Text(tr("Could not work out today", "오늘 값을 계산하지 못했어요"), style = PawseType.Title)
                 Spacer(Modifier.height(8.dp))
                 Text(current.message, style = PawseType.Body, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(24.dp))
-                PrimaryButton("Try again", onClick = viewModel::refresh)
+                PrimaryButton(tr("Try again", "다시 시도"), onClick = viewModel::refresh)
             }
 
             is HomeUiState.Ready -> TodayContent(
@@ -171,7 +172,7 @@ private fun Loading(modifier: Modifier = Modifier) {
     ) {
         CircularProgressIndicator(color = MaterialTheme.colorScheme.onSurface, strokeWidth = 2.dp, modifier = Modifier.size(28.dp))
         Spacer(Modifier.height(16.dp))
-        Text("Working out your night", style = PawseType.Body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(tr("Working out your night", "지난밤을 분석하는 중"), style = PawseType.Body, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -243,7 +244,7 @@ private fun TodayContent(
         if (alert) {
             item {
                 PawseCard(modifier = pad.padding(top = 16.dp)) {
-                    BandDot(color = PawseTheme.semantics.bandLow, label = "Overnight heart rate")
+                    BandDot(color = PawseTheme.semantics.bandLow, label = tr("Overnight heart rate", "야간 심박수"))
                     Spacer(Modifier.height(6.dp))
                     Text(ScoreCopy.ILLNESS_ALERT, style = PawseType.Body)
                     ScoreCopy.likelyCauses(today.illness.likelyCauses)?.let {
@@ -257,9 +258,13 @@ private fun TodayContent(
         if (accessOff) {
             item {
                 Notice(
-                    text = "Pawse can't read your data right now. Access to Health Connect was turned off, " +
-                        "so nothing new can come in. Everything already read is still on this phone.",
-                    actionLabel = "Turn access back on",
+                    text = tr(
+                        "Pawse can't read your data right now. Access to Health Connect was turned off, " +
+                            "so nothing new can come in. Everything already read is still on this phone.",
+                        "지금은 Pawse가 데이터를 읽을 수 없어요. 헬스 커넥트 접근이 꺼져 있어서 새 데이터가 들어오지 " +
+                            "않아요. 이미 읽은 데이터는 모두 이 휴대폰에 그대로 있어요.",
+                    ),
+                    actionLabel = tr("Turn access back on", "접근 다시 켜기"),
                     onAction = {
                         runCatching { context.startActivity(Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS)) }
                     },
@@ -279,7 +284,7 @@ private fun TodayContent(
 
         if (syncError != null) {
             item {
-                Notice(text = syncError, actionLabel = "Dismiss", onAction = onDismissError, modifier = pad.padding(top = 16.dp))
+                Notice(text = syncError, actionLabel = tr("Dismiss", "닫기"), onAction = onDismissError, modifier = pad.padding(top = 16.dp))
             }
         }
 
@@ -292,7 +297,7 @@ private fun TodayContent(
 
         item {
             Spacer(Modifier.height(32.dp))
-            Text("Also today", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = pad)
+            Text(tr("Also today", "오늘의 다른 정보"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = pad)
             Spacer(Modifier.height(10.dp))
             Row(
                 modifier = pad.height(IntrinsicSize.Max),
@@ -316,9 +321,13 @@ private fun TodayContent(
         if (snapshot.needsProfile) {
             item {
                 Notice(
-                    text = "Workouts are counted by effort until Pawse knows your maximum heart rate. " +
-                        "Your age, or a measured maximum, lets it read your heart rate instead.",
-                    actionLabel = "Add it",
+                    text = tr(
+                        "Workouts are counted by effort until Pawse knows your maximum heart rate. " +
+                            "Your age, or a measured maximum, lets it read your heart rate instead.",
+                        "Pawse가 최대 심박수를 알기 전까지는 운동을 체감 강도로 계산해요. 나이나 측정한 최대 " +
+                            "심박수를 알려 주면 심박수로 계산할 수 있어요.",
+                    ),
+                    actionLabel = tr("Add it", "입력하기"),
                     onAction = onSettings,
                     modifier = pad.padding(top = 20.dp),
                 )
@@ -327,7 +336,7 @@ private fun TodayContent(
 
         item {
             Column(pad.padding(top = 24.dp)) {
-                GhostButton("You and your settings", onClick = onSettings)
+                GhostButton(tr("You and your settings", "내 정보와 설정"), onClick = onSettings)
                 Spacer(Modifier.height(8.dp))
                 Text(ScoreCopy.FOOTER, style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -352,7 +361,7 @@ private fun Header(
         Row(Modifier.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    text = date.format(DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.getDefault())),
+                    text = date.format(DateTimeFormatter.ofPattern(tr("EEEE d MMMM", "M월 d일 EEEE"), Locale.getDefault())),
                     style = PawseType.Heading,
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -375,9 +384,9 @@ private fun Header(
                     )
                 }
             } else {
-                GlyphButton(Glyphs.Refresh, "Refresh", onClick = onSyncNow)
+                GlyphButton(Glyphs.Refresh, tr("Refresh", "새로고침"), onClick = onSyncNow)
             }
-            GlyphButton(Glyphs.Person, "You and your settings", onClick = onSettings)
+            GlyphButton(Glyphs.Person, tr("You and your settings", "내 정보와 설정"), onClick = onSettings)
         }
         if (sync is SyncStatus.Running) {
             Spacer(Modifier.height(10.dp))
@@ -403,18 +412,29 @@ private fun Header(
 }
 
 private fun statusLine(sync: SyncStatus, lastSyncEpochMs: Long): String = when (sync) {
-    is SyncStatus.Running -> "Reading Health Connect · step ${sync.step.ordinal + 1} of ${SyncStep.entries.size}, " +
-        when (sync.step) {
-            SyncStep.READ -> "reading"
-            SyncStep.COMPARE -> "comparing"
-            SyncStep.SCORE -> "working it out"
+    is SyncStatus.Running -> {
+        val step = sync.step.ordinal + 1
+        val total = SyncStep.entries.size
+        val what = when (sync.step) {
+            SyncStep.READ -> tr("reading", "읽는 중")
+            SyncStep.COMPARE -> tr("comparing", "비교하는 중")
+            SyncStep.SCORE -> tr("working it out", "계산하는 중")
         }
-    is SyncStatus.Failed -> when (sync.reason) {
-        SyncFailure.READ_FAILED -> "Health Connect didn't answer at ${ScoreCopy.clock(sync.atEpochMs)}"
-        SyncFailure.ACCESS_OFF -> "Access to Health Connect is off"
-        SyncFailure.UNAVAILABLE -> "Health Connect isn't available"
+        tr("Reading Health Connect · step $step of $total, $what", "헬스 커넥트 읽는 중 · ${total}단계 중 ${step}단계, $what")
     }
-    else -> if (lastSyncEpochMs > 0) "Read from Health Connect at ${ScoreCopy.clock(lastSyncEpochMs)}" else "Not read from Health Connect yet"
+    is SyncStatus.Failed -> when (sync.reason) {
+        SyncFailure.READ_FAILED -> tr(
+            "Health Connect didn't answer at ${ScoreCopy.clock(sync.atEpochMs)}",
+            "${ScoreCopy.clock(sync.atEpochMs)}에 헬스 커넥트가 응답하지 않았어요",
+        )
+        SyncFailure.ACCESS_OFF -> tr("Access to Health Connect is off", "헬스 커넥트 접근이 꺼져 있어요")
+        SyncFailure.UNAVAILABLE -> tr("Health Connect isn't available", "헬스 커넥트를 사용할 수 없어요")
+    }
+    else -> if (lastSyncEpochMs > 0) {
+        tr("Read from Health Connect at ${ScoreCopy.clock(lastSyncEpochMs)}", "${ScoreCopy.clock(lastSyncEpochMs)}에 헬스 커넥트에서 읽음")
+    } else {
+        tr("Not read from Health Connect yet", "아직 헬스 커넥트에서 읽지 않았어요")
+    }
 }
 
 /** What one ring shows. A null [value] draws the score's glyph instead: Body with numbers hidden. */
@@ -454,7 +474,7 @@ private fun ringFace(type: ScoreType, snapshot: ScoringSnapshot): RingFace {
                 unit = "",
                 dot = color,
                 word = body?.let { ScoreCopy.bandWord(it.band) }
-                    ?: if (today.bodyStatus == BodyStatus.NO_RECENT_NIGHT) "No reading" else "Settling",
+                    ?: if (today.bodyStatus == BodyStatus.NO_RECENT_NIGHT) tr("No reading", "값 없음") else tr("Settling", "기준 잡는 중"),
             )
         }
 
@@ -468,7 +488,7 @@ private fun ringFace(type: ScoreType, snapshot: ScoringSnapshot): RingFace {
                 value = slept?.let { String.format(Locale.getDefault(), "%.1f", it / 60.0) } ?: "—",
                 unit = if (slept != null) "h" else "",
                 dot = neutral,
-                word = sleep.debtHours?.let(ScoreCopy::debt) ?: "Settling",
+                word = sleep.debtHours?.let(ScoreCopy::debt) ?: tr("Settling", "기준 잡는 중"),
             )
         }
 
@@ -491,12 +511,12 @@ private fun ringFace(type: ScoreType, snapshot: ScoringSnapshot): RingFace {
 }
 
 private fun formWord(load: LoadReading): String = when {
-    load.rest -> "Rest today"
+    load.rest -> tr("Rest today", "오늘은 휴식")
     else -> when (load.formBand) {
-        FormBand.FRESH -> "Fresh"
-        FormBand.PRODUCTIVE -> "Productive"
-        FormBand.HEAVY -> "Heavy"
-        null -> "Building"
+        FormBand.FRESH -> tr("Fresh", "개운함")
+        FormBand.PRODUCTIVE -> tr("Productive", "효과적")
+        FormBand.HEAVY -> tr("Heavy", "무거움")
+        null -> tr("Building", "쌓는 중")
     }
 }
 
@@ -520,7 +540,7 @@ private fun Rings(snapshot: ScoringSnapshot, focus: ScoreType, onFocus: (ScoreTy
     }
     Spacer(Modifier.height(6.dp))
     Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        listOf("Last night", "This morning", "Today so far").forEachIndexed { i, caption ->
+        listOf(tr("Last night", "지난밤"), tr("This morning", "오늘 아침"), tr("Today so far", "오늘 지금까지")).forEachIndexed { i, caption ->
             Text(
                 caption,
                 style = PawseType.Label,
@@ -542,7 +562,7 @@ private fun RingTile(
 ) {
     val big = type == ScoreType.BODY
     val shown = face.value?.let { " $it${face.unit}" } ?: ""
-    val description = "${ScoreCopy.name(type)}$shown, ${face.word}" + if (selected) ", shown below" else ""
+    val description = "${ScoreCopy.name(type)}$shown, ${face.word}" + if (selected) tr(", shown below", ", 아래에 표시됨") else ""
 
     Column(
         modifier = modifier
@@ -597,9 +617,9 @@ private fun RangeCard(load: LoadReading, onClick: () -> Unit, modifier: Modifier
     val marker = MaterialTheme.colorScheme.onSurface
     PawseCard(modifier = modifier, onClick = onClick, padding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Today’s range", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            Text(tr("Today’s range", "오늘의 범위"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
             Text(
-                if (inRange) "Load ${ScoreCopy.load(low!!)}–${ScoreCopy.load(high!!)}" else "Rest",
+                if (inRange) tr("Load", "부하") + " ${ScoreCopy.load(low!!)}–${ScoreCopy.load(high!!)}" else tr("Rest", "휴식"),
                 style = PawseType.BodyStrong,
             )
             Spacer(Modifier.width(8.dp))
@@ -627,15 +647,15 @@ private fun RangeCard(load: LoadReading, onClick: () -> Unit, modifier: Modifier
         Spacer(Modifier.height(4.dp))
         Row {
             Text(
-                "${ScoreCopy.load(load.todayLoad)} so far",
+                tr("${ScoreCopy.load(load.todayLoad)} so far", "지금까지 ${ScoreCopy.load(load.todayLoad)}"),
                 style = PawseType.Label,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
             Text(
                 when {
-                    load.rest -> "Your overnight heart rate has been high"
-                    else -> load.typicalDayLoad?.let { "Your typical day is ${ScoreCopy.load(it)}" } ?: ""
+                    load.rest -> tr("Your overnight heart rate has been high", "야간 심박수가 높았어요")
+                    else -> load.typicalDayLoad?.let { tr("Your typical day is ${ScoreCopy.load(it)}", "평소 하루는 ${ScoreCopy.load(it)}") } ?: ""
                 },
                 style = PawseType.Label,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -660,7 +680,7 @@ private fun LazyListScope.focusSection(
     item(key = "focus-foot-$type") {
         Column(pad) {
             Spacer(Modifier.height(16.dp))
-            ExplainLink("How ${ScoreCopy.name(type)} was worked out", onClick = open)
+            ExplainLink(tr("How ${ScoreCopy.name(type)} was worked out", "${ScoreCopy.name(type)} 계산 방법"), onClick = open)
         }
     }
 }
@@ -683,7 +703,7 @@ private fun LazyListScope.bodySection(snapshot: ScoringSnapshot, onOpen: () -> U
         Column(pad) {
             if (body == null) {
                 FocusHead(
-                    "No Body reading yet",
+                    tr("No Body reading yet", "아직 컨디션 값이 없어요"),
                     null,
                     ScoreCopy.bodyStatus(today.bodyStatus, today.validNights, ScoringConfig.DEFAULT.body.minValidNights),
                 )
@@ -691,9 +711,18 @@ private fun LazyListScope.bodySection(snapshot: ScoringSnapshot, onOpen: () -> U
             }
             val measured = listOfNotNull(body.hrv?.tonight, body.sleepingHr?.tonight).size
             FocusHead(
-                title = "Why Body is ${ScoreCopy.bandWord(body.band).lowercase()}",
-                aside = "$measured of 2 signals",
-                sentence = (if (snapshot.showNumbers) "Body ${body.score}, likely ${body.low}–${body.high}. " else "") +
+                title = tr(
+                    "Why Body is ${ScoreCopy.bandWord(body.band).lowercase()}",
+                    "컨디션이 ‘${ScoreCopy.bandWord(body.band)}’인 이유",
+                ),
+                aside = tr("$measured of 2 signals", "신호 2개 중 ${measured}개"),
+                sentence = (
+                    if (snapshot.showNumbers) {
+                        tr("Body ${body.score}, likely ${body.low}–${body.high}. ", "컨디션 ${body.score}, 범위 ${body.low}–${body.high}. ")
+                    } else {
+                        ""
+                    }
+                    ) +
                     (body.reasons.takeIf { it.isNotEmpty() }?.let { ScoreCopy.reasons(it) + "." } ?: ScoreCopy.bandMeaning(body.band)),
             )
             Spacer(Modifier.height(10.dp))
@@ -701,12 +730,12 @@ private fun LazyListScope.bodySection(snapshot: ScoringSnapshot, onOpen: () -> U
             Spacer(Modifier.height(16.dp))
             Row(Modifier.padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "Against your normal",
+                    tr("Against your normal", "내 평소와 비교"),
                     style = PawseType.Label,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
-                UsualRangeKey("Your normal range")
+                UsualRangeKey(tr("Your normal range", "내 평소 범위"))
             }
         }
     }
@@ -722,7 +751,7 @@ private fun LazyListScope.bodySection(snapshot: ScoringSnapshot, onOpen: () -> U
     item(key = "focus-week-BODY") {
         Column(pad) {
             Spacer(Modifier.height(16.dp))
-            Text("This week", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(tr("This week", "이번 주"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
             Sparkline(
                 values = snapshot.week.map { it.body?.score?.toDouble() },
@@ -746,7 +775,11 @@ private fun LazyListScope.bodySection(snapshot: ScoringSnapshot, onOpen: () -> U
             today.cycle?.takeIf { it.luteal }?.let { cycle ->
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    if (cycle.adjusted) "Adjusted for your cycle, using your own past cycles." else "Part of this may be your cycle.",
+                    if (cycle.adjusted) {
+                        tr("Adjusted for your cycle, using your own past cycles.", "지난 생리 주기를 바탕으로 주기 영향을 보정했어요.")
+                    } else {
+                        tr("Part of this may be your cycle.", "일부는 생리 주기 영향일 수 있어요.")
+                    },
                     style = PawseType.Label,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -763,17 +796,27 @@ private fun LazyListScope.sleepSection(snapshot: ScoringSnapshot, onOpen: () -> 
         Column(pad) {
             FocusHead(
                 title = ScoreCopy.debt(sleep.debtHours),
-                aside = if (snapshot.showNumbers) sleep.score?.let { "Sleep $it" } else null,
+                aside = if (snapshot.showNumbers) sleep.score?.let { tr("Sleep $it", "수면 $it") } else null,
                 sentence = (
                     sleep.lastNightMinutes?.let {
-                        "You slept ${ScoreCopy.formatMinutes(it)} against a need of ${ScoreCopy.formatHours(sleep.needHours)}."
-                    } ?: "No night recorded yet."
-                    ) + if (sleep.needLearned) "" else " Need stays at ${ScoreCopy.formatHours(config.defaultNeedHours)} until there are ${config.minFreeNights} weekend nights to learn yours from.",
+                        tr(
+                            "You slept ${ScoreCopy.formatMinutes(it)} against a need of ${ScoreCopy.formatHours(sleep.needHours)}.",
+                            "필요 수면 ${ScoreCopy.formatHours(sleep.needHours)} 중 ${ScoreCopy.formatMinutes(it)} 잤어요.",
+                        )
+                    } ?: tr("No night recorded yet.", "아직 기록된 밤이 없어요.")
+                    ) + if (sleep.needLearned) {
+                    ""
+                } else {
+                    tr(
+                        " Need stays at ${ScoreCopy.formatHours(config.defaultNeedHours)} until there are ${config.minFreeNights} weekend nights to learn yours from.",
+                        " 주말 밤이 ${config.minFreeNights}번 쌓여 내 필요 수면을 알 때까지는 ${ScoreCopy.formatHours(config.defaultNeedHours)}으로 둬요.",
+                    )
+                },
             )
             SleepNeedCard(sleep)
             Spacer(Modifier.height(16.dp))
             Text(
-                "Against your need",
+                tr("Against your need", "필요 수면과 비교"),
                 style = PawseType.Label,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 4.dp),
@@ -783,14 +826,14 @@ private fun LazyListScope.sleepSection(snapshot: ScoringSnapshot, onOpen: () -> 
     val parts = sleep.parts
     if (parts == null) {
         item(key = "focus-SLEEP-none") {
-            Text("The parts appear once there is a night to read.", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = pad)
+            Text(tr("The parts appear once there is a night to read.", "읽을 밤 기록이 생기면 항목이 나타나요."), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = pad)
         }
         return
     }
     val rows = listOf(
-        SleepPart("Duration vs need", sleep.lastNightMinutes?.let(ScoreCopy::formatMinutes) ?: "—", parts.duration, config.scoreDurationWeight),
-        SleepPart("Regularity", sleep.sri?.roundToInt()?.toString() ?: "—", parts.regularity, config.scoreRegularityWeight),
-        SleepPart("Continuity", sleep.efficiencyPercent?.let { "${it.roundToInt()}%" } ?: "—", parts.continuity, config.scoreContinuityWeight),
+        SleepPart(tr("Duration vs need", "필요 대비 수면 시간"), sleep.lastNightMinutes?.let(ScoreCopy::formatMinutes) ?: "—", parts.duration, config.scoreDurationWeight),
+        SleepPart(tr("Regularity", "규칙성"), sleep.sri?.roundToInt()?.toString() ?: "—", parts.regularity, config.scoreRegularityWeight),
+        SleepPart(tr("Continuity", "연속성"), sleep.efficiencyPercent?.let { "${it.roundToInt()}%" } ?: "—", parts.continuity, config.scoreContinuityWeight),
     )
     items(rows, key = { "focus-SLEEP-${it.label}" }) { part ->
         Column(pad) {
@@ -809,7 +852,7 @@ private fun SleepNeedCard(sleep: SleepReading) {
     Spacer(Modifier.height(16.dp))
     PawseCard(padding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)) {
         Row {
-            Text("Your need", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            Text(tr("Your need", "필요 수면"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
             Text(ScoreCopy.formatHours(sleep.needHours), style = PawseType.Label.copy(fontWeight = PawseType.BodyStrong.fontWeight))
         }
         Spacer(Modifier.height(10.dp))
@@ -823,8 +866,8 @@ private fun SleepNeedCard(sleep: SleepReading) {
         Spacer(Modifier.height(8.dp))
         Text(
             listOfNotNull(
-                "Slept ${ScoreCopy.formatMinutes(slept)}",
-                short.takeIf { it >= 1.0 }?.let { "${minutes(it)} short" },
+                tr("Slept ${ScoreCopy.formatMinutes(slept)}", "수면 ${ScoreCopy.formatMinutes(slept)}"),
+                short.takeIf { it >= 1.0 }?.let { tr("${minutes(it)} short", "${minutes(it)} 부족") },
             ).joinToString("   "),
             style = PawseType.Label,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -866,12 +909,13 @@ private fun PartRow(part: SleepPart, onClick: () -> Unit) {
         Spacer(Modifier.height(6.dp))
         Row {
             Text(
-                score?.let { "Part score $it / 100" } ?: "Not measured, so its weight went to the others",
+                score?.let { tr("Part score $it / 100", "항목 점수 $it / 100") }
+                    ?: tr("Not measured, so its weight went to the others", "측정되지 않아 비중을 다른 항목에 나눴어요"),
                 style = PawseType.Label,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
-            Text("Weight ${(part.weight * 100).roundToInt()}%", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(tr("Weight", "비중") + " ${(part.weight * 100).roundToInt()}%", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -882,13 +926,20 @@ private fun LazyListScope.loadSection(snapshot: ScoringSnapshot, onOpen: () -> U
     item(key = "focus-head-LOAD") {
         Column(pad) {
             FocusHead(
-                title = "Load so far: ${ScoreCopy.load(load.todayLoad)}",
-                aside = if (snapshot.showNumbers) load.form?.let { "Form ${(it * 100).roundToInt()}%" } else load.formBand?.let(ScoreCopy::form),
-                sentence = rangeSentence(load) + " Load is training, not a grade, so it stays grey.",
+                title = tr("Load so far: ", "지금까지 부하: ") + ScoreCopy.load(load.todayLoad),
+                aside = if (snapshot.showNumbers) {
+                    load.form?.let { tr("Form", "폼") + " ${(it * 100).roundToInt()}%" }
+                } else {
+                    load.formBand?.let(ScoreCopy::form)
+                },
+                sentence = rangeSentence(load) + tr(
+                    " Load is training, not a grade, so it stays grey.",
+                    " 부하는 성적이 아니라 훈련량이라서 회색으로 표시해요.",
+                ),
             )
             Spacer(Modifier.height(16.dp))
             Text(
-                "Where it came from",
+                tr("Where it came from", "어디서 나온 값인지"),
                 style = PawseType.Label,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 4.dp),
@@ -898,7 +949,7 @@ private fun LazyListScope.loadSection(snapshot: ScoringSnapshot, onOpen: () -> U
     if (load.sessions.isEmpty()) {
         item(key = "focus-LOAD-none") {
             Column(pad) {
-                SessionRow("Workouts", "0", "No workouts logged yet today.", onOpen)
+                SessionRow(tr("Workouts", "운동"), "0", tr("No workouts logged yet today.", "오늘은 아직 기록된 운동이 없어요."), onOpen)
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             }
         }
@@ -906,9 +957,9 @@ private fun LazyListScope.loadSection(snapshot: ScoringSnapshot, onOpen: () -> U
         items(load.sessions, key = { "focus-LOAD-${it.id}" }) { s ->
             Column(pad) {
                 SessionRow(
-                    label = s.title ?: "Workout",
+                    label = s.title ?: tr("Workout", "운동"),
                     value = ScoreCopy.load(s.load),
-                    note = "${s.durationMinutes.roundToInt()} min · ${ScoreCopy.loadMethod(s.method)}" + (s.skippedReason?.let { ". $it" } ?: ""),
+                    note = "${s.durationMinutes.roundToInt()}${tr(" min", "분")} · ${ScoreCopy.loadMethod(s.method)}" + (s.skippedReason?.let { ". $it" } ?: ""),
                     onClick = onOpen,
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -918,8 +969,12 @@ private fun LazyListScope.loadSection(snapshot: ScoringSnapshot, onOpen: () -> U
     item(key = "focus-note-LOAD") {
         val config = ScoringConfig.DEFAULT.load
         Text(
-            "Fitness is your load over ${config.fitnessDays.roundToInt()} days and fatigue over ${config.fatigueDays.roundToInt()}; " +
-                "form is the gap between them.",
+            tr(
+                "Fitness is your load over ${config.fitnessDays.roundToInt()} days and fatigue over ${config.fatigueDays.roundToInt()}; " +
+                    "form is the gap between them.",
+                "체력은 ${config.fitnessDays.roundToInt()}일, 피로는 ${config.fatigueDays.roundToInt()}일 동안의 부하이고, " +
+                    "폼은 그 둘의 차이예요.",
+            ),
             style = PawseType.Label,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = pad.padding(top = 14.dp),
@@ -931,10 +986,12 @@ private fun rangeSentence(load: LoadReading): String {
     val low = load.rangeLow
     val high = load.rangeHigh
     return when {
-        load.rest -> "Your overnight heart rate has been high, so today is for rest."
-        low != null && high != null ->
-            "Today’s range is ${ScoreCopy.load(low)}–${ScoreCopy.load(high)}: your typical training day, moved by this morning’s Body."
-        else -> "A range appears after your first few workouts."
+        load.rest -> tr("Your overnight heart rate has been high, so today is for rest.", "야간 심박수가 높았으니 오늘은 쉬는 날이에요.")
+        low != null && high != null -> tr(
+            "Today’s range is ${ScoreCopy.load(low)}–${ScoreCopy.load(high)}: your typical training day, moved by this morning’s Body.",
+            "오늘의 범위: ${ScoreCopy.load(low)}–${ScoreCopy.load(high)}. 평소 운동량을 오늘 아침 컨디션에 맞춰 조정했어요.",
+        )
+        else -> tr("A range appears after your first few workouts.", "운동을 몇 번 하고 나면 범위가 나타나요.")
     }
 }
 
@@ -1018,17 +1075,27 @@ private fun AlsoCard(
 private fun EnergyCard(energy: EnergyForecast?, modifier: Modifier = Modifier) {
     AlsoCard(
         glyph = Glyphs.Energy,
-        name = "Energy",
+        name = tr("Energy", "에너지"),
         value = energy?.let { ScoreCopy.minuteOfDay(it.focusStart) } ?: "—",
         suffix = "",
-        word = energy?.let { "Best focus to ${ScoreCopy.minuteOfDay(it.focusEnd)}" } ?: "Not forecast yet",
+        word = energy?.let { tr("Best focus to ${ScoreCopy.minuteOfDay(it.focusEnd)}", "${ScoreCopy.minuteOfDay(it.focusEnd)}까지 집중하기 좋음") }
+            ?: tr("Not forecast yet", "아직 예측 전"),
         sentence = energy?.let { e ->
             listOfNotNull(
-                "Dip around ${ScoreCopy.minuteOfDay(e.dipMinute)}, wind down from ${ScoreCopy.minuteOfDay(e.windDownMinute)}.",
-                e.caffeineAtBedMg.takeIf { it >= 1.0 }?.let { "About ${it.roundToInt()} mg of caffeine left at bedtime." },
-                if (e.clockLagMinutes != 0) "Your body clock is still catching up with the time zone." else null,
+                tr(
+                    "Dip around ${ScoreCopy.minuteOfDay(e.dipMinute)}, wind down from ${ScoreCopy.minuteOfDay(e.windDownMinute)}.",
+                    "${ScoreCopy.minuteOfDay(e.dipMinute)}쯤 처지고, ${ScoreCopy.minuteOfDay(e.windDownMinute)}부터 잘 준비를 하세요.",
+                ),
+                e.caffeineAtBedMg.takeIf { it >= 1.0 }?.let {
+                    tr("About ${it.roundToInt()} mg of caffeine left at bedtime.", "잠자리에 들 때 카페인이 약 ${it.roundToInt()} mg 남아 있어요.")
+                },
+                if (e.clockLagMinutes != 0) {
+                    tr("Your body clock is still catching up with the time zone.", "생체 시계가 아직 시간대에 적응하는 중이에요.")
+                } else {
+                    null
+                },
             ).joinToString(" ")
-        } ?: "Appears once Pawse knows when you sleep.",
+        } ?: tr("Appears once Pawse knows when you sleep.", "Pawse가 수면 시간을 알게 되면 나타나요."),
         onClick = null,
         modifier = modifier,
     ) {
@@ -1046,14 +1113,14 @@ private fun FormCard(snapshot: ScoringSnapshot, onClick: () -> Unit, modifier: M
     val forms = snapshot.week.map { it.load.form?.times(100) }
     AlsoCard(
         glyph = Glyphs.Load,
-        name = "Form",
+        name = tr("Form", "폼"),
         value = if (snapshot.showNumbers) load.form?.let { (it * 100).roundToInt().toString() } ?: "—" else null,
         suffix = if (snapshot.showNumbers && load.form != null) "%" else "",
-        word = load.formBand?.let(ScoreCopy::form) ?: "Building your history",
+        word = load.formBand?.let(ScoreCopy::form) ?: tr("Building your history", "기록 쌓는 중"),
         sentence = if (fitness != null && fatigue != null) {
-            "Fitness ${ScoreCopy.load(fitness)}, fatigue ${ScoreCopy.load(fatigue)}."
+            tr("Fitness ${ScoreCopy.load(fitness)}, fatigue ${ScoreCopy.load(fatigue)}.", "체력 ${ScoreCopy.load(fitness)}, 피로 ${ScoreCopy.load(fatigue)}.")
         } else {
-            "Needs a few weeks of training to read."
+            tr("Needs a few weeks of training to read.", "읽으려면 몇 주간의 운동 기록이 필요해요.")
         },
         onClick = onClick,
         modifier = modifier,
@@ -1088,9 +1155,14 @@ private fun EnergyCurve(energy: EnergyForecast, modifier: Modifier = Modifier) {
     val last = points.last().minute
     Canvas(
         modifier.semantics {
-            contentDescription = "Energy forecast. Best focus ${ScoreCopy.minuteOfDay(energy.focusStart)} to " +
-                "${ScoreCopy.minuteOfDay(energy.focusEnd)}, dip around ${ScoreCopy.minuteOfDay(energy.dipMinute)}, " +
-                "wind down from ${ScoreCopy.minuteOfDay(energy.windDownMinute)}."
+            val focusStart = ScoreCopy.minuteOfDay(energy.focusStart)
+            val focusEnd = ScoreCopy.minuteOfDay(energy.focusEnd)
+            val dip = ScoreCopy.minuteOfDay(energy.dipMinute)
+            val windDown = ScoreCopy.minuteOfDay(energy.windDownMinute)
+            contentDescription = tr(
+                "Energy forecast. Best focus $focusStart to $focusEnd, dip around $dip, wind down from $windDown.",
+                "에너지 예측. ${focusStart}부터 ${focusEnd}까지 집중하기 좋고, ${dip}쯤 처지며, ${windDown}부터 잘 준비를 하세요.",
+            )
         },
     ) {
         val pad = 4.dp.toPx()
@@ -1124,7 +1196,7 @@ private fun EnergyCurve(energy: EnergyForecast, modifier: Modifier = Modifier) {
 @Composable
 private fun CheckInCard(snapshot: ScoringSnapshot, onCheckIn: (Int) -> Unit, onTag: (DayTag) -> Unit, modifier: Modifier = Modifier) {
     PawseCard(modifier = modifier) {
-        Text("How do you feel?", style = PawseType.Heading)
+        Text(tr("How do you feel?", "오늘 기분은 어때요?"), style = PawseType.Heading)
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             (1..5).forEach { n ->
@@ -1132,7 +1204,7 @@ private fun CheckInCard(snapshot: ScoringSnapshot, onCheckIn: (Int) -> Unit, onT
             }
         }
         Spacer(Modifier.height(6.dp))
-        Text("1 rough · 5 great. It never changes today’s reading.", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(tr("1 rough · 5 great. It never changes today’s reading.", "1 힘듦 · 5 아주 좋음. 오늘 값은 바뀌지 않아요."), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
         val feeling = snapshot.checkIn
         val band = snapshot.today.body?.band
         if (feeling != null && band != null && ScoreCopy.disagrees(feeling, band)) {
@@ -1140,7 +1212,7 @@ private fun CheckInCard(snapshot: ScoringSnapshot, onCheckIn: (Int) -> Unit, onT
             Text(ScoreCopy.DISAGREE, style = PawseType.Label)
         }
         Spacer(Modifier.height(16.dp))
-        Text("Anything going on?", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(tr("Anything going on?", "특별한 일이 있나요?"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(8.dp))
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             DayTag.entries.forEach { tag ->
@@ -1238,4 +1310,4 @@ internal fun scoreGlyph(type: ScoreType): String = when (type) {
     ScoreType.LOAD -> Glyphs.Load
 }
 
-private fun minutes(m: Double): String = if (m >= 60.0) ScoreCopy.formatMinutes(m) else "${m.roundToInt()} min"
+private fun minutes(m: Double): String = if (m >= 60.0) ScoreCopy.formatMinutes(m) else "${m.roundToInt()}${tr(" min", "분")}"

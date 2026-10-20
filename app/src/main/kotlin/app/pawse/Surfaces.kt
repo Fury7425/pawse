@@ -22,6 +22,7 @@ import app.pawse.core.data.sync.ScoreSurfaces
 import app.pawse.feature.home.ScoreCopy
 import app.pawse.scoring.model.BodyBand
 import app.pawse.scoring.model.IllnessLevel
+import app.pawse.scoring.tr
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -71,7 +72,7 @@ class TodayWidget : AppWidgetProvider() {
             val body = today.body
             val load = today.load
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit {
-                val word = body?.let { ScoreCopy.bandWord(it.band) } ?: "Settling"
+                val word = body?.let { ScoreCopy.bandWord(it.band) } ?: tr("Settling", "기준 잡는 중")
                 val number = body?.score?.takeIf { s.showNumbers }
                 // Hidden numbers: the word takes the big line and the guidance stands alone under it.
                 putString("score", number?.toString() ?: word)
@@ -81,20 +82,22 @@ class TodayWidget : AppWidgetProvider() {
                     "level",
                     if (today.illness.level == IllnessLevel.ALERT) ALERT else body?.band?.name,
                 )
-                putString("sleep", "Sleep  " + ScoreCopy.debt(today.sleep.debtHours))
+                putString("sleep", tr("Sleep  ", "수면  ") + ScoreCopy.debt(today.sleep.debtHours))
                 val low = load.rangeLow
                 val high = load.rangeHigh
                 putString(
                     "load",
-                    "Load  " + when {
-                        load.rest -> "rest"
+                    tr("Load  ", "부하  ") + when {
+                        load.rest -> tr("rest", "휴식")
                         low != null && high != null -> "${ScoreCopy.load(low)}–${ScoreCopy.load(high)}"
                         else -> "—"
                     },
                 )
                 putString(
                     "energy",
-                    s.energy?.let { "Focus  ${ScoreCopy.minuteOfDay(it.focusStart)}–${ScoreCopy.minuteOfDay(it.focusEnd)}" } ?: "",
+                    s.energy?.let {
+                        tr("Focus  ", "집중  ") + "${ScoreCopy.minuteOfDay(it.focusStart)}–${ScoreCopy.minuteOfDay(it.focusEnd)}"
+                    } ?: "",
                 )
                 putString("readAt", if (s.lastSyncEpochMs > 0) ScoreCopy.clock(s.lastSyncEpochMs) else "")
             }
@@ -115,7 +118,7 @@ class TodayWidget : AppWidgetProvider() {
                     TypedValue.COMPLEX_UNIT_SP,
                     if (prefs.getBoolean("scoreIsNumber", true)) 44f else 24f,
                 )
-                setTextViewText(R.id.widget_body, prefs.getString("body", "Open Pawse to read last night"))
+                setTextViewText(R.id.widget_body, prefs.getString("body", null) ?: context.getString(R.string.widget_empty))
                 setTextColor(R.id.widget_band_dot, dotColor(prefs.getString("level", null)))
                 setTextViewText(R.id.widget_sleep, prefs.getString("sleep", ""))
                 setTextViewText(R.id.widget_load, prefs.getString("load", ""))
@@ -170,18 +173,24 @@ object WeeklyNotification {
         val bands = s.week.mapNotNull { it.body?.band }
         val usual = bands.groupingBy { it }.eachCount().maxByOrNull { it.value }
         val body = s.today.weekly?.let { ScoreCopy.weekly(it.pattern) + "." }
-            ?: usual?.let { "Body mostly ${ScoreCopy.bandWord(it.key).lowercase()} (${it.value} of ${s.week.size} days)." }
-        val sleep = "Sleep: ${ScoreCopy.debt(s.today.sleep.debtHours).lowercase()}."
-        val load = s.today.load.formBand?.let { "Load: ${ScoreCopy.form(it).lowercase()}." }
+            ?: usual?.let {
+                val word = ScoreCopy.bandWord(it.key)
+                tr(
+                    "Body mostly ${word.lowercase()} (${it.value} of ${s.week.size} days).",
+                    "컨디션은 대체로 ‘$word’ (${s.week.size}일 중 ${it.value}일).",
+                )
+            }
+        val sleep = tr("Sleep: ", "수면: ") + ScoreCopy.debt(s.today.sleep.debtHours).lowercase() + "."
+        val load = s.today.load.formBand?.let { tr("Load: ", "부하: ") + ScoreCopy.form(it).lowercase() + "." }
         val text = listOfNotNull(body, sleep, load).joinToString(" ")
 
         val notification = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_pawse)
-            .setContentTitle("Your week")
+            .setContentTitle(tr("Your week", "이번 주 요약"))
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(openApp(context, route = null, requestCode = 20))
-            .addAction(0, "See why", openApp(context, route = ROUTE_EXPLAIN_BODY, requestCode = 21))
+            .addAction(0, tr("See why", "이유 보기"), openApp(context, route = ROUTE_EXPLAIN_BODY, requestCode = 21))
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)
             .build()

@@ -23,7 +23,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Body"
+                android:text="@string/widget_label"
                 android:textColor="#FF9BA3AB"
                 android:textSize="13sp" />
 
@@ -64,7 +64,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="6dp"
                 android:maxLines="2"
-                android:text="Open Pawse to read last night"
+                android:text="@string/widget_empty"
                 android:textColor="#FF9BA3AB"
                 android:textSize="13sp" />
         </LinearLayout>

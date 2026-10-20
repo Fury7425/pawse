@@ -12,6 +12,7 @@ import app.pawse.core.data.food.Nutrients
 import app.pawse.core.data.food.ocr.LabelBasis
 import app.pawse.core.data.food.ocr.LabelReading
 import app.pawse.core.data.food.ocr.NutritionLabelParser
+import app.pawse.scoring.tr
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -167,7 +168,7 @@ class ScannerViewModel @Inject constructor(
             val saved = repository.saveProduct(
                 FoodProduct(
                     barcode = lastBarcode,
-                    name = name.trim().ifBlank { "Photographed label" },
+                    name = name.trim().ifBlank { tr("Photographed label", "사진으로 읽은 라벨") },
                     brand = null,
                     per100g = per100g,
                     servingGrams = reading.servingGrams ?: basisGrams,

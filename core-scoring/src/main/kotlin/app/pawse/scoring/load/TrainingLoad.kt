@@ -7,6 +7,7 @@ import app.pawse.scoring.model.Provenance
 import app.pawse.scoring.model.SessionLoad
 import app.pawse.scoring.model.UserProfile
 import app.pawse.scoring.model.WorkoutSample
+import app.pawse.scoring.tr
 import kotlin.math.roundToInt
 
 /**
@@ -43,7 +44,8 @@ object TrainingLoad {
                 SessionLoad(w.id, w.title, w.durationMinutes, x, load, method, provenance, citation, skipped)
 
             if (w.durationMinutes < config.minSessionMinutes) {
-                return@map session(0.0, null, null, Provenance.OUR_CHOICE, "", "Shorter than ${config.minSessionMinutes.roundToInt()} minutes.")
+                val min = config.minSessionMinutes.roundToInt()
+                return@map session(0.0, null, null, Provenance.OUR_CHOICE, "", tr("Shorter than $min minutes.", "${min}분보다 짧아요."))
             }
             val x = if (w.meanHeartRate != null && rest != null && maxHr != null) {
                 HeartRateModel.reserveFraction(w.meanHeartRate, rest, maxHr.bpm)
@@ -53,7 +55,10 @@ object TrainingLoad {
             when {
                 x != null && x < config.minReserveFraction -> session(
                     0.0, LoadMethod.BANISTER, x, Provenance.PUBLISHED, "",
-                    "Under ${(config.minReserveFraction * 100).roundToInt()}% of your heart-rate reserve, which does not count as training.",
+                    tr(
+                        "Under ${(config.minReserveFraction * 100).roundToInt()}% of your heart-rate reserve, which does not count as training.",
+                        "심박 예비량의 ${(config.minReserveFraction * 100).roundToInt()}% 미만이라 운동으로 치지 않아요.",
+                    ),
                 )
                 x != null -> {
                     val r = Trimp.banister(w.durationMinutes, x, profile.biologicalSex, config)
@@ -73,8 +78,12 @@ object TrainingLoad {
                     LoadMethod.RPE,
                     null,
                     Provenance.OUR_CHOICE,
-                    "No usable heart rate, so session effort x minutes, effort ${config.defaultRpe.roundToInt()} of 10 " +
-                        "assumed and matched to your typical cardio minute.",
+                    tr(
+                        "No usable heart rate, so session effort x minutes, effort ${config.defaultRpe.roundToInt()} of 10 " +
+                            "assumed and matched to your typical cardio minute.",
+                        "쓸 만한 심박수가 없어서 운동 강도 × 시간(분)으로 계산했어요. 강도는 10 중 " +
+                            "${config.defaultRpe.roundToInt()}로 가정하고 평소 유산소 1분에 맞췄어요.",
+                    ),
                 )
             }
         }

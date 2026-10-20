@@ -6,6 +6,7 @@ import app.pawse.core.data.body.BodyRepository
 import app.pawse.core.data.body.BodySnapshot
 import app.pawse.core.data.sync.SyncCoordinator
 import app.pawse.core.data.sync.SyncStatus
+import app.pawse.scoring.tr
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,10 +17,13 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-enum class BodyRange(val days: Long, val label: String) {
-    DAYS_30(30, "30 days"),
-    DAYS_90(90, "90 days"),
-    YEAR(365, "1 year"),
+enum class BodyRange(val days: Long, private val en: String, private val ko: String) {
+    DAYS_30(30, "30 days", "30일"),
+    DAYS_90(90, "90 days", "90일"),
+    YEAR(365, "1 year", "1년"),
+    ;
+
+    val label: String get() = tr(en, ko)
 }
 
 @HiltViewModel

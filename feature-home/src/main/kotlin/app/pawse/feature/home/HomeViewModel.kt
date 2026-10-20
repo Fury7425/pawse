@@ -12,6 +12,7 @@ import app.pawse.core.data.sync.SyncFailure
 import app.pawse.core.data.sync.SyncStatus
 import app.pawse.scoring.model.BiologicalSex
 import app.pawse.scoring.model.DayTag
+import app.pawse.scoring.tr
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -55,9 +56,16 @@ class HomeViewModel @Inject constructor(
         val failed = status as? SyncStatus.Failed ?: return@combine null
         if (failed.atEpochMs <= dismissed) return@combine null
         when (failed.reason) {
-            SyncFailure.READ_FAILED -> "Health Connect didn't answer at ${ScoreCopy.clock(failed.atEpochMs)}. " +
-                "Nothing new was read, so these are the last numbers we had."
-            SyncFailure.UNAVAILABLE -> "Health Connect isn't available on this phone, so nothing new can be read."
+            SyncFailure.READ_FAILED -> tr(
+                "Health Connect didn't answer at ${ScoreCopy.clock(failed.atEpochMs)}. " +
+                    "Nothing new was read, so these are the last numbers we had.",
+                "${ScoreCopy.clock(failed.atEpochMs)}에 헬스 커넥트가 응답하지 않았어요. " +
+                    "새로 읽은 게 없어서 마지막으로 읽은 값을 보여주고 있어요.",
+            )
+            SyncFailure.UNAVAILABLE -> tr(
+                "Health Connect isn't available on this phone, so nothing new can be read.",
+                "이 휴대폰에서는 헬스 커넥트를 쓸 수 없어서 새 데이터를 읽을 수 없어요.",
+            )
             SyncFailure.ACCESS_OFF -> null
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), null)

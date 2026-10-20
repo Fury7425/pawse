@@ -11,6 +11,7 @@ import app.pawse.core.data.sync.HealthSyncRepository
 import app.pawse.core.data.sync.SyncPreferences
 import app.pawse.core.data.sync.SyncResult
 import app.pawse.core.data.sync.SyncScheduler
+import app.pawse.scoring.tr
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -116,7 +117,7 @@ class OnboardingViewModel @Inject constructor(
 
             when (val result = sync.sync()) {
                 is SyncResult.Failed ->
-                    _state.update { it.copy(error = result.cause.message ?: "Sync failed") }
+                    _state.update { it.copy(error = result.cause.message ?: tr("Sync failed", "동기화하지 못했어요")) }
                 else -> Unit
             }
 
@@ -133,7 +134,7 @@ class OnboardingViewModel @Inject constructor(
                         it.copy(
                             step = OnboardingStep.REPORT,
                             syncing = false,
-                            error = cause.message ?: "Could not read your health data",
+                            error = cause.message ?: tr("Could not read your health data", "건강 데이터를 읽지 못했어요"),
                         )
                     }
                 }
