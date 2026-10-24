@@ -136,6 +136,7 @@ class DailyInputAssembler(
         meanHeartRate = entity.meanHeartRate,
         maxHeartRate = entity.maxHeartRate,
         title = entity.title,
+        source = entity.sourceApp,
     )
 
     /** Every local date a logged period touches. */

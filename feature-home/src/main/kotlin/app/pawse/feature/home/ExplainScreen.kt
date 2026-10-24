@@ -110,7 +110,7 @@ fun ExplainScreen(
             item {
                 Column {
                     Column(pad) {
-                        BackLink(tr("Today", "오늘"), onClick = onBack)
+                        BackLink(tr("Scores", "점수"), onClick = onBack)
                         Spacer(Modifier.height(12.dp))
                         Segmented(
                             options = ScoreType.entries,
@@ -179,7 +179,7 @@ fun ExplainScreen(
                     )
                 }
             }
-            // ponytail: Body's reasons, week, overnight pattern and insights aren't on the board; kept below it until the board places them.
+            // Body's reasons, week, overnight pattern and insights sit under the combiner, as on the board.
             if (shown == ScoreType.BODY && day?.body != null) {
                 item {
                     Column(pad.swapIn(swap).padding(top = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {

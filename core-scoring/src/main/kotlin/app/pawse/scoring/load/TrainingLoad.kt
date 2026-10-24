@@ -41,7 +41,7 @@ object TrainingLoad {
 
         return workouts.map { w ->
             fun session(load: Double, method: LoadMethod?, x: Double?, provenance: Provenance, citation: String, skipped: String? = null) =
-                SessionLoad(w.id, w.title, w.durationMinutes, x, load, method, provenance, citation, skipped)
+                SessionLoad(w.id, w.title, w.durationMinutes, x, load, method, provenance, citation, skipped, w.source)
 
             if (w.durationMinutes < config.minSessionMinutes) {
                 val min = config.minSessionMinutes.roundToInt()

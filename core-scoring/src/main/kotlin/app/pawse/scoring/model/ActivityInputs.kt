@@ -24,6 +24,8 @@ data class WorkoutSample(
     /** Minutes per Edwards zone 1..5, when a series could be binned. Usually empty. */
     val zoneMinutes: Map<Int, Double> = emptyMap(),
     val title: String? = null,
+    /** Package of the app that wrote the session, shown beside its load. */
+    val source: String = "",
 )
 
 /** A coefficient's origin, carried out of the load calculators with the number. */
