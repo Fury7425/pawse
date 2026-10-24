@@ -1,5 +1,6 @@
 package app.pawse.core.data.food
 
+import android.util.Log
 import androidx.health.connect.client.records.MealType
 import androidx.health.connect.client.records.NutritionRecord
 import androidx.health.connect.client.records.metadata.Metadata
@@ -67,6 +68,7 @@ class NutritionWriter @Inject constructor(
                 sugar = entry.nutrients.sugarGrams?.let { Mass.grams(it) },
                 dietaryFiber = entry.nutrients.fiberGrams?.let { Mass.grams(it) },
                 sodium = entry.nutrients.sodiumMilligrams?.let { Mass.milligrams(it) },
+                caffeine = entry.nutrients.caffeineMg?.let { Mass.milligrams(it) },
                 name = entry.name,
                 mealType = mealTypeOf(entry.meal),
                 metadata = Metadata.manualEntry(),
@@ -75,7 +77,9 @@ class NutritionWriter @Inject constructor(
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (failure: Exception) {
-            // Most often a missing write grant. The local entry stands either way.
+            // Most often a missing write grant. The local entry stands either way, but
+            // the reason goes to logcat: a mirror that fails silently is undebuggable.
+            Log.w(TAG, "Health Connect write failed for \"${entry.name}\"", failure)
             null
         }
     }
@@ -102,5 +106,9 @@ class NutritionWriter @Inject constructor(
         Meal.LUNCH -> MealType.MEAL_TYPE_LUNCH
         Meal.DINNER -> MealType.MEAL_TYPE_DINNER
         Meal.SNACK -> MealType.MEAL_TYPE_SNACK
+    }
+
+    private companion object {
+        const val TAG = "PawseNutrition"
     }
 }

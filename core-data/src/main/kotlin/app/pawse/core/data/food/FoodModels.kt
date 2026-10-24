@@ -17,6 +17,12 @@ enum class FoodSource {
 
     /** Typed in by the user, who is the authority on their own food. */
     MANUAL,
+
+    /**
+     * Logged in another app and read from Health Connect. That app owns the record:
+     * it is edited or removed there, and the log follows on the next import.
+     */
+    HEALTH_CONNECT,
 }
 
 /** A food we can log, however we came to know about it. */

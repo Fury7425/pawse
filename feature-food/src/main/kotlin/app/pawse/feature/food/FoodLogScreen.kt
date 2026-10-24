@@ -519,6 +519,7 @@ private fun sourceGlyph(source: FoodSource): String = when (source) {
     FoodSource.OPEN_FOOD_FACTS -> Glyphs.Globe
     FoodSource.LABEL_OCR -> Glyphs.Panel
     FoodSource.MANUAL -> Glyphs.Pencil
+    FoodSource.HEALTH_CONNECT -> Glyphs.Synced
 }
 
 @Composable
@@ -553,7 +554,11 @@ private fun EntryRow(
                 Spacer(Modifier.height(2.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = listOfNotNull(entry.brand, FoodCopy.grams(entry.quantityGrams)).joinToString(" · "),
+                        // Imported entries carry no portion size: 0 g means "not stated".
+                        text = listOfNotNull(
+                            entry.brand,
+                            FoodCopy.grams(entry.quantityGrams).takeIf { entry.quantityGrams > 0 },
+                        ).joinToString(" · "),
                         style = PawseType.Label,
                         color = onv,
                     )
@@ -586,15 +591,24 @@ private fun EntryRow(
                 Spacer(Modifier.height(2.dp))
                 Text(FoodCopy.summary(entry.nutrients), style = PawseType.Label, color = onv)
                 Spacer(Modifier.height(12.dp))
-                SecondaryButton(
-                    text = if (inHc) tr("Remove · also from Health Connect", "삭제 · 헬스 커넥트에서도") else tr("Remove", "삭제"),
-                    onClick = onDelete,
-                    height = 44.dp,
-                    radius = 12.dp,
-                    glyph = Glyphs.Trash,
-                    textStyle = PawseType.BodyStrong,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                if (entry.source == FoodSource.HEALTH_CONNECT) {
+                    // Health Connect only lets the app that wrote a record delete it.
+                    Text(
+                        tr("Edit or remove it in the app you logged it in.", "기록한 앱에서 수정하거나 삭제하세요."),
+                        style = PawseType.Label,
+                        color = onv,
+                    )
+                } else {
+                    SecondaryButton(
+                        text = if (inHc) tr("Remove · also from Health Connect", "삭제 · 헬스 커넥트에서도") else tr("Remove", "삭제"),
+                        onClick = onDelete,
+                        height = 44.dp,
+                        radius = 12.dp,
+                        glyph = Glyphs.Trash,
+                        textStyle = PawseType.BodyStrong,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
