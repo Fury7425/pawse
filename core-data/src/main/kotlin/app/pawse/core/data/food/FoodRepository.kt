@@ -1,8 +1,16 @@
 package app.pawse.core.data.food
 
+import android.content.Context
+import androidx.health.connect.client.records.MealType
+import androidx.health.connect.client.records.NutritionRecord
 import app.pawse.core.data.db.FoodLogDao
+import app.pawse.core.data.db.FoodLogEntryEntity
 import app.pawse.core.data.db.FoodProductDao
 import app.pawse.core.data.food.resolver.FoodResolverChain
+import app.pawse.core.data.health.HealthConnectGateway
+import app.pawse.scoring.tr
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -45,6 +53,8 @@ class FoodRepository @Inject constructor(
     private val resolverChain: FoodResolverChain,
     private val preferences: FoodPreferences,
     private val nutritionWriter: NutritionWriter,
+    private val gateway: HealthConnectGateway,
+    @ApplicationContext private val context: Context,
 ) {
 
     // --- Looking food up -------------------------------------------------------
@@ -199,6 +209,8 @@ class FoodRepository @Inject constructor(
      * until [flushPendingRemovals], so Undo can put it back without a second write.
      */
     suspend fun remove(entry: FoodLogEntry) = withContext(Dispatchers.IO) {
+        // Another app's record is not ours to delete, and the next import would bring it back.
+        if (entry.source == FoodSource.HEALTH_CONNECT) return@withContext
         entry.healthConnectId?.let { preferences.addPendingDelete(it) }
         logDao.byId(entry.id)?.let { logDao.delete(it) }
     }
@@ -239,10 +251,86 @@ class FoodRepository @Inject constructor(
         meal = meal,
         grams = entry.quantityGrams,
         servings = entry.servings,
-        source = entry.source,
+        // Logged again here, it is ours: mirrored out, and not reconciled away by the import.
+        source = if (entry.source == FoodSource.HEALTH_CONNECT) FoodSource.MANUAL else entry.source,
         eatenAt = Instant.now(),
         zone = ZoneId.systemDefault(),
     )
+
+    /**
+     * Brings food logged in other apps — Google Health, a calorie counter — into the
+     * log, so the day's total is the whole day and not only what was typed in here.
+     *
+     * Each import reconciles the window against Health Connect: new records are
+     * added, edited ones updated, and ones removed in their own app removed here.
+     * Our own records are skipped by package, since the local row is already the
+     * original. A failed read changes nothing; an empty answer would otherwise
+     * look like every imported meal had been deleted.
+     */
+    suspend fun importFromHealthConnect(zone: ZoneId = ZoneId.systemDefault()): Int = withContext(Dispatchers.IO) {
+        val today = LocalDate.now(zone)
+        val from = today.minusDays(IMPORT_LOOKBACK_DAYS)
+        val records = try {
+            gateway.read(NutritionRecord::class, from.atStartOfDay(zone).toInstant(), Instant.now())
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (failure: Exception) {
+            return@withContext 0
+        }
+
+        val foreign = records.filter { it.metadata.dataOrigin.packageName != context.packageName }
+        val existing = logDao.importedBetween(from.toString(), today.toString()).associateBy { it.healthConnectId }
+        val seen = foreign.mapTo(HashSet()) { it.metadata.id }
+        for ((recordId, row) in existing) if (recordId !in seen) logDao.delete(row)
+
+        var changed = 0
+        for (record in foreign) {
+            val row = importedRow(record, zone, id = existing[record.metadata.id]?.id ?: 0)
+            when {
+                row.id == 0L -> logDao.insert(row)
+                row != existing[record.metadata.id] -> logDao.update(row)
+                else -> continue
+            }
+            changed++
+        }
+        changed
+    }
+
+    private fun importedRow(record: NutritionRecord, zone: ZoneId, id: Long): FoodLogEntryEntity {
+        val offset = record.startZoneOffset ?: zone.rules.getOffset(record.startTime)
+        val nutrients = Nutrients(
+            kcal = record.energy?.inKilocalories,
+            proteinGrams = record.protein?.inGrams,
+            carbsGrams = record.totalCarbohydrate?.inGrams,
+            fatGrams = record.totalFat?.inGrams,
+            saturatedFatGrams = record.saturatedFat?.inGrams,
+            sugarGrams = record.sugar?.inGrams,
+            fiberGrams = record.dietaryFiber?.inGrams,
+            sodiumMilligrams = record.sodium?.inMilligrams,
+            caffeineMg = record.caffeine?.inMilligrams,
+        )
+        val entry = FoodLogEntry(
+            id = id,
+            productId = null,
+            name = record.name?.takeIf { it.isNotBlank() } ?: tr("Food", "음식"),
+            brand = null,
+            localDate = record.startTime.atOffset(offset).toLocalDate().toString(),
+            eatenAtEpochMs = record.startTime.toEpochMilli(),
+            meal = when (record.mealType) {
+                MealType.MEAL_TYPE_BREAKFAST -> Meal.BREAKFAST
+                MealType.MEAL_TYPE_LUNCH -> Meal.LUNCH
+                MealType.MEAL_TYPE_DINNER -> Meal.DINNER
+                else -> Meal.SNACK
+            },
+            // ponytail: Health Connect has no portion size; 0 g means "not stated" and the row hides it.
+            quantityGrams = 0.0,
+            servings = null,
+            nutrients = nutrients,
+            source = FoodSource.HEALTH_CONNECT,
+            healthConnectId = record.metadata.id,
+        )
+        return FoodLogMapper.toEntity(entry, offset.totalSeconds)
+    }
 
     /**
      * Mirrors entries that were logged while Health Connect was unavailable or the
@@ -263,5 +351,6 @@ class FoodRepository @Inject constructor(
     private companion object {
         const val WEEK_DAYS = 7
         const val AGAIN_LOOKBACK_DAYS = 30L
+        const val IMPORT_LOOKBACK_DAYS = 30L
     }
 }

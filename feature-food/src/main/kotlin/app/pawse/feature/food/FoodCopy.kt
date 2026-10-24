@@ -32,6 +32,7 @@ object FoodCopy {
         FoodSource.OPEN_FOOD_FACTS -> "Open Food Facts"
         FoodSource.LABEL_OCR -> tr("Read from the label", "라벨에서 읽음")
         FoodSource.MANUAL -> tr("You typed it", "직접 입력")
+        FoodSource.HEALTH_CONNECT -> tr("From another app", "다른 앱에서 기록")
     }
 
     /** One line under a product, saying how much to trust it. */
@@ -53,6 +54,10 @@ object FoodCopy {
             "카메라로 라벨을 읽었어요. 하루 합계를 믿기 전에 숫자를 확인하세요.",
         )
         FoodSource.MANUAL -> tr("You entered these figures.", "직접 입력한 값이에요.")
+        FoodSource.HEALTH_CONNECT -> tr(
+            "Logged in another app and read from Health Connect.",
+            "다른 앱에서 기록해 헬스 커넥트로 가져왔어요.",
+        )
     }
 
     fun lookupFailure(reason: FoodLookupFailure): String = when (reason) {

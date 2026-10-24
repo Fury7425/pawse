@@ -70,6 +70,10 @@ interface FoodLogDao {
     @Query("SELECT * FROM food_log_entry WHERE healthConnectId IS NULL ORDER BY eatenAtEpochMs DESC LIMIT :limit")
     suspend fun notMirrored(limit: Int = 100): List<FoodLogEntryEntity>
 
+    /** Rows read in from other apps' Health Connect records, for the next import to reconcile. */
+    @Query("SELECT * FROM food_log_entry WHERE source = 'HEALTH_CONNECT' AND localDate BETWEEN :from AND :to")
+    suspend fun importedBetween(from: String, to: String): List<FoodLogEntryEntity>
+
     @Query("UPDATE food_log_entry SET healthConnectId = :recordId WHERE id = :id")
     suspend fun setHealthConnectId(id: Long, recordId: String?)
 }

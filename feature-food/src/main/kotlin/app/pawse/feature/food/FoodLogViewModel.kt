@@ -81,6 +81,9 @@ class FoodLogViewModel @Inject constructor(
             repository.flushPendingRemovals()
             checkWriteGrant()
             if (!_writeBlocked.value) repository.retryMirroring()
+            // Food logged in other apps since the last open. Lands through the same
+            // Room flows, so the day and the week strip update on their own.
+            repository.importFromHealthConnect()
             reloadSideFacts()
         }
     }
