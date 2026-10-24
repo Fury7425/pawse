@@ -194,7 +194,7 @@ private val scanIn = fadeIn(tween(280, easing = EaseOut)) +
 private val holdUnder = fadeOut(tween(300), targetAlpha = 1f)
 
 /**
- * The whole app: Today, Food and Body as three tabs, the scanner one tap from any
+ * The whole app: Scores, Food and Body as three tabs, the scanner one tap from any
  * of them, and every explanation one tap from the score it explains.
  */
 @Composable
@@ -314,7 +314,7 @@ private fun NavController.switchTab(route: String) {
 /** A getter so the labels follow a language change made while the app runs. */
 private val TABS: List<Triple<String, String, String>>
     get() = listOf(
-        Triple(HomeDestinations.HOME, tr("Today", "오늘"), Glyphs.Today),
+        Triple(HomeDestinations.HOME, tr("Scores", "점수"), Glyphs.Today),
         Triple(FoodDestinations.LOG, tr("Food", "음식"), Glyphs.Food),
         Triple(BODY, tr("Body", "신체"), Glyphs.Body),
     )

@@ -204,6 +204,7 @@ data class SessionLoad(
     val provenance: Provenance,
     val citation: String,
     val skippedReason: String? = null,
+    val source: String = "",
 )
 
 enum class FormBand { FRESH, PRODUCTIVE, HEAVY }

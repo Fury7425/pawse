@@ -1504,7 +1504,7 @@ private fun hm(minutes: Double): String = ScoreCopy.formatMinutes(minutes)
 private fun dur(minutes: Double): String = if (minutes.roundToInt() >= 60) hm(minutes) else minutesText(max(0.0, minutes))
 
 // ponytail: one friendly name; other writers show their package until one needs its own.
-private fun writer(pkg: String): String = when (pkg) {
+internal fun writer(pkg: String): String = when (pkg) {
     CapabilityProbe.SAMSUNG_HEALTH -> "Samsung Health"
     "" -> "—"
     else -> pkg

@@ -582,6 +582,7 @@ private fun loadLines(rows: List<NightRow>, selI: Int): List<DayLine> {
             listOf(
                 tr("Counted by", "계산 방식") to load.sessions.mapNotNull { it.method }.distinct().joinToString(", ") { ScoreCopy.loadMethod(it) }.ifEmpty { "—" },
                 tr("Sessions", "운동") to load.sessions.joinToString("; ", transform = ::sessionText).ifEmpty { tr("None", "없음") },
+                tr("Sources", "출처") to load.sessions.map { it.citation }.filter { it.isNotBlank() }.distinct().joinToString(" ").ifEmpty { "—" },
                 tr("Range that day", "그날 범위") to when {
                     load.rest -> tr("Rest: overnight heart rate was high", "휴식: 야간 심박수가 높았어요")
                     low != null && high != null -> "${ScoreCopy.load(low)}–${ScoreCopy.load(high)}"
@@ -622,9 +623,15 @@ private fun loadLines(rows: List<NightRow>, selI: Int): List<DayLine> {
     )
 }
 
-/** "Run, 42 min · 35", or why it wasn't counted. */
+/** "Run, 42 min · 35 · Published · Samsung Health", or why it wasn't counted. */
 private fun sessionText(s: SessionLoad): String =
-    "${s.title ?: tr("Workout", "운동")}, ${minutesText(s.durationMinutes)} · ${s.skippedReason ?: ScoreCopy.load(s.load)}"
+    listOfNotNull(
+        "${s.title ?: tr("Workout", "운동")}, ${minutesText(s.durationMinutes)}",
+        s.skippedReason ?: ScoreCopy.load(s.load),
+        // Every number carries where its coefficient came from (Provenance.kt).
+        ScoreCopy.provenanceLabel(s.provenance).takeIf { s.skippedReason == null },
+        s.source.takeIf { it.isNotBlank() }?.let(::writer),
+    ).joinToString(" · ")
 
 @Composable
 private fun SignalRow(line: DayLine, selI: Int, expanded: Boolean, onToggle: () -> Unit) {
