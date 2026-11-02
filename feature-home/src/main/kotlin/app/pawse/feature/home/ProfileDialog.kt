@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -159,6 +160,8 @@ private fun Main(state: ProfileState, actions: ProfileActions, onDismiss: () -> 
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
     You(state.profile, actions.onSaveProfile)
+    Spacer(Modifier.height(24.dp))
+    ModelSettingsSection()
     state.calibration?.let { YourModel(it, actions.onResetModel) }
 }
 

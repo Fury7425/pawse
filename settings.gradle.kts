@@ -25,6 +25,7 @@ rootProject.name = "pawse"
 include(":app")
 include(":core-scoring")
 include(":core-data")
+include(":core-model")
 include(":core-ui")
 include(":feature-onboarding")
 include(":feature-home")

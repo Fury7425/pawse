@@ -180,6 +180,8 @@ fun HomeScreen(
         }
     }
 
+    ModelSheets()
+
     if (editingProfile) {
         val snapshot = (state as? HomeUiState.Ready)?.snapshot
         val reduceMotion by viewModel.reduceMotion.collectAsStateWithLifecycle()
@@ -373,6 +375,7 @@ private fun Scores(
                             ScoresCard.CHECK_IN -> item { CheckIn(snapshot, onCheckIn, onTag, pad.padding(top = top)) }
                         }
                     }
+                    item { MorningSummaryCard(pad.padding(top = 16.dp)) }
                     if (snapshot.today.sleep.suggestDoctor) {
                         item { Banner(title = tr("Worth a word with a doctor", "의사와 상담해 보세요"), body = ScoreCopy.DOCTOR, modifier = pad.padding(top = 24.dp)) }
                     }

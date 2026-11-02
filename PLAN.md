@@ -18,6 +18,9 @@ user's own log (drinks, travel, stress), never a disease.
  ├── :core-data          Health Connect gateway, probe, Room + SQLCipher, sync, signal
  │                       enrichers, input assembly
  │    └── :core-scoring
+ ├── :core-model         optional on-device model: llama.cpp over JNI or Gemini Nano,
+ │    │                  the download worker, the morning summary and Ask Pawse
+ │    └── :core-scoring
  └── :core-scoring       pure Kotlin/JVM. No Android dependency, ever.
 ```
 
@@ -156,7 +159,19 @@ content in 220 ms; the undo bar rises from behind the dock in 240 ms.
   readings already stored. The figures beside them are the stored ones, never re-derived.
 - **The explain screen's "your usual" bands are display statistics**: mean ± 1 SD of the stored
   nightly figures over the 60 nights ending a week ago. They feed no score.
-- **The food log is the one place this app can reach the network, and it asks first.**
+- **The food log and the model download are the only network use, and both ask first.**
+- **The on-device model words numbers; it never works one out.** Off by default. It is given
+  only the morning's fact sheet (every number Scores shows, at its shown precision), and
+  `NumberCheck` drops any sentence with a number that matches no fact. Nothing left: Pawse's
+  own guidance line. Symptom questions get the fixed answer and never reach the model.
+- **The model is LFM3-1.7B (Liquid AI, QAD Q4_0, 1,050 MB, LFM Open License v1.0)** through
+  llama.cpp v0.8.0, downloaded from Hugging Face pinned to a commit and checked by SHA-256.
+  A phone that already has Gemini Nano uses that instead and downloads nothing. The native
+  library is built for ARMv8.2 with dot product only; older cores are told it can't run.
+- **The summary is written when Pawse opens,** not in the nightly worker: Gemini Nano runs
+  only in the foreground, and one path is simpler than two. The first comes the morning after
+  the model is ready.
+- **Ask Pawse forgets on a new morning, and on a killed app.** Questions live in memory only.
 - **Nutrition figures are per 100 g in storage, whatever the label said.** Alcohol is stored
   as grams of ethanol (ABV × 0.789, 100 ml taken as 100 g).
 - **A logged entry freezes its figures.**
