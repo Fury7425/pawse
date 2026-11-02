@@ -259,6 +259,10 @@ private fun PawseNavGraph(initialRoute: String?) {
                             popUpTo(FoodDestinations.SCAN) { inclusive = true }
                         }
                     },
+                    onLogged = {
+                        navController.popBackStack()
+                        navController.switchTab(FoodDestinations.LOG)
+                    },
                 )
             }
 

@@ -59,7 +59,10 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.HealthConnectClient
@@ -84,6 +87,9 @@ import app.pawse.core.ui.component.cardSurface
 import app.pawse.core.ui.component.pressable
 import app.pawse.core.ui.theme.PawseTheme
 import app.pawse.core.ui.theme.PawseType
+import app.pawse.scoring.body.WeighInPoint
+import app.pawse.scoring.body.Weight
+import app.pawse.scoring.config.ScoringConfig
 import app.pawse.scoring.tr
 import java.time.Instant
 import java.time.LocalDate
@@ -134,37 +140,64 @@ fun WeighInScreen(
                     .padding(top = padding.calculateTopPadding() + 12.dp, bottom = 140.dp)
                     .padding(horizontal = 24.dp),
             ) {
-                BackLink(tr("Body", "신체"), onClick = onBack)
-                Spacer(Modifier.height(12.dp))
-                Text(tr("Add a weigh-in", "체중 입력"), style = PawseType.Title)
-                Spacer(Modifier.height(4.dp))
+                Row(Modifier.offset(x = (-12).dp).heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
+                    GlyphButton(Glyphs.ChevronLeft, tr("Back to Body", "신체로 돌아가기"), onClick = onBack)
+                    Text(tr("Weigh-in", "체중 기록"), style = PawseType.Heading, modifier = Modifier.semantics { heading() })
+                }
+                // One weigh-in, two ways in: the scale ruler, or a body composition result typed in.
+                Segmented(
+                    options = listOf(false, true),
+                    selected = state.compositionOpen,
+                    onSelect = { if (it != state.compositionOpen) viewModel.toggleComposition() },
+                    label = { if (it) "InBody" else tr("Weight", "체중") },
+                    glyph = { if (it) Glyphs.Panel else Glyphs.Body },
+                    height = 40.dp,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
                 Text(
-                    tr(
-                        "For a scale that doesn’t talk to Health Connect, or a day without one.",
-                        "헬스 커넥트와 연결되지 않는 체중계를 쓰거나, 체중계가 없는 날을 위해.",
-                    ),
-                    style = PawseType.Body,
-                    color = onv,
+                    if (state.compositionOpen) {
+                        tr("From an InBody sheet or a scale's display. Blanks stay blank.", "인바디 결과지나 체중계 화면을 보고 입력해요. 빈칸은 비워 둬요.")
+                    } else {
+                        tr("Drag or fling the ruler, or type it in.", "눈금자를 밀거나 직접 입력하세요.")
+                    },
+                    style = PawseType.Micro,
+                    color = PawseTheme.semantics.faint,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
 
-                Spacer(Modifier.height(28.dp))
-                Caption(tr("Weight", "체중"))
-                Spacer(Modifier.height(8.dp))
+                Column(Modifier.fillMaxWidth().padding(top = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        if (state.earlier) whenText(state.earlierAt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()) else whenText(System.currentTimeMillis()),
+                        style = PawseType.Label,
+                        color = onv,
+                    )
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text(state.weightKg?.let { WeighInUiState.oneDecimal(it) } ?: "—", style = PawseType.Hero)
+                        Text("kg", style = PawseType.Heading.copy(fontWeight = PawseType.Body.fontWeight), color = onv, modifier = Modifier.padding(start = 8.dp, bottom = 10.dp))
+                    }
+                    Text(
+                        text = if (state.weightBad) tr("Between 20 and 300 kg", "20–300 kg 사이로 입력하세요") else weightHint(state.recent.firstOrNull()),
+                        style = PawseType.Micro,
+                        color = if (state.weightBad) low else PawseTheme.semantics.faint,
+                    )
+                }
+                WeightRuler(kg = state.weightKg, onKg = viewModel::setWeightKg, modifier = Modifier.padding(top = 24.dp))
+                Text(
+                    tr("It settles on the nearest 0.1 kg.", "가장 가까운 0.1 kg에 멈춰요."),
+                    style = PawseType.Micro,
+                    color = PawseTheme.semantics.faint,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                )
                 PawseField(
                     value = state.weightText,
                     onValueChange = viewModel::setWeight,
                     suffix = "kg",
+                    placeholder = tr("Type it in", "직접 입력"),
                     numeric = true,
-                    height = 72.dp,
-                    textStyle = PawseType.Numeral,
-                )
-                Spacer(Modifier.height(8.dp))
-                WeightRuler(kg = state.weightKg, onKg = viewModel::setWeightKg)
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = if (state.weightBad) tr("Between 20 and 300 kg", "20–300 kg 사이로 입력하세요") else weightHint(state.recent.firstOrNull()),
-                    style = PawseType.Label,
-                    color = if (state.weightBad) low else onv,
+                    height = 48.dp,
+                    modifier = Modifier.padding(top = 12.dp),
                 )
 
                 Spacer(Modifier.height(24.dp))
@@ -220,8 +253,6 @@ fun WeighInScreen(
                     }
                 }
 
-                Spacer(Modifier.height(24.dp))
-                CompositionHeader(open = state.compositionOpen, onToggle = viewModel::toggleComposition)
                 AnimatedVisibility(state.compositionOpen, enter = RevealEnter, exit = RevealExit) {
                     Column {
                         Spacer(Modifier.height(8.dp))
@@ -256,17 +287,24 @@ fun WeighInScreen(
                 }
 
                 if (state.recent.isNotEmpty()) {
-                    Spacer(Modifier.height(32.dp))
-                    Caption(tr("Recent weigh-ins", "최근 체중 기록"))
-                    Spacer(Modifier.height(4.dp))
-                    state.recent.forEach { entry ->
-                        RecentRow(
-                            entry = entry,
-                            removed = entry.atEpochMs in state.removed,
-                            onRemove = { viewModel.remove(entry) },
-                            onUndo = { viewModel.undoRemove(entry.atEpochMs) },
-                        )
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    // What a weigh-in is read against: the trend and the last few readings.
+                    val trend = Weight.trend(
+                        state.recent.map { WeighInPoint(Instant.ofEpochMilli(it.atEpochMs).atZone(ZoneId.systemDefault()).toLocalDate().toEpochDay(), it.weightKg) },
+                        ScoringConfig.DEFAULT.weight,
+                    ).lastOrNull()
+                    PawseCard(modifier = Modifier.padding(top = 24.dp)) {
+                        Row(verticalAlignment = Alignment.Bottom) {
+                            Caption(tr("Recent weigh-ins", "최근 체중 기록"), Modifier.weight(1f))
+                            trend?.let { Text(tr("Trend ${WeighInUiState.oneDecimal(it.trend)} kg", "추세 ${WeighInUiState.oneDecimal(it.trend)} kg"), style = PawseType.Micro, color = PawseTheme.semantics.faint) }
+                        }
+                        state.recent.forEach { entry ->
+                            RecentRow(
+                                entry = entry,
+                                removed = entry.atEpochMs in state.removed,
+                                onRemove = { viewModel.remove(entry) },
+                                onUndo = { viewModel.undoRemove(entry.atEpochMs) },
+                            )
+                        }
                     }
                     Spacer(Modifier.height(12.dp))
                     Caption(
@@ -386,28 +424,6 @@ private fun PickerBox(label: String, value: String, onClick: () -> Unit, modifie
     ) {
         Text(label, style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(value, style = PawseType.Body)
-    }
-}
-
-@Composable
-private fun CompositionHeader(open: Boolean, onToggle: () -> Unit) {
-    val turn by animateFloatAsState(if (open) 180f else 0f, tween(220, easing = EaseOut), label = "chevron")
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .pressable(onClick = onToggle)
-            .padding(vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(tr("Body composition", "체성분"), style = PawseType.Heading)
-            Text(
-                tr("Optional. From a scale’s display or a DEXA report.", "선택 사항. 체중계 화면이나 DEXA 결과지를 보고 입력하세요."),
-                style = PawseType.Label,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Glyph(Glyphs.ChevronDown, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.rotate(turn))
     }
 }
 
