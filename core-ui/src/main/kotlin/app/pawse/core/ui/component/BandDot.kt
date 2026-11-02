@@ -1,11 +1,8 @@
 package app.pawse.core.ui.component
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,17 +30,15 @@ fun BandDot(
     color: Color,
     label: String,
     modifier: Modifier = Modifier,
+    /** The "no score" ring instead of a filled dot. */
+    hollow: Boolean = false,
 ) {
     Row(
         modifier = modifier.clearAndSetSemantics { contentDescription = label },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Spacer(
-            Modifier
-                .size(8.dp)
-                .background(color, CircleShape),
-        )
-        Spacer(Modifier.width(8.dp))
+        Mark(color, hollow = hollow)
+        Spacer(Modifier.width(6.dp))
         Text(
             text = label,
             style = PawseType.Label,
