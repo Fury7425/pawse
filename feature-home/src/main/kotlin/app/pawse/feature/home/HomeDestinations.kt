@@ -16,9 +16,12 @@ object HomeDestinations {
     const val WEIGH_IN = "weigh-in"
 
     const val EXPLAIN_ARG = "scoreType"
-    const val EXPLAIN = "explain/{$EXPLAIN_ARG}"
 
-    fun explain(type: ScoreType): String = "explain/${type.name}"
+    /** The day the Scores strip had picked, as days before the newest. The detail opens on it. */
+    const val EXPLAIN_BACK_ARG = "back"
+    const val EXPLAIN = "explain/{$EXPLAIN_ARG}?$EXPLAIN_BACK_ARG={$EXPLAIN_BACK_ARG}"
+
+    fun explain(type: ScoreType, back: Int = 0): String = "explain/${type.name}?$EXPLAIN_BACK_ARG=$back"
 
     fun scoreTypeOf(raw: String?): ScoreType =
         raw?.let { runCatching { ScoreType.valueOf(it) }.getOrNull() } ?: ScoreType.BODY

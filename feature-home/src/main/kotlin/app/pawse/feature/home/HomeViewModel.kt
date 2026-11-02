@@ -2,6 +2,8 @@ package app.pawse.feature.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.pawse.core.data.activity.MovingRepository
+import app.pawse.core.data.activity.MovingSnapshot
 import app.pawse.core.data.profile.Appearance
 import app.pawse.core.data.profile.UserProfilePreferences
 import app.pawse.core.data.scoring.NightDetail
@@ -26,6 +28,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.ZonedDateTime
 import javax.inject.Inject
 
 sealed interface HomeUiState {
@@ -45,7 +48,21 @@ class HomeViewModel @Inject constructor(
     private val coordinator: SyncCoordinator,
     private val profilePreferences: UserProfilePreferences,
     private val nights: NightRepository,
+    private val movingRepository: MovingRepository,
 ) : ViewModel() {
+
+    /**
+     * Moving today, read from Health Connect whenever a fresh snapshot lands and
+     * held in memory only. Null until read, or when nothing was written.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val moving: StateFlow<MovingSnapshot?> = scoring.state
+        .mapLatest { s ->
+            val snapshot = (s as? ScoringState.Ready)?.snapshot ?: return@mapLatest null
+            val wakes = snapshot.nights.mapNotNull { (d, n) -> n.signals.sleep?.endEpochMs?.let { d to it } }.toMap()
+            runCatching { movingRepository.read(ZonedDateTime.now(), wakes) }.getOrNull()
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), null)
 
     private val dismissedAt = MutableStateFlow(0L)
 

@@ -223,16 +223,20 @@ private fun PawseNavGraph(initialRoute: String?) {
             popExitTransition = { ExitTransition.None },
         ) {
             composable(HomeDestinations.HOME) {
-                HomeScreen(onOpenExplain = { type -> navController.navigate(HomeDestinations.explain(type)) })
+                HomeScreen(onOpenExplain = { type, back -> navController.navigate(HomeDestinations.explain(type, back)) })
             }
 
             composable(
                 route = HomeDestinations.EXPLAIN,
-                arguments = listOf(navArgument(HomeDestinations.EXPLAIN_ARG) { type = NavType.StringType }),
+                arguments = listOf(
+                    navArgument(HomeDestinations.EXPLAIN_ARG) { type = NavType.StringType },
+                    navArgument(HomeDestinations.EXPLAIN_BACK_ARG) { type = NavType.IntType; defaultValue = 0 },
+                ),
                 enterTransition = { pushIn },
             ) { backStackEntry ->
                 ExplainScreen(
                     type = HomeDestinations.scoreTypeOf(backStackEntry.arguments?.getString(HomeDestinations.EXPLAIN_ARG)),
+                    initialBack = backStackEntry.arguments?.getInt(HomeDestinations.EXPLAIN_BACK_ARG) ?: 0,
                     onBack = { navController.popBackStack() },
                 )
             }

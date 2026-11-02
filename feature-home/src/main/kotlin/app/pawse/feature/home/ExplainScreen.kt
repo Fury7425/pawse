@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -25,6 +27,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -35,10 +38,12 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.pawse.core.data.scoring.NightDetail
 import app.pawse.core.data.scoring.ScoringSnapshot
 import app.pawse.core.ui.component.BackLink
 import app.pawse.core.ui.component.EaseOut
@@ -51,14 +56,13 @@ import app.pawse.core.ui.component.Segmented
 import app.pawse.core.ui.component.aura
 import app.pawse.core.ui.component.cardSurface
 import app.pawse.core.ui.component.pressable
-import app.pawse.core.ui.component.rememberSwap
-import app.pawse.core.ui.component.swapIn
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.scoring.config.ScoringConfig
 import app.pawse.scoring.model.DayReport
 import app.pawse.scoring.model.Insight
 import app.pawse.scoring.model.ScoreType
 import app.pawse.scoring.tr
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -72,124 +76,151 @@ import kotlin.math.roundToInt
  * disagree with the first, about the number the user was shown. (The usual bands
  * behind the night signals are display statistics over stored nights.)
  */
+/** The pages in the rings' order, so the detail opens where the tapped ring sits. */
+private val PAGES = listOf(ScoreType.SLEEP, ScoreType.BODY, ScoreType.LOAD)
+
 @Composable
 fun ExplainScreen(
     type: ScoreType,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    /** The day the Scores strip had picked, as days before the newest. */
+    initialBack: Int = 0,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val night by viewModel.night.collectAsStateWithLifecycle()
     val snapshot = (state as? HomeUiState.Ready)?.snapshot
-    var shown by rememberSaveable { mutableStateOf(type) }
-    // The picked day, as days before the newest. It stays put across tabs.
-    var back by rememberSaveable { mutableIntStateOf(0) }
-    // Body and Load's Over time range, shared by both tabs.
+    val pager = rememberPagerState(initialPage = PAGES.indexOf(type).coerceAtLeast(0)) { PAGES.size }
+    val scope = rememberCoroutineScope()
+    val shown = PAGES[pager.currentPage]
+    fun show(t: ScoreType) {
+        scope.launch { pager.animateScrollToPage(PAGES.indexOf(t)) }
+    }
+    // One window day drives every page; it stays put as the pages swipe.
+    var back by rememberSaveable { mutableIntStateOf(initialBack) }
+    // Body and Load's Over time range, shared by both pages.
     var range by rememberSaveable { mutableIntStateOf(30) }
-    var open by rememberSaveable(shown) { mutableIntStateOf(0) }
-    var mathOpen by rememberSaveable(shown) { mutableStateOf(false) }
-    // The back link, the score switch and the date strip stay put; only what the tab shows swaps in.
-    val swap = rememberSwap(shown)
-    val pad = Modifier.padding(horizontal = 24.dp)
     val date = snapshot?.date?.minusDays(back.toLong())
 
+    // The night is read whichever page is open, so swiping to Sleep finds it ready.
     val computedAt = snapshot?.computedAtEpochMs
-    LaunchedEffect(shown, date, computedAt) {
-        if (shown == ScoreType.SLEEP && date != null && computedAt != null) viewModel.openNight(date, computedAt)
+    LaunchedEffect(date, computedAt) {
+        if (date != null && computedAt != null) viewModel.openNight(date, computedAt)
     }
 
     Scaffold(modifier = modifier, containerColor = MaterialTheme.colorScheme.background) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().aura(),
-            contentPadding = PaddingValues(
-                top = padding.calculateTopPadding() + 12.dp,
-                bottom = padding.calculateBottomPadding() + 48.dp,
-            ),
+        Column(
+            Modifier
+                .fillMaxSize()
+                .aura()
+                .padding(top = padding.calculateTopPadding() + 12.dp),
         ) {
-            item {
-                Column {
-                    Column(pad) {
-                        BackLink(tr("Scores", "점수"), onClick = onBack)
-                        Spacer(Modifier.height(12.dp))
-                        Segmented(
-                            options = ScoreType.entries,
-                            selected = shown,
-                            onSelect = { shown = it },
-                            label = ScoreCopy::name,
-                            glyph = ::scoreGlyph,
-                        )
-                    }
-                    if (snapshot != null) {
-                        DateStrip(snapshot, shown, back, onPick = { back = it }, modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp))
-                    }
-                }
+            // Pinned: back, the switch and the day strip stay while the pages swipe under them.
+            Column(Modifier.padding(horizontal = 24.dp)) {
+                BackLink(tr("Scores", "점수"), onClick = onBack)
+                Spacer(Modifier.height(12.dp))
+                Segmented(
+                    options = PAGES,
+                    selected = shown,
+                    onSelect = ::show,
+                    label = ScoreCopy::name,
+                    glyph = ::scoreGlyph,
+                )
             }
-
-            if (snapshot == null || date == null) {
-                item {
-                    Text(
-                        tr("Nothing to explain yet.", "아직 설명할 내용이 없어요."),
-                        style = PawseType.Body,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = pad.padding(top = 20.dp),
-                    )
-                }
-                return@LazyColumn
+            if (snapshot != null) {
+                DateStrip(snapshot, shown, back, onPick = { back = it }, modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp))
             }
-
-            if (shown == ScoreType.SLEEP) {
-                item {
-                    SleepTab(
-                        snapshot = snapshot,
-                        back = back,
-                        detail = night?.takeIf { it.date == date },
-                        onOpenNight = { back = it },
-                        onBody = { shown = ScoreType.BODY },
-                        modifier = pad.swapIn(swap),
-                    )
-                }
-                item { Provenance(snapshot, pad.padding(top = 28.dp)) }
-                return@LazyColumn
-            }
-
-            val day = snapshot.history.lastOrNull { it.date == date }
-            item { DayHead(date, pad.swapIn(swap).padding(top = 16.dp, bottom = 8.dp)) }
-            item {
-                DayTab(
+            HorizontalPager(state = pager, modifier = Modifier.weight(1f), beyondViewportPageCount = 1) { page ->
+                ScorePage(
+                    type = PAGES[page],
                     snapshot = snapshot,
-                    type = shown,
+                    date = date,
                     back = back,
                     onPick = { back = it },
                     range = range,
                     // A narrower range drops a day picked outside it, as the canvas does.
                     onRange = { range = it; if (back >= it) back = 0 },
-                    open = open,
-                    onOpen = { open = it },
-                    modifier = pad.swapIn(swap),
+                    night = night?.takeIf { it.date == date },
+                    onBody = { show(ScoreType.BODY) },
+                    bottom = padding.calculateBottomPadding(),
                 )
             }
-            if (day != null) {
-                item {
-                    Combiner(
-                        combiner = combinerOf(shown, day),
-                        mathOpen = mathOpen,
-                        onToggleMath = { mathOpen = !mathOpen },
-                        modifier = pad.swapIn(swap).padding(top = 28.dp),
-                    )
-                }
-            }
-            // Body's reasons, week, overnight pattern and insights sit under the combiner, as on the board.
-            if (shown == ScoreType.BODY && day?.body != null) {
-                item {
-                    Column(pad.swapIn(swap).padding(top = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        BodyCards(day, snapshot.insights)
-                    }
-                }
-            }
-
-            item { Provenance(snapshot, pad.padding(top = 28.dp)) }
         }
+    }
+}
+
+/** One page of the detail: the night in full for Sleep, the arithmetic for Body and Load. */
+@Composable
+private fun ScorePage(
+    type: ScoreType,
+    snapshot: ScoringSnapshot?,
+    date: LocalDate?,
+    back: Int,
+    onPick: (Int) -> Unit,
+    range: Int,
+    onRange: (Int) -> Unit,
+    night: NightDetail?,
+    onBody: () -> Unit,
+    bottom: Dp,
+) {
+    var open by rememberSaveable { mutableIntStateOf(0) }
+    var mathOpen by rememberSaveable { mutableStateOf(false) }
+    val pad = Modifier.padding(horizontal = 24.dp)
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = bottom + 48.dp)) {
+        if (snapshot == null || date == null) {
+            item {
+                Text(
+                    tr("Nothing to explain yet.", "아직 설명할 내용이 없어요."),
+                    style = PawseType.Body,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = pad.padding(top = 20.dp),
+                )
+            }
+            return@LazyColumn
+        }
+
+        if (type == ScoreType.SLEEP) {
+            item { SleepTab(snapshot = snapshot, back = back, detail = night, onOpenNight = onPick, onBody = onBody, modifier = pad) }
+            item { Provenance(snapshot, pad.padding(top = 28.dp)) }
+            return@LazyColumn
+        }
+
+        val day = snapshot.history.lastOrNull { it.date == date }
+        item { DayHead(date, pad.padding(top = 16.dp, bottom = 8.dp)) }
+        item {
+            DayTab(
+                snapshot = snapshot,
+                type = type,
+                back = back,
+                onPick = onPick,
+                range = range,
+                onRange = onRange,
+                open = open,
+                onOpen = { open = it },
+                modifier = pad,
+            )
+        }
+        if (day != null) {
+            item {
+                Combiner(
+                    combiner = combinerOf(type, day),
+                    mathOpen = mathOpen,
+                    onToggleMath = { mathOpen = !mathOpen },
+                    modifier = pad.padding(top = 28.dp),
+                )
+            }
+        }
+        // Body's reasons, week, overnight pattern and insights sit under the combiner, as on the board.
+        if (type == ScoreType.BODY && day?.body != null) {
+            item {
+                Column(pad.padding(top = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    BodyCards(day, snapshot.insights)
+                }
+            }
+        }
+
+        item { Provenance(snapshot, pad.padding(top = 28.dp)) }
     }
 }
 

@@ -102,7 +102,8 @@ import kotlin.math.roundToInt
  */
 @Composable
 fun HomeScreen(
-    onOpenExplain: (ScoreType) -> Unit,
+    /** The tapped score and the picked day, as days before the newest. */
+    onOpenExplain: (ScoreType, Int) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
@@ -135,7 +136,7 @@ fun HomeScreen(
                 accessOff = current.accessOff,
                 syncError = error,
                 contentPadding = padding,
-                onOpenExplain = onOpenExplain,
+                onOpenExplain = { onOpenExplain(it, 0) },
                 onSyncNow = viewModel::syncNow,
                 onSettings = { editingProfile = true },
                 onDismissError = viewModel::dismissError,
@@ -237,7 +238,8 @@ private fun TodayContent(
                 Spacer(Modifier.height(28.dp))
                 Text(ScoreCopy.guidance(today.guidance), style = PawseType.Guidance, modifier = pad)
                 Spacer(Modifier.height(20.dp))
-                Rings(snapshot = snapshot, focus = focus, onFocus = { focus = it })
+                // A ring opens its detail page, as the design's chevrons promise.
+                Rings(snapshot = snapshot, focus = focus, onFocus = onOpenExplain)
             }
         }
 
@@ -307,8 +309,6 @@ private fun TodayContent(
                 Text(ScoreCopy.FORECAST_NOTE, style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = pad)
             }
         }
-
-        item { VitalsCard(snapshot, onClick = { onOpenExplain(ScoreType.SLEEP) }, modifier = pad.padding(top = 10.dp)) }
 
         item { CheckInCard(snapshot, onCheckIn, onTag, modifier = pad.padding(top = 20.dp)) }
 
