@@ -183,6 +183,9 @@ fun ProfileDialog(
                 ),
             )
 
+            Spacer(Modifier.height(24.dp))
+            ModelSettingsSection()
+
             calibration?.let { c ->
                 Spacer(Modifier.height(24.dp))
                 Text(tr("Your model", "내 모델"), style = PawseType.Heading)

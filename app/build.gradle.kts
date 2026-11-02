@@ -45,6 +45,7 @@ kotlin { jvmToolchain(17) }
 dependencies {
     implementation(project(":core-scoring"))
     implementation(project(":core-data"))
+    implementation(project(":core-model"))
     implementation(project(":core-ui"))
     implementation(project(":feature-onboarding"))
     implementation(project(":feature-home"))

@@ -145,6 +145,8 @@ fun HomeScreen(
         }
     }
 
+    ModelSheets()
+
     if (editingProfile) {
         val snapshot = (state as? HomeUiState.Ready)?.snapshot
         ProfileDialog(
@@ -311,6 +313,8 @@ private fun TodayContent(
         item { VitalsCard(snapshot, onClick = { onOpenExplain(ScoreType.SLEEP) }, modifier = pad.padding(top = 10.dp)) }
 
         item { CheckInCard(snapshot, onCheckIn, onTag, modifier = pad.padding(top = 20.dp)) }
+
+        item { MorningSummaryCard(pad.padding(top = 20.dp)) }
 
         if (today.sleep.suggestDoctor) {
             item { Notice(text = ScoreCopy.DOCTOR, modifier = pad.padding(top = 20.dp)) }
