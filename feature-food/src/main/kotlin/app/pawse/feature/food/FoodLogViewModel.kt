@@ -2,15 +2,21 @@ package app.pawse.feature.food
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.pawse.core.data.activity.MovingRepository
 import app.pawse.core.data.body.BodyRepository
 import app.pawse.core.data.body.EnergyToday
 import app.pawse.core.data.food.FoodDay
 import app.pawse.core.data.food.FoodLogEntry
 import app.pawse.core.data.food.FoodPreferences
 import app.pawse.core.data.food.FoodRepository
+import app.pawse.core.data.food.Meal
 import app.pawse.core.data.health.HealthConnectAvailability
 import app.pawse.core.data.health.HealthConnectGateway
 import app.pawse.core.data.health.HealthPermissions
+import app.pawse.core.data.scoring.ScoringRepository
+import app.pawse.core.data.scoring.ScoringState
+import app.pawse.scoring.config.ScoringConfig
+import app.pawse.scoring.energy.EnergyBalance
 import app.pawse.scoring.tr
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -24,10 +30,14 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.ZonedDateTime
 import javax.inject.Inject
 
 /** What the Undo bar says, and what pressing it puts back. */
 data class UndoBar(val text: String, val undo: () -> Unit)
+
+/** Food's two burned figures. [byBedtime] is projected, so the screen marks it with "~". */
+data class Burned(val soFar: Double, val byBedtime: Double?)
 
 @HiltViewModel
 class FoodLogViewModel @Inject constructor(
@@ -35,7 +45,21 @@ class FoodLogViewModel @Inject constructor(
     private val preferences: FoodPreferences,
     private val body: BodyRepository,
     private val gateway: HealthConnectGateway,
+    private val scoring: ScoringRepository,
+    private val moving: MovingRepository,
 ) : ViewModel() {
+
+    private val _burned = MutableStateFlow<Burned?>(null)
+
+    /**
+     * Burned so far and by bedtime, from the Energy engine: resting burn spread
+     * over the clock, the watch's active energy and digestion; bedtime adds resting
+     * burn to bed and your usual activity for the rest of the day.
+     *
+     * ponytail: k is 1. The weekly weight check needs incomplete-day marks in the
+     * food log first; EnergyBalance.weightCheck is ready for it.
+     */
+    val burned: StateFlow<Burned?> = _burned.asStateFlow()
 
     private val _date = MutableStateFlow(LocalDate.now())
     val date: StateFlow<LocalDate> = _date.asStateFlow()
@@ -126,6 +150,20 @@ class FoodLogViewModel @Inject constructor(
         }
     }
 
+    /** A new portion or meal from the edit sheet, with Undo putting the old one back. */
+    fun edit(entry: FoodLogEntry, factor: Double, meal: Meal) {
+        if (factor == 1.0 && meal == entry.meal) return
+        viewModelScope.launch {
+            val edited = repository.edit(entry, factor, meal)
+            showUndo(tr("${entry.name} updated", "${entry.name} 수정됨")) {
+                repository.remove(edited)
+                repository.restore(entry)
+                repository.flushPendingRemovals()
+            }
+            reloadSideFacts()
+        }
+    }
+
     /** One tap under "Again": the same food, same figures, logged now as a snack. */
     fun logAgain(entry: FoodLogEntry) {
         viewModelScope.launch {
@@ -171,7 +209,21 @@ class FoodLogViewModel @Inject constructor(
 
     private suspend fun reloadSideFacts() {
         _again.value = repository.again()
-        _energy.value = runCatching { body.snapshot().energy }.getOrNull()
+        val now = ZonedDateTime.now()
+        val snapshot = runCatching { body.snapshot(now) }.getOrNull()
+        _energy.value = snapshot?.energy
+        val bmr = snapshot?.bmr?.kcalPerDay ?: run {
+            _burned.value = null
+            return
+        }
+        val scores = (scoring.state.value as? ScoringState.Ready)?.snapshot
+        val bed = scores?.energy?.bedtimeMinute?.toDouble()
+        val wakes = scores?.nights.orEmpty().mapNotNull { (d, n) -> n.signals.sleep?.endEpochMs?.let { d to it } }.toMap()
+        val usualRest = bed?.let { runCatching { moving.read(now, wakes, it) }.getOrNull()?.usualActiveUntilBed }
+        val minute = now.hour * 60.0 + now.minute + now.second / 60.0
+        val config = ScoringConfig.DEFAULT.balance
+        val soFar = EnergyBalance.burnedSoFar(bmr, minute, snapshot.energy.activeKcal ?: 0.0, snapshot.energy.eatenKcal, 1.0, config)
+        _burned.value = Burned(soFar, bed?.let { EnergyBalance.byBedtime(soFar, bmr, minute, it, usualRest ?: 0.0, 1.0) })
     }
 
     override fun onCleared() {

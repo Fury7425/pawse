@@ -28,6 +28,8 @@ data class MovingSnapshot(
     val wakeKnown: Boolean,
     val heart: List<HeartHour>,
     val asOfEpochMs: Long,
+    /** Your usual active energy from now to bed, for Food's "burned by bedtime". Null without a bed. */
+    val usualActiveUntilBed: Double? = null,
 )
 
 /**
@@ -38,8 +40,12 @@ data class MovingSnapshot(
 @Singleton
 class MovingRepository @Inject constructor(private val gateway: HealthConnectGateway) {
 
-    /** [wakes]: each day's main-sleep end, by wake date. Null when nothing was written at all. */
-    suspend fun read(now: ZonedDateTime, wakes: Map<LocalDate, Long>): MovingSnapshot? {
+    /**
+     * [wakes]: each day's main-sleep end, by wake date. [bedMinute], minutes after
+     * today's midnight, also works out the usual active energy until bed. Null when
+     * nothing was written at all.
+     */
+    suspend fun read(now: ZonedDateTime, wakes: Map<LocalDate, Long>, bedMinute: Double? = null): MovingSnapshot? {
         val config = ScoringConfig.DEFAULT.moving
         val zone = now.zone
         val today = now.toLocalDate()
@@ -67,14 +73,20 @@ class MovingRepository @Inject constructor(private val gateway: HealthConnectGat
 
         val past = (config.windowDays downTo 1).map { today.minusDays(it.toLong()) }
         val from = wake ?: midnight.toEpochMilli()
+        val sinceWake = (end.toEpochMilli() - from) / 60_000.0
+        val weekend = MovingAssembler.weekend(today)
         fun reading(buckets: Map<Long, Double>) = MovingToday.reading(
             today = MovingAssembler.since(buckets, from, end.toEpochMilli()),
-            minutesSinceWake = (end.toEpochMilli() - from) / 60_000.0,
-            weekend = MovingAssembler.weekend(today),
+            minutesSinceWake = sinceWake,
+            weekend = weekend,
             days = MovingAssembler.days(buckets, past, wakes, zone),
             config = config,
         )
-        return MovingSnapshot(reading(steps), reading(energy), from, wake != null, heart, end.toEpochMilli())
+        val untilBed = bedMinute?.let { bed ->
+            val bedSinceWake = (midnight.toEpochMilli() + (bed * 60_000).toLong() - from) / 60_000.0
+            MovingToday.usualRest(sinceWake, bedSinceWake, weekend, MovingAssembler.days(energy, past, wakes, zone), config)
+        }
+        return MovingSnapshot(reading(steps), reading(energy), from, wake != null, heart, end.toEpochMilli(), untilBed)
     }
 }
 

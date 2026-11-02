@@ -245,6 +245,7 @@ private fun PawseNavGraph(initialRoute: String?) {
                 FoodLogScreen(
                     onManualEntry = { navController.navigate(FoodDestinations.MANUAL) },
                     onOpenBody = { navController.switchTab(BODY) },
+                    onScan = { navController.navigate(FoodDestinations.SCAN) },
                 )
             }
 

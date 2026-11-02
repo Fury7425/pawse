@@ -242,6 +242,28 @@ class FoodRepository @Inject constructor(
                 .take(limit)
         }
 
+    /**
+     * A new portion or meal for an entry. Its frozen figures scale with the portion;
+     * the row is replaced, so its Health Connect copy follows as a removal and a log.
+     * Another app's record is not ours to change, so it is returned as it was.
+     */
+    suspend fun edit(entry: FoodLogEntry, factor: Double, meal: Meal): FoodLogEntry {
+        if (entry.source == FoodSource.HEALTH_CONNECT) return entry
+        remove(entry)
+        return log(
+            productId = entry.productId,
+            name = entry.name,
+            brand = entry.brand,
+            nutrients = entry.nutrients.scaled(factor),
+            meal = meal,
+            grams = entry.quantityGrams * factor,
+            servings = entry.servings?.times(factor),
+            source = entry.source,
+            eatenAt = Instant.ofEpochMilli(entry.eatenAtEpochMs),
+            zone = ZoneId.systemDefault(),
+        )
+    }
+
     /** Logs [entry] again now, with the figures it was frozen with. */
     suspend fun relog(entry: FoodLogEntry, meal: Meal = Meal.SNACK): FoodLogEntry = log(
         productId = entry.productId,
