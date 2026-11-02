@@ -63,6 +63,28 @@
                 android:resource="@xml/widget_today_info" />
         </receiver>
 
+        <receiver
+            android:name=".MovingWidget"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_moving_info" />
+        </receiver>
+
+        <receiver
+            android:name=".FoodWidget"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_food_info" />
+        </receiver>
+
         <!--
           WorkManager's default initializer is removed so Hilt can supply the
           worker factory that injects HealthSyncRepository into NightlySyncWorker.

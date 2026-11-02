@@ -192,6 +192,15 @@ private fun PawseNavGraph(initialRoute: String?) {
     LaunchedEffect(initialRoute) {
         when (initialRoute) {
             ROUTE_FOOD -> navController.switchTab(FoodDestinations.LOG)
+            // The widget's Scan and +: over the food log, so back lands there.
+            ROUTE_SCAN -> {
+                navController.switchTab(FoodDestinations.LOG)
+                navController.navigate(FoodDestinations.SCAN)
+            }
+            ROUTE_ADD_FOOD -> {
+                navController.switchTab(FoodDestinations.LOG)
+                navController.navigate(FoodDestinations.MANUAL)
+            }
             ROUTE_EXPLAIN_BODY -> navController.navigate(HomeDestinations.explain(ScoreType.BODY))
         }
     }

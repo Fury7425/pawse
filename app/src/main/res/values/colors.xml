@@ -2,4 +2,19 @@
 <resources>
     <!-- Must match PawseColors.LightBackground. -->
     <color name="launch_background">#FBFBFC</color>
+
+    <!-- Widgets follow the phone's light or dark theme. Must match the app's light tokens. -->
+    <color name="widget_card">#F2FFFFFF</color>
+    <color name="widget_edge">#1415181B</color>
+    <color name="widget_on">#FF15181B</color>
+    <color name="widget_on2">#FF515A62</color>
+    <color name="widget_faint">#FF5F6870</color>
+    <color name="widget_track">#FFE3E7EB</color>
+    <color name="widget_raised">#FFE9EBEE</color>
+    <color name="widget_primary">#FF15181B</color>
+    <color name="widget_on_primary">#FFFFFFFF</color>
+    <color name="widget_high">#FF14684A</color>
+    <color name="widget_moderate">#FF8A5A00</color>
+    <color name="widget_low">#FFB3261E</color>
+    <color name="widget_neutral">#FF6C757D</color>
 </resources>

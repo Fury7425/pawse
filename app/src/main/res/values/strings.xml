@@ -1,10 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name" translatable="false">Pawse</string>
-    <string name="widget_description">Today\'s guidance, Body, sleep debt and load from this morning\'s read.</string>
+    <string name="widget_description">The three rings and today\'s guidance. At 2×2, Body and its word.</string>
+    <string name="widget_moving_description">Steps, active energy and heart rate since waking, against your usual by now.</string>
+    <string name="widget_food_description">What you logged today, with Scan and +.</string>
     <string name="channel_weekly">Weekly summary</string>
     <string name="channel_weekly_description">One calm summary a week. No daily score pushes.</string>
     <string name="widget_label">Body</string>
+    <string name="widget_sleep">Sleep</string>
+    <string name="widget_load">Load</string>
+    <string name="widget_moving">Moving today</string>
+    <string name="widget_food">Food</string>
+    <string name="widget_today">today</string>
+    <string name="widget_food_none">Nothing logged yet</string>
+    <string name="widget_scan">Scan</string>
+    <string name="widget_add">Log food</string>
     <string name="widget_empty">Open Pawse to read last night</string>
 
     <!--
