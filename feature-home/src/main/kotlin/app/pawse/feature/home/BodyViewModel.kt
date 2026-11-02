@@ -4,17 +4,21 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.pawse.core.data.body.BodyRepository
 import app.pawse.core.data.body.BodySnapshot
+import app.pawse.core.data.body.InBodyExtra
+import app.pawse.core.data.body.InBodyStore
 import app.pawse.core.data.profile.UserProfilePreferences
 import app.pawse.core.data.sync.SyncCoordinator
 import app.pawse.core.data.sync.SyncStatus
 import app.pawse.scoring.tr
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -32,7 +36,12 @@ class BodyViewModel @Inject constructor(
     private val body: BodyRepository,
     private val profile: UserProfilePreferences,
     coordinator: SyncCoordinator,
+    inBodyStore: InBodyStore,
 ) : ViewModel() {
+
+    /** Skeletal muscle and visceral fat from InBody sheets, kept in Pawse only. */
+    val inBody: StateFlow<List<InBodyExtra>> = inBodyStore.results
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Sets or clears the goal weight, then redraws with it. */
     fun setGoal(kg: Double?) {

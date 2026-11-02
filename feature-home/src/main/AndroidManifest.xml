@@ -1,2 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!--
+          Hands the camera app one file in the cache to write the InBody sheet photo
+          into. It is read on the phone and deleted straight after.
+        -->
+        <provider
+            android:name="app.pawse.feature.home.SheetFileProvider"
+            android:authorities="${applicationId}.sheet"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/sheet_paths" />
+        </provider>
+    </application>
+</manifest>

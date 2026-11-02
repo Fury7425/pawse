@@ -51,7 +51,8 @@
         android:textColor="@color/widget_on2"
         android:textSize="13sp" />
 
-    <Space
+    <!-- Space isn't allowed in a RemoteView; an empty frame takes up the room instead. -->
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1" />

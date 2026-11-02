@@ -47,6 +47,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pawse.core.data.body.BodyReading
 import app.pawse.core.data.body.BodySnapshot
+import app.pawse.core.data.body.InBodyExtra
 import app.pawse.core.ui.component.Chip
 import app.pawse.core.ui.component.GhostButton
 import app.pawse.core.ui.component.Glyph
@@ -94,6 +95,7 @@ fun BodyScreen(
 ) {
     val snapshot by viewModel.snapshot.collectAsStateWithLifecycle()
     val range by viewModel.range.collectAsStateWithLifecycle()
+    val inBody by viewModel.inBody.collectAsStateWithLifecycle()
     var editingGoal by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { viewModel.reload() }
@@ -158,7 +160,7 @@ fun BodyScreen(
             if (trend.isNotEmpty()) {
                 item { TrendSection(s, trend, points, range, viewModel::setRange, onGoal = { editingGoal = true }) }
             }
-            item { Composition(s, range.days) }
+            item { Composition(s, range.days, inBody) }
             item { AgainstUsual(s) }
             item { FitnessAgeCard(s) }
         }
@@ -338,23 +340,28 @@ private fun WeightChart(trend: List<TrendPoint>, today: LocalDate, range: BodyRa
 
 /** Fat and lean share the chart's weeks, as % or kg, each with its slow trend. */
 @Composable
-private fun Composition(s: BodySnapshot, days: Long) {
+private fun Composition(s: BodySnapshot, days: Long, inBody: List<InBodyExtra>) {
     val fat = s.series[Metric.BODY_FAT].orEmpty()
     val lean = s.series[Metric.LEAN_MASS].orEmpty()
-    if (fat.isEmpty() && lean.isEmpty()) return
+    val first = s.today.minusDays(days)
+    // Kept in Pawse only, from InBody sheets: Health Connect has no record for either.
+    val extras = inBody.filter { !it.date.isBefore(first) }
+    if (fat.isEmpty() && lean.isEmpty() && extras.isEmpty()) return
     var inKg by rememberSaveable { mutableStateOf(false) }
     val weights = s.series[Metric.BODY_WEIGHT].orEmpty().associateBy { it.date }
     // Fat is written as a percent and lean as kilograms; the other unit needs that day's weight.
     fun fatShown(r: BodyReading): Double? = if (inKg) weights[r.date]?.let { r.value / 100.0 * it.value } else r.value
     fun leanShown(r: BodyReading): Double? = if (inKg) r.value else weights[r.date]?.let { r.value / it.value * 100.0 }
-    val first = s.today.minusDays(days)
+    val unit = if (inKg) " kg" else "%"
     PawseCard(modifier = Modifier.padding(top = 32.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(tr("Composition", "체성분"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
             Segmented(listOf(false, true), inKg, onSelect = { inKg = it }, label = { if (it) "kg" else "%" }, height = 28.dp, modifier = Modifier.width(112.dp))
         }
-        CompositionRow(tr("Body fat", "체지방"), fat.filter { !it.date.isBefore(first) }.mapNotNull { r -> fatShown(r)?.let { r.date to it } }, inKg)
-        CompositionRow(tr("Lean mass", "제지방량"), lean.filter { !it.date.isBefore(first) }.mapNotNull { r -> leanShown(r)?.let { r.date to it } }, inKg)
+        CompositionRow(tr("Body fat", "체지방"), fat.filter { !it.date.isBefore(first) }.mapNotNull { r -> fatShown(r)?.let { r.date to it } }, unit)
+        CompositionRow(tr("Lean mass", "제지방량"), lean.filter { !it.date.isBefore(first) }.mapNotNull { r -> leanShown(r)?.let { r.date to it } }, unit)
+        CompositionRow(tr("Skeletal muscle", "골격근량"), extras.mapNotNull { e -> e.skeletalMuscleKg?.let { e.date to it } }, " kg")
+        CompositionRow(tr("Visceral fat level", "내장지방 레벨"), extras.mapNotNull { e -> e.visceralFat?.let { e.date to it.toDouble() } }, "")
         val source = (fat.lastOrNull() ?: lean.lastOrNull())?.sourceApp?.let(::writer).orEmpty()
         Text(
             listOf(tr("Same ${days / 7} weeks as the weight chart", "체중 차트와 같은 ${days / 7}주"), source).filter { it.isNotEmpty() }.joinToString(" · "),
@@ -366,7 +373,7 @@ private fun Composition(s: BodySnapshot, days: Long) {
 }
 
 @Composable
-private fun CompositionRow(name: String, values: List<Pair<LocalDate, Double>>, inKg: Boolean) {
+private fun CompositionRow(name: String, values: List<Pair<LocalDate, Double>>, unit: String) {
     if (values.isEmpty()) return
     val config = ScoringConfig.DEFAULT.weight
     val points = values.map { WeighInPoint(it.first.toEpochDay(), it.second) }
@@ -375,7 +382,8 @@ private fun CompositionRow(name: String, values: List<Pair<LocalDate, Double>>, 
     val since = values.first().first.format(DateTimeFormatter.ofPattern(tr("d MMM", "M월 d일"), Locale.getDefault()))
     SplitRow(Modifier.padding(top = 16.dp)) {
         Text(name, style = PawseType.Body, modifier = Modifier.weight(1f))
-        Text(oneDecimal(values.last().second) + if (inKg) " kg" else "%", style = PawseType.MetricValue)
+        // A visceral fat level is a whole number with no unit.
+        Text(if (unit.isEmpty()) values.last().second.roundToInt().toString() else oneDecimal(values.last().second) + unit, style = PawseType.MetricValue)
         Text(
             if (slow.size < 2 || Weight.aboutSame(change, points)) tr("about the same", "거의 같음") else "${if (change > 0) "+" else "−"}${oneDecimal(abs(change))} " + tr("since $since", "$since 이후"),
             style = PawseType.Micro,

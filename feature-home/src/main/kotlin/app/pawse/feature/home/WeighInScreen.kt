@@ -1,10 +1,13 @@
 package app.pawse.feature.home
 
+import android.Manifest
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.text.format.DateFormat
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -65,6 +68,8 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -91,6 +96,7 @@ import app.pawse.scoring.body.WeighInPoint
 import app.pawse.scoring.body.Weight
 import app.pawse.scoring.config.ScoringConfig
 import app.pawse.scoring.tr
+import java.io.File
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -119,6 +125,27 @@ fun WeighInScreen(
     val low = PawseTheme.semantics.bandLow
     val launcher = rememberLauncherForActivityResult(PermissionController.createRequestPermissionResultContract()) {
         viewModel.onGrantResult()
+    }
+
+    // The sheet photo goes to one cache file, read on the phone and deleted straight after.
+    val sheetFile = remember { File(context.cacheDir, "sheet/inbody.jpg") }
+    val sheetUri = remember {
+        sheetFile.parentFile?.mkdirs()
+        FileProvider.getUriForFile(context, "${context.packageName}.sheet", sheetFile)
+    }
+    val photo = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { taken ->
+        if (taken) viewModel.readSheet(sheetUri, sheetFile) else sheetFile.delete()
+    }
+    // Pawse holds the camera grant for Food's scanner, so Android asks for it before the camera app opens too.
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) photo.launch(sheetUri)
+    }
+    val photograph = {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            photo.launch(sheetUri)
+        } else {
+            camera.launch(Manifest.permission.CAMERA)
+        }
     }
 
     LaunchedEffect(state.saved) {
@@ -256,6 +283,13 @@ fun WeighInScreen(
                 AnimatedVisibility(state.compositionOpen, enter = RevealEnter, exit = RevealExit) {
                     Column {
                         Spacer(Modifier.height(8.dp))
+                        GhostButton(
+                            if (state.reading) tr("Reading the result sheet…", "결과지 읽는 중…") else tr("Photograph the result sheet", "결과지 찍기"),
+                            onClick = { if (!state.reading) photograph() },
+                            glyph = Glyphs.Scan,
+                        )
+                        Caption(state.readNote ?: tr("Read on this phone. The photo is not kept.", "휴대폰에서 바로 읽어요. 사진은 남기지 않아요."))
+                        Spacer(Modifier.height(8.dp))
                         PawseCard(padding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
                             BodyFigure.entries.forEach { figure ->
                                 FigureRow(
@@ -277,10 +311,11 @@ fun WeighInScreen(
                         Spacer(Modifier.height(8.dp))
                         Caption(
                             tr(
-                                "Leave any blank. Pawse saves only what you type and never fills a gap with a guess. " +
-                                    "No muscle field: Health Connect has no record for it.",
-                                "비워 둬도 괜찮아요. Pawse는 입력한 값만 저장하고 빈칸을 추측으로 채우지 않아요. " +
-                                    "근육량 칸은 없어요. 헬스 커넥트에 해당 기록 항목이 없거든요.",
+                                "Leave any blank you don't know. Pawse saves only what you give it and never fills a gap with a guess. " +
+                                    "Weight, body fat, lean mass and water go to Health Connect. Skeletal muscle and visceral fat stay in Pawse: " +
+                                    "Health Connect has no record for them.",
+                                "모르는 칸은 비워 두세요. Pawse는 입력한 값만 저장하고 빈칸을 추측으로 채우지 않아요. " +
+                                    "체중, 체지방, 제지방량, 체수분은 헬스 커넥트에 저장해요. 골격근량과 내장지방은 헬스 커넥트에 항목이 없어서 Pawse에만 남아요.",
                             ),
                         )
                     }
@@ -346,6 +381,9 @@ fun WeighInScreen(
         }
     }
 }
+
+/** The InBody sheet photo's one file, shared with the camera app for the length of one shot. */
+class SheetFileProvider : FileProvider()
 
 @Composable
 private fun Caption(text: String, modifier: Modifier = Modifier) {
