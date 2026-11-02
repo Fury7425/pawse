@@ -43,8 +43,8 @@ sealed interface ModelState {
     /** On, waiting for the user to start the download. */
     data object NotDownloaded : ModelState
 
-    /** [waiting]: queued for Wi-Fi, a connection or a retry. */
-    data class Downloading(val bytes: Long, val waiting: Boolean) : ModelState
+    /** [waiting]: queued for Wi-Fi, a connection or a retry. [wifiOnly]: the user did not allow mobile data. */
+    data class Downloading(val bytes: Long, val waiting: Boolean, val wifiOnly: Boolean) : ModelState
 
     /** The last download stopped for good or did not match its hash. Nothing was kept. */
     data object Failed : ModelState
@@ -91,15 +91,17 @@ class PawseModel @Inject constructor(
         prefs.readySince,
         work.getWorkInfosForUniqueWorkFlow(DOWNLOAD),
     ) { on, engine, since, infos ->
-        val job = infos.firstOrNull()
+        // REPLACE leaves the cancelled request in the list; the live one is unfinished.
+        val job = infos.firstOrNull { !it.state.isFinished } ?: infos.lastOrNull()
         val part = ModelFile.part(context)
+        val wifiOnly = job?.constraints?.requiredNetworkType == NetworkType.UNMETERED
         when {
             !on -> ModelState.Off
             engine == Engine.NANO || ModelFile.done(context).exists() -> ModelState.Ready(engine, since)
             job?.state == WorkInfo.State.RUNNING ->
-                ModelState.Downloading(job.progress.getLong(PROGRESS_BYTES, part.length()), waiting = false)
+                ModelState.Downloading(job.progress.getLong(PROGRESS_BYTES, part.length()), waiting = false, wifiOnly = wifiOnly)
             job?.state == WorkInfo.State.ENQUEUED || job?.state == WorkInfo.State.BLOCKED ->
-                ModelState.Downloading(part.length(), waiting = true)
+                ModelState.Downloading(part.length(), waiting = true, wifiOnly = wifiOnly)
             job?.state == WorkInfo.State.FAILED -> ModelState.Failed
             else -> ModelState.NotDownloaded
         }
@@ -123,7 +125,10 @@ class PawseModel @Inject constructor(
         }
     }
 
-    /** Asked first, with its size. Wi-Fi only unless the user chose mobile data. */
+    /**
+     * Asked first, with its size. Wi-Fi only unless the user chose mobile data; choosing
+     * it while waiting replaces the queued request, and the download resumes where it was.
+     */
     fun download(mobileData: Boolean) {
         val request = OneTimeWorkRequestBuilder<ModelDownloadWorker>()
             .setConstraints(
@@ -134,7 +139,7 @@ class PawseModel @Inject constructor(
             )
             .setBackoffCriteria(BackoffPolicy.LINEAR, BACKOFF_SECONDS, TimeUnit.SECONDS)
             .build()
-        work.enqueueUniqueWork(DOWNLOAD, ExistingWorkPolicy.KEEP, request)
+        work.enqueueUniqueWork(DOWNLOAD, ExistingWorkPolicy.REPLACE, request)
     }
 
     /** Room for what is left of the download, with some to spare. */
@@ -156,9 +161,9 @@ class PawseModel @Inject constructor(
 
     fun summary(date: LocalDate): Flow<Summary?> = prefs.summary.map { s -> s?.takeIf { it.date == date } }
 
-    /** True the first time Scores shows [date]'s summary. */
+    /** True the first time Scores shows [date]'s summary, if the model wrote it. Pawse's own line is already on top. */
     fun rises(date: LocalDate): Flow<Boolean> =
-        combine(prefs.summary, prefs.risen) { s, risen -> s?.date == date && risen != date }
+        combine(prefs.summary, prefs.risen) { s, risen -> s?.date == date && s.written && risen != date }
 
     suspend fun markRisen(date: LocalDate) = prefs.markRisen(date)
 
@@ -174,7 +179,7 @@ class PawseModel @Inject constructor(
         val checked = write(summarySystem(), summaryUser(sheet), SUMMARY_TOKENS)?.let { NumberCheck.check(it, sheet.facts) }
         prefs.addDropped(checked?.dropped ?: 0)
         val text = checked?.text
-        prefs.setSummary(Summary(date, text ?: sheet.guidance, written = text != null))
+        prefs.setSummary(Summary(date, text ?: sheet.guidance, written = text != null, System.currentTimeMillis()))
     }
 
     /** Today's questions. A new morning starts empty. */

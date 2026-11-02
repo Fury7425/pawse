@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -19,7 +20,7 @@ private val Context.modelDataStore by preferencesDataStore(name = "pawse_model")
 enum class Engine { LLAMA, NANO }
 
 /** A morning's summary as kept until tomorrow: the model's checked sentences, or Pawse's own line. */
-data class Summary(val date: LocalDate, val text: String, val written: Boolean)
+data class Summary(val date: LocalDate, val text: String, val written: Boolean, val writtenAtEpochMs: Long)
 
 /**
  * The on-device model's switch and what it keeps. Off by default: nothing is
@@ -37,6 +38,7 @@ class ModelPreferences @Inject constructor(
     private val summaryDateKey = stringPreferencesKey("summary_date")
     private val summaryTextKey = stringPreferencesKey("summary_text")
     private val summaryWrittenKey = booleanPreferencesKey("summary_written")
+    private val summaryAtKey = longPreferencesKey("summary_at")
     private val risenKey = stringPreferencesKey("risen_date")
     private val droppedKey = intPreferencesKey("dropped")
 
@@ -51,7 +53,7 @@ class ModelPreferences @Inject constructor(
 
     val summary: Flow<Summary?> = store.data.map { p ->
         val day = p[summaryDateKey]?.let(::date) ?: return@map null
-        Summary(day, p[summaryTextKey].orEmpty(), p[summaryWrittenKey] ?: false)
+        Summary(day, p[summaryTextKey].orEmpty(), p[summaryWrittenKey] ?: false, p[summaryAtKey] ?: 0L)
     }
 
     /** The morning the summary last rose. It rises once a morning. */
@@ -75,7 +77,7 @@ class ModelPreferences @Inject constructor(
     /** Off keeps only the dropped count. */
     suspend fun turnOff() {
         store.edit { p ->
-            listOf(enabledKey, engineKey, readySinceKey, summaryDateKey, summaryTextKey, summaryWrittenKey, risenKey)
+            listOf(enabledKey, engineKey, readySinceKey, summaryDateKey, summaryTextKey, summaryWrittenKey, summaryAtKey, risenKey)
                 .forEach { p.remove(it) }
         }
     }
@@ -85,6 +87,7 @@ class ModelPreferences @Inject constructor(
             it[summaryDateKey] = summary.date.toString()
             it[summaryTextKey] = summary.text
             it[summaryWrittenKey] = summary.written
+            it[summaryAtKey] = summary.writtenAtEpochMs
         }
     }
 

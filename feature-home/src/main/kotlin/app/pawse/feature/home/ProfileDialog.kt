@@ -7,8 +7,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -19,9 +17,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.pawse.core.data.profile.Appearance
-import app.pawse.core.model.Engine
-import app.pawse.core.model.ModelState
-import app.pawse.core.model.PawseModel
 import app.pawse.core.ui.component.ChoiceRow
 import app.pawse.core.ui.component.GhostButton
 import app.pawse.core.ui.component.GlyphButton
@@ -30,13 +25,11 @@ import app.pawse.core.ui.component.PawseField
 import app.pawse.core.ui.component.PawseSheet
 import app.pawse.core.ui.component.PrimaryButton
 import app.pawse.core.ui.component.Segmented
-import app.pawse.core.ui.component.SplitBar
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.scoring.model.BiologicalSex
 import app.pawse.scoring.model.Calibration
 import app.pawse.scoring.model.UserProfile
 import app.pawse.scoring.tr
-import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -54,9 +47,6 @@ fun ProfileDialog(
     initialShowNumbers: Boolean,
     initialAppearance: Appearance,
     calibration: Calibration?,
-    model: ModelSettings,
-    onModelSwitch: (Boolean) -> Unit,
-    onModelDownload: (mobileData: Boolean) -> Unit,
     onResetModel: () -> Unit,
     onDismiss: () -> Unit,
     onSave: (
@@ -194,7 +184,7 @@ fun ProfileDialog(
             )
 
             Spacer(Modifier.height(24.dp))
-            ModelSection(model, onModelSwitch, onModelDownload)
+            ModelSettingsSection()
 
             calibration?.let { c ->
                 Spacer(Modifier.height(24.dp))
@@ -249,125 +239,6 @@ fun ProfileDialog(
 }
 
 private const val MAX_CHANGES = 6
-
-/**
- * The optional on-device model: off by default, explained before it is turned on,
- * and asked for again, with its size, before anything is downloaded.
- */
-@Composable
-private fun ModelSection(model: ModelSettings, onSwitch: (Boolean) -> Unit, onDownload: (mobileData: Boolean) -> Unit) {
-    val state = model.state
-    val colors = MaterialTheme.colorScheme
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(tr("On-device model", "휴대폰 속 모델"), style = PawseType.Heading, modifier = Modifier.weight(1f))
-        Switch(
-            checked = state != ModelState.Off,
-            onCheckedChange = onSwitch,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = colors.background,
-                checkedTrackColor = colors.onSurface,
-                uncheckedThumbColor = colors.onSurfaceVariant,
-                uncheckedTrackColor = colors.surfaceContainerHigh,
-                uncheckedBorderColor = colors.outline,
-            ),
-        )
-    }
-    Spacer(Modifier.height(6.dp))
-    Caption(
-        tr(
-            "Writes a short summary each morning and answers questions about your numbers. About 1 GB, runs only " +
-                "on this phone, and never works out a number itself. It can be wrong, and it is not medical advice.",
-            "매일 아침 짧은 요약을 쓰고 내 수치에 관한 질문에 답해요. 약 1GB이고, 이 휴대폰에서만 동작하며, 숫자를 " +
-                "스스로 계산하지 않아요. 틀릴 수 있고, 의학적 조언이 아니에요.",
-        ),
-    )
-    when (state) {
-        ModelState.Off -> if (model.unsupported) {
-            Spacer(Modifier.height(6.dp))
-            Caption(
-                tr(
-                    "This phone can’t run it: it needs a processor from about 2018 on and 3 GB of memory, or Gemini Nano.",
-                    "이 휴대폰에서는 쓸 수 없어요. 2018년 무렵 이후의 프로세서와 3GB 메모리, 또는 Gemini Nano가 필요해요.",
-                ),
-            )
-        }
-        ModelState.NotDownloaded -> DownloadAsk(model.room, onDownload, onNotNow = { onSwitch(false) })
-        ModelState.Failed -> {
-            Spacer(Modifier.height(6.dp))
-            Caption(tr("The last download didn’t finish or didn’t check out. Nothing was kept.", "지난 다운로드가 끝나지 않았거나 확인에 실패했어요. 남은 건 없어요."))
-            DownloadAsk(model.room, onDownload, onNotNow = { onSwitch(false) })
-        }
-        is ModelState.Downloading -> {
-            val done = (state.bytes.toFloat() / PawseModel.BYTES).coerceIn(0f, 1f)
-            Spacer(Modifier.height(12.dp))
-            SplitBar(listOf(done to colors.onSurface, (1f - done) to colors.outline), height = 8.dp)
-            Spacer(Modifier.height(8.dp))
-            Text(
-                PawseModel.downloaded(state.bytes) + if (state.waiting) tr(" · waiting for the network", " · 네트워크 기다리는 중") else "",
-                style = PawseType.Label,
-            )
-            Spacer(Modifier.height(4.dp))
-            Caption(
-                tr(
-                    "Keeps going in the background under Android’s download notification. Cancel keeps nothing.",
-                    "안드로이드 다운로드 알림과 함께 백그라운드에서 계속돼요. 취소하면 아무것도 남지 않아요.",
-                ),
-            )
-            GhostButton(tr("Cancel", "취소"), onClick = { onSwitch(false) })
-        }
-        is ModelState.Ready -> {
-            Spacer(Modifier.height(6.dp))
-            Caption(
-                if (state.engine == Engine.NANO) {
-                    tr("Using Gemini Nano, already on this phone. Nothing was downloaded.", "이 휴대폰에 이미 있는 Gemini Nano를 써요. 다운로드한 건 없어요.")
-                } else {
-                    tr(
-                        "LFM3-1.7B by Liquid AI, under the LFM Open License v1.0. Kept only on this phone.",
-                        "Liquid AI의 LFM3-1.7B, LFM Open License v1.0. 이 휴대폰에만 있어요.",
-                    )
-                },
-            )
-            if (state.since == LocalDate.now()) {
-                Caption(tr("Ask Pawse works now. The first summary comes tomorrow morning.", "이제 Pawse에게 물어볼 수 있어요. 첫 요약은 내일 아침에 나와요."))
-            }
-        }
-    }
-    if (model.dropped > 0 && state != ModelState.Off) {
-        Spacer(Modifier.height(6.dp))
-        Caption(tr("Sentences the number check has left out so far: ${model.dropped}", "지금까지 숫자 확인에서 뺀 문장: ${model.dropped}개"))
-    }
-}
-
-/** The download, asked for with its size, where it comes from, and on which network. */
-@Composable
-private fun DownloadAsk(room: Boolean, onDownload: (mobileData: Boolean) -> Unit, onNotNow: () -> Unit) {
-    var mobileData by remember { mutableStateOf(false) }
-    val size = PawseModel.megabytes(PawseModel.BYTES)
-    Spacer(Modifier.height(12.dp))
-    Caption(
-        tr(
-            "Pawse will download LFM3-1.7B, $size MB, from Liquid AI’s page on Hugging Face. The request carries " +
-                "nothing about you, and the file is checked before it is used.",
-            "Pawse가 Hugging Face의 Liquid AI 페이지에서 LFM3-1.7B(${size}MB)를 내려받아요. 요청에는 나에 관한 " +
-                "정보가 담기지 않고, 파일은 쓰기 전에 확인해요.",
-        ),
-        body = true,
-    )
-    Spacer(Modifier.height(10.dp))
-    Segmented(
-        options = listOf(false, true),
-        selected = mobileData,
-        onSelect = { mobileData = it },
-        label = { if (it) tr("Wi-Fi or mobile data", "Wi-Fi 또는 모바일 데이터") else tr("Wi-Fi only", "Wi-Fi만") },
-    )
-    Spacer(Modifier.height(12.dp))
-    if (room) {
-        PrimaryButton(tr("Download $size MB", "${size}MB 다운로드"), onClick = { onDownload(mobileData) })
-    } else {
-        Caption(tr("Needs about 1.3 GB free on this phone first.", "먼저 이 휴대폰에 약 1.3GB의 여유 공간이 필요해요."))
-    }
-    GhostButton(tr("Not now", "나중에"), onClick = onNotNow)
-}
 
 @Composable
 private fun Caption(text: String, body: Boolean = false) {
