@@ -191,6 +191,15 @@ class FoodRepository @Inject constructor(
         saved.copy(healthConnectId = mirrored)
     }
 
+    /** Every day from [from] to [to], oldest first, empty days included. */
+    suspend fun days(from: LocalDate, to: LocalDate): List<FoodDay> = withContext(Dispatchers.IO) {
+        val byDate = logDao.between(from.toString(), to.toString()).map(FoodLogMapper::toEntry).groupBy { it.localDate }
+        generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(to) }.map { date ->
+            val entries = byDate[date.toString()].orEmpty()
+            FoodDay(date = date, entries = entries, totals = FoodLogMapper.totals(date.toString(), entries))
+        }.toList()
+    }
+
     /** Seven days ending on [end], oldest first, empty days included: a gap is a record too. */
     fun observeWeek(end: LocalDate): Flow<List<FoodDay>> {
         val start = end.minusDays(WEEK_DAYS - 1L)
@@ -241,6 +250,28 @@ class FoodRepository @Inject constructor(
                 .distinctBy { it.name.lowercase() to it.brand?.lowercase() }
                 .take(limit)
         }
+
+    /**
+     * A new portion or meal for an entry. Its frozen figures scale with the portion;
+     * the row is replaced, so its Health Connect copy follows as a removal and a log.
+     * Another app's record is not ours to change, so it is returned as it was.
+     */
+    suspend fun edit(entry: FoodLogEntry, factor: Double, meal: Meal): FoodLogEntry {
+        if (entry.source == FoodSource.HEALTH_CONNECT) return entry
+        remove(entry)
+        return log(
+            productId = entry.productId,
+            name = entry.name,
+            brand = entry.brand,
+            nutrients = entry.nutrients.scaled(factor),
+            meal = meal,
+            grams = entry.quantityGrams * factor,
+            servings = entry.servings?.times(factor),
+            source = entry.source,
+            eatenAt = Instant.ofEpochMilli(entry.eatenAtEpochMs),
+            zone = ZoneId.systemDefault(),
+        )
+    }
 
     /** Logs [entry] again now, with the figures it was frozen with. */
     suspend fun relog(entry: FoodLogEntry, meal: Meal = Meal.SNACK): FoodLogEntry = log(

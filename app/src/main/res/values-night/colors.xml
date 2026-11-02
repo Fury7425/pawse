@@ -2,4 +2,19 @@
 <resources>
     <!-- Must match PawseColors.DarkBackground. The design reference. -->
     <color name="launch_background">#0E1012</color>
+
+    <!-- Must match the app's dark tokens. -->
+    <color name="widget_card">#D615181C</color>
+    <color name="widget_edge">#14FFFFFF</color>
+    <color name="widget_on">#FFF3F4F6</color>
+    <color name="widget_on2">#FF9DA5AE</color>
+    <color name="widget_faint">#FF8A939B</color>
+    <color name="widget_track">#FF1F2329</color>
+    <color name="widget_raised">#FF20252B</color>
+    <color name="widget_primary">#FFE9EBEE</color>
+    <color name="widget_on_primary">#FF0A0B0D</color>
+    <color name="widget_high">#FF5CD6A0</color>
+    <color name="widget_moderate">#FFF5C451</color>
+    <color name="widget_low">#FFFF7A6B</color>
+    <color name="widget_neutral">#FF7E878F</color>
 </resources>

@@ -189,8 +189,8 @@ private fun NightPage(
     onOpen: (NightFigure) -> Unit,
 ) {
     val grey = MaterialTheme.colorScheme.onSurfaceVariant
-    Text(nightTitle(row.date, latest), style = PawseType.Title)
-    Text(nightRange(row.date), style = PawseType.Label, color = grey)
+    // The page's hero names the day; the night's span says which night it was.
+    Text(nightRange(row.date), style = PawseType.Micro, color = PawseTheme.semantics.faint, modifier = Modifier.padding(top = 8.dp))
 
     val rec = row.rec
     val night = rec?.sleep

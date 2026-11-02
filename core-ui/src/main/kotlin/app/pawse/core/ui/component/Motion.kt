@@ -27,6 +27,12 @@ object PawseMotion {
  */
 val LocalReduceMotion = staticCompositionLocalOf { false }
 
+/**
+ * Shapes as well as colour: ▲ above, ▼ below, ■ illness, ● typical. Android has no
+ * Differentiate Without Colour, so Pawse offers its own.
+ */
+val LocalShapes = staticCompositionLocalOf { false }
+
 /** The system's Remove animations: an animator duration scale of 0. */
 @Composable
 fun systemReduceMotion(): Boolean {

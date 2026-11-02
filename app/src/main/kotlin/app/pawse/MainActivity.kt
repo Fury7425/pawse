@@ -15,7 +15,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.platform.LocalDensity
+import app.pawse.core.ui.component.LocalReduceMotion
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -129,7 +132,9 @@ class MainActivity : ComponentActivity() {
                 enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
                 onDispose {}
             }
-            PawseTheme(darkTheme = dark, bedside = appearance == Appearance.BEDSIDE) {
+            val reduceMotion by profilePreferences.reduceMotion.collectAsState(initial = false)
+            val shapes by profilePreferences.shapes.collectAsState(initial = false)
+            PawseTheme(darkTheme = dark, bedside = appearance == Appearance.BEDSIDE, reduceMotion = reduceMotion, shapes = shapes) {
                 PawseRoot(syncPreferences, route)
             }
         }
@@ -143,30 +148,10 @@ private fun PawseRoot(preferences: SyncPreferences, route: String?) {
 
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         if (onboarded || forceHome) {
-            AskForNotificationsOnce()
+            // The notification grant is asked when a notification is first switched on, never at launch.
             PawseNavGraph(route)
         } else {
             OnboardingScreen(onFinished = { forceHome = true })
-        }
-    }
-}
-
-/**
- * The morning note needs the notification grant on Android 13 and up. Asked once,
- * after onboarding, and never again: declining is a fine answer.
- */
-@Composable
-private fun AskForNotificationsOnce() {
-    if (Build.VERSION.SDK_INT < 33) return
-    val context = LocalContext.current
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
-    LaunchedEffect(Unit) {
-        val prefs = context.getSharedPreferences("pawse_notify", Context.MODE_PRIVATE)
-        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
-            PackageManager.PERMISSION_GRANTED
-        if (!granted && !prefs.getBoolean("asked", false)) {
-            prefs.edit { putBoolean("asked", true) }
-            launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 }
@@ -207,6 +192,15 @@ private fun PawseNavGraph(initialRoute: String?) {
     LaunchedEffect(initialRoute) {
         when (initialRoute) {
             ROUTE_FOOD -> navController.switchTab(FoodDestinations.LOG)
+            // The widget's Scan and +: over the food log, so back lands there.
+            ROUTE_SCAN -> {
+                navController.switchTab(FoodDestinations.LOG)
+                navController.navigate(FoodDestinations.SCAN)
+            }
+            ROUTE_ADD_FOOD -> {
+                navController.switchTab(FoodDestinations.LOG)
+                navController.navigate(FoodDestinations.MANUAL)
+            }
             ROUTE_EXPLAIN_BODY -> navController.navigate(HomeDestinations.explain(ScoreType.BODY))
         }
     }
@@ -223,16 +217,20 @@ private fun PawseNavGraph(initialRoute: String?) {
             popExitTransition = { ExitTransition.None },
         ) {
             composable(HomeDestinations.HOME) {
-                HomeScreen(onOpenExplain = { type -> navController.navigate(HomeDestinations.explain(type)) })
+                HomeScreen(onOpenExplain = { type, back -> navController.navigate(HomeDestinations.explain(type, back)) })
             }
 
             composable(
                 route = HomeDestinations.EXPLAIN,
-                arguments = listOf(navArgument(HomeDestinations.EXPLAIN_ARG) { type = NavType.StringType }),
+                arguments = listOf(
+                    navArgument(HomeDestinations.EXPLAIN_ARG) { type = NavType.StringType },
+                    navArgument(HomeDestinations.EXPLAIN_BACK_ARG) { type = NavType.IntType; defaultValue = 0 },
+                ),
                 enterTransition = { pushIn },
             ) { backStackEntry ->
                 ExplainScreen(
                     type = HomeDestinations.scoreTypeOf(backStackEntry.arguments?.getString(HomeDestinations.EXPLAIN_ARG)),
+                    initialBack = backStackEntry.arguments?.getInt(HomeDestinations.EXPLAIN_BACK_ARG) ?: 0,
                     onBack = { navController.popBackStack() },
                 )
             }
@@ -241,6 +239,7 @@ private fun PawseNavGraph(initialRoute: String?) {
                 FoodLogScreen(
                     onManualEntry = { navController.navigate(FoodDestinations.MANUAL) },
                     onOpenBody = { navController.switchTab(BODY) },
+                    onScan = { navController.navigate(FoodDestinations.SCAN) },
                 )
             }
 
@@ -268,6 +267,10 @@ private fun PawseNavGraph(initialRoute: String?) {
                         navController.navigate(FoodDestinations.MANUAL) {
                             popUpTo(FoodDestinations.SCAN) { inclusive = true }
                         }
+                    },
+                    onLogged = {
+                        navController.popBackStack()
+                        navController.switchTab(FoodDestinations.LOG)
                     },
                 )
             }
@@ -355,13 +358,16 @@ private fun Dock(
             ) {
                 val segment = maxWidth / TABS.size
                 val index = TABS.indexOfFirst { it.first == current }.coerceAtLeast(0)
-                val offset by animateDpAsState(segment * index, tween(280, easing = EaseInOut), label = "dock")
+                val reduce = LocalReduceMotion.current
+                val offset by animateDpAsState(segment * index, if (reduce) snap() else tween(280, easing = EaseInOut), label = "dock")
+                // At very large text the labels drop and the icons carry the tabs.
+                val iconsOnly = LocalDensity.current.fontScale >= 1.6f
                 Box(
                     Modifier
                         .offset(x = offset)
                         .width(segment)
                         .fillMaxHeight()
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(26.dp)),
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f), RoundedCornerShape(26.dp)),
                 )
                 Row(Modifier.fillMaxSize()) {
                     TABS.forEach { (route, label, glyph) ->
@@ -377,8 +383,10 @@ private fun Dock(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Glyph(glyph, color = color)
-                            Spacer(Modifier.width(6.dp))
-                            Text(label, style = PawseType.BodyStrong, color = color)
+                            if (!iconsOnly) {
+                                Spacer(Modifier.width(5.dp))
+                                Text(label, style = PawseType.BodyStrong, color = color, maxLines = 1)
+                            }
                         }
                     }
                 }

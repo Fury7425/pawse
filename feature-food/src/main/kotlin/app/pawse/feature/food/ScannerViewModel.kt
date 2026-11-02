@@ -8,6 +8,7 @@ import app.pawse.core.data.food.FoodPreferences
 import app.pawse.core.data.food.FoodProduct
 import app.pawse.core.data.food.FoodRepository
 import app.pawse.core.data.food.FoodSource
+import app.pawse.core.data.food.Meal
 import app.pawse.core.data.food.Nutrients
 import app.pawse.core.data.food.ocr.LabelBasis
 import app.pawse.core.data.food.ocr.LabelReading
@@ -64,6 +65,52 @@ class ScannerViewModel @Inject constructor(
 
     private var lastBarcode: String? = null
     private var bestReading: LabelReading? = null
+
+    private val _foods = MutableStateFlow<List<FoodProduct>>(emptyList())
+
+    /** Under the camera: recent foods, or what a search found among foods saved on this phone. */
+    val foods: StateFlow<List<FoodProduct>> = _foods.asStateFlow()
+
+    private val _query = MutableStateFlow("")
+    val query: StateFlow<String> = _query.asStateFlow()
+
+    private val _plate = MutableStateFlow<List<FoodProduct>>(emptyList())
+
+    /** Foods ticked with + to log together at their usual portion. */
+    val plate: StateFlow<List<FoodProduct>> = _plate.asStateFlow()
+
+    private val _meal = MutableStateFlow(mealNow())
+    val meal: StateFlow<Meal> = _meal.asStateFlow()
+
+    init {
+        viewModelScope.launch { _foods.value = repository.recentProducts(RECENT) }
+    }
+
+    fun search(text: String) {
+        _query.value = text
+        viewModelScope.launch {
+            _foods.value = if (text.isBlank()) repository.recentProducts(RECENT) else repository.searchProducts(text).take(RECENT)
+        }
+    }
+
+    fun togglePlate(product: FoodProduct) {
+        _plate.value = if (_plate.value.any { it.id == product.id }) _plate.value.filter { it.id != product.id } else _plate.value + product
+    }
+
+    fun cycleMeal() {
+        _meal.value = Meal.entries[(_meal.value.ordinal + 1) % Meal.entries.size]
+    }
+
+    /** Logs the plate at each food's usual portion, then hands back to the log. */
+    fun logPlate(onDone: () -> Unit) {
+        val plate = _plate.value
+        if (plate.isEmpty()) return
+        viewModelScope.launch {
+            plate.forEach { repository.logProduct(it, _meal.value, portion(it)) }
+            _plate.value = emptyList()
+            onDone()
+        }
+    }
 
     /**
      * A barcode from the camera.
@@ -185,4 +232,21 @@ class ScannerViewModel @Inject constructor(
 
     private fun format(grams: Double): String =
         if (grams % 1.0 == 0.0) grams.toInt().toString() else grams.toString()
+
+    companion object {
+        private const val RECENT = 4
+
+        /** A food's usual portion: its serving when the label gave one, else 100 g. */
+        fun portion(product: FoodProduct): Double = product.servingGrams?.takeIf { it > 0 } ?: 100.0
+
+        fun kcal(product: FoodProduct): Double? = product.per100g.forGrams(portion(product)).kcal
+
+        /** The meal the clock suggests; one tap on the plate bar changes it. */
+        private fun mealNow(): Meal = when (java.time.LocalTime.now().hour) {
+            in 5..10 -> Meal.BREAKFAST
+            in 11..14 -> Meal.LUNCH
+            in 17..21 -> Meal.DINNER
+            else -> Meal.SNACK
+        }
+    }
 }

@@ -2,14 +2,18 @@ package app.pawse.core.data.health
 
 import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.aggregate.AggregateMetric
+import androidx.health.connect.client.aggregate.AggregationResultGroupedByDuration
 import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
 import androidx.health.connect.client.records.Record
+import androidx.health.connect.client.request.AggregateGroupByDurationRequest
 import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.time.Duration
 import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -126,6 +130,23 @@ class HealthConnectGateway @Inject constructor(
                 ),
             )[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories
         }.getOrNull()
+    }
+
+    /**
+     * [metrics] totalled per [slice] across a window, by Health Connect itself, so
+     * overlapping writers are de-duplicated as above. Empty without a grant.
+     */
+    suspend fun slices(
+        metrics: Set<AggregateMetric<*>>,
+        start: Instant,
+        end: Instant,
+        slice: Duration,
+    ): List<AggregationResultGroupedByDuration> = withContext(Dispatchers.IO) {
+        runCatching {
+            requireClient().aggregateGroupByDuration(
+                AggregateGroupByDurationRequest(metrics, TimeRangeFilter.between(start, end), slice),
+            )
+        }.getOrDefault(emptyList())
     }
 
     companion object {

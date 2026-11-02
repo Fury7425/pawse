@@ -32,10 +32,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -48,6 +50,7 @@ import app.pawse.core.data.health.ScoreCapability
 import app.pawse.core.ui.component.BottomAction
 import app.pawse.core.ui.component.EaseInOut
 import app.pawse.core.ui.component.EaseOut
+import app.pawse.core.ui.component.GhostButton
 import app.pawse.core.ui.component.Glyph
 import app.pawse.core.ui.component.Glyphs
 import app.pawse.core.ui.component.PawseCard
@@ -113,6 +116,7 @@ fun OnboardingScreen(
                         viewModel.onRequestStarted()
                         launcher.launch(viewModel.permissionsToRequest)
                     },
+                    onLookAround = viewModel::finish,
                 )
 
                 OnboardingStep.REPORT -> state.report?.let {
@@ -189,129 +193,92 @@ private fun Steps(done: Int) {
     }
 }
 
-/** The mark: a usual range drawn left to right, and tonight dropping onto it. */
+
+/**
+ * First run: value before commitment. A sample morning first, dimmed and labelled
+ * as not yours, then each kind of data with the reason it is asked for, and a way
+ * to look around before granting anything.
+ */
 @Composable
-private fun Mark() {
-    val band = remember { Animatable(0f) }
-    val drop = remember { Animatable(0f) }
-    LaunchedEffect(Unit) {
-        band.animateTo(1f, tween(520, easing = EaseInOut))
-        drop.animateTo(1f, tween(420, easing = EaseOut))
-    }
-    val line = MaterialTheme.colorScheme.onSurface
-    val dot = PawseTheme.semantics.bandHigh
-    Canvas(
+private fun Explain(onContinue: () -> Unit, onLookAround: () -> Unit) {
+    val s = PawseTheme.semantics
+    val grey = MaterialTheme.colorScheme.onSurfaceVariant
+    Column(
         Modifier
-            .size(width = 132.dp, height = 64.dp)
-            .semantics { contentDescription = "Pawse" },
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(top = 16.dp, bottom = 40.dp),
     ) {
-        val h = 6.dp.toPx()
-        drawRoundRect(line, Offset(0f, 44.dp.toPx()), Size(size.width * band.value, h), CornerRadius(h / 2))
-        if (drop.value > 0f) {
-            val r = 9.dp.toPx()
-            val c = Offset(76.dp.toPx() + r, 14.dp.toPx() + r - (1f - drop.value) * 28.dp.toPx())
-            drawCircle(dot.copy(alpha = 0.25f * drop.value), r * 2f, c)
-            drawCircle(dot.copy(alpha = drop.value), r, c)
+        Text(tr("Sample · not your data", "샘플 · 내 데이터 아님"), style = PawseType.Micro, color = s.faint, modifier = Modifier.padding(horizontal = 24.dp))
+        Row(
+            Modifier
+                .padding(start = 24.dp, end = 24.dp, top = 16.dp)
+                .alpha(0.45f)
+                .clearAndSetSemantics {},
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            SampleRing(tr("Sleep", "수면"), "7.4", 7.4f / 7.83f, grey, 84.dp, Modifier.weight(1f))
+            SampleRing(tr("Body", "컨디션"), "78", 0.78f, s.bandHigh, 112.dp, Modifier.weight(1.4f))
+            SampleRing(tr("Load", "부하"), "12", 12f / 16f, grey, 84.dp, Modifier.weight(1f), range = 9f / 16f..14f / 16f)
+        }
+        Column(Modifier.padding(horizontal = 24.dp)) {
+            Text(
+                tr("Your sleep, your body and your training, on this phone", "수면, 컨디션, 운동을 이 휴대폰 안에서"),
+                style = PawseType.Title,
+                modifier = Modifier.padding(top = 32.dp),
+            )
+            Text(
+                tr(
+                    "Pawse reads from Health Connect and works everything out here. Nothing leaves the phone.",
+                    "Pawse는 헬스 커넥트에서 읽고 모든 계산을 휴대폰 안에서 해요. 어떤 데이터도 밖으로 나가지 않아요.",
+                ),
+                style = PawseType.Label,
+                color = grey,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            Column(Modifier.padding(top = 16.dp)) {
+                ASKS.forEach { (glyph, title, why) ->
+                    Row(Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Glyph(glyph, size = 24.dp, color = grey)
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(title, style = PawseType.BodyStrong)
+                            Text(why, style = PawseType.Label, color = grey)
+                        }
+                    }
+                }
+            }
+            PrimaryButton(tr("Choose what to share", "공유할 항목 선택"), onClick = onContinue, modifier = Modifier.padding(top = 24.dp))
+            GhostButton(tr("Not now, look around first", "나중에, 먼저 둘러볼게요"), onClick = onLookAround, modifier = Modifier.padding(top = 8.dp))
         }
     }
 }
 
-/** A getter, not a list built once, so a language change while the app runs is picked up. */
-private val READS: List<Triple<String, String, String>>
-    get() {
-        val overnight = tr("Overnight", "밤사이")
-        val allDay = tr("All day", "하루 종일")
-        return listOf(
-            Triple(tr("Heart rate variability", "심박 변이도"), overnight, Glyphs.Recovery),
-            Triple(tr("Resting heart rate", "안정 시 심박수"), overnight, Glyphs.Heart),
-            Triple(tr("Sleep", "수면"), tr("Stages, if recorded", "기록됐다면 수면 단계까지"), Glyphs.Sleep),
-            Triple(tr("Breathing rate", "호흡수"), overnight, Glyphs.Breath),
-            Triple(tr("Skin temperature", "피부 온도"), overnight, Glyphs.Thermometer),
-            Triple(tr("Blood oxygen", "혈중 산소"), overnight, Glyphs.Drop),
-            Triple(tr("Workouts and steps", "운동과 걸음 수"), allDay, Glyphs.Strain),
-            Triple(tr("Calories burned", "소모 칼로리"), allDay, Glyphs.Flame),
-            Triple(tr("Weight and body composition", "체중과 체성분"), tr("When you weigh in", "체중을 잴 때"), Glyphs.Body),
-            Triple(tr("Basal metabolic rate", "기초대사량"), tr("If your scale writes it", "체중계가 기록한다면"), Glyphs.Gauge),
-            Triple(tr("Periods", "생리"), tr("If you log them", "기록한다면"), Glyphs.Clock),
-            Triple(tr("Past history", "과거 기록"), tr("So baselines start full", "기준을 처음부터 채우려고"), Glyphs.Synced),
-        )
-    }
+/** Each kind of data with the ring it serves, in the order the rings sit. */
+private val ASKS: List<Triple<String, String, String>>
+    get() = listOf(
+        Triple(Glyphs.Sleep, tr("Sleep", "수면"), tr("For the Sleep ring and your bedtime", "수면 링과 취침 시각에 쓰여요")),
+        Triple(Glyphs.Heart, tr("Heart rate and HRV", "심박수와 심박변이도"), tr("For Body, compared with your normal", "컨디션 점수, 평소와 비교")),
+        Triple(Glyphs.Strain, tr("Exercise and steps", "운동과 걸음 수"), tr("For Load", "부하 점수에 쓰여요")),
+        Triple(Glyphs.Food, tr("Weight and nutrition", "체중과 영양"), tr("Optional. Food can also write back.", "선택 사항. 음식 기록을 다시 저장할 수도 있어요.")),
+    )
 
 @Composable
-private fun Explain(onContinue: () -> Unit) {
-    Box(Modifier.fillMaxSize()) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 140.dp),
-        ) {
-            Steps(done = 1)
-            Spacer(Modifier.height(40.dp))
-            Mark()
-            Spacer(Modifier.height(14.dp))
-            Text("Pawse", style = PawseType.Heading)
-
-            Spacer(Modifier.height(28.dp))
-            Text(tr("What this reads", "읽는 데이터"), style = PawseType.Title)
-            Spacer(Modifier.height(8.dp))
-            Text(
-                tr(
-                    "Pawse reads what your watch or ring already writes to Health Connect, and reads it against your own history.",
-                    "Pawse는 시계나 링이 이미 헬스 커넥트에 기록한 데이터를 읽고, 내 과거 기록과 비교해 해석해요.",
-                ),
-                style = PawseType.Body,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
-            Spacer(Modifier.height(20.dp))
-            PawseCard(padding = PaddingValues(0.dp)) {
-                Text(
-                    tr("Reads", "읽기"),
-                    style = PawseType.Label,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
-                )
-                READS.forEachIndexed { i, (name, whenRead, glyph) ->
-                    if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Glyph(glyph, size = 16.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.width(10.dp))
-                        Text(name, style = PawseType.Body, modifier = Modifier.weight(1f))
-                        Text(whenRead, style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-            PawseCard(padding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)) {
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Column(Modifier.weight(1f)) {
-                        Text(tr("Writes", "쓰기"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.height(2.dp))
-                        Text(tr("Only food and weigh-ins you type in", "직접 입력한 음식과 체중만"), style = PawseType.Body)
-                    }
-                    Text(tr("Optional", "선택"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-
-            Spacer(Modifier.height(20.dp))
-            Row {
-                Glyph(Glyphs.Shield, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    tr(
-                        "Everything stays on this phone. No account, no server. Grant only what you want; " +
-                            "anything you leave out is dropped from the maths rather than guessed at.",
-                        "모든 데이터는 이 휴대폰에만 남아요. 계정도 서버도 없어요. 원하는 것만 허용하세요. " +
-                            "허용하지 않은 항목은 추측하지 않고 계산에서 빼요.",
-                    ),
-                    style = PawseType.Label,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+private fun SampleRing(
+    name: String,
+    value: String,
+    fraction: Float,
+    color: Color,
+    size: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier,
+    range: ClosedFloatingPointRange<Float>? = null,
+) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        ScoreRing(fraction = fraction, color = color, size = size, glow = false, range = range, stroke = 7.2f) {
+            Text(value, style = if (size > 100.dp) PawseType.Numeral else PawseType.RingSmall)
         }
-        BottomAction(text = tr("Choose what to share", "공유할 항목 고르기"), onClick = onContinue)
+        Text(name, style = PawseType.BodyStrong, modifier = Modifier.padding(top = 8.dp))
     }
 }
 

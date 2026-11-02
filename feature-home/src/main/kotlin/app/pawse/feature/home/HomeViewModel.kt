@@ -2,7 +2,11 @@ package app.pawse.feature.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.pawse.core.data.activity.MovingRepository
+import app.pawse.core.data.activity.MovingSnapshot
 import app.pawse.core.data.profile.Appearance
+import app.pawse.core.data.profile.NotificationSettings
+import app.pawse.core.data.profile.NotifyKind
 import app.pawse.core.data.profile.UserProfilePreferences
 import app.pawse.core.data.scoring.NightDetail
 import app.pawse.core.data.scoring.NightRepository
@@ -21,12 +25,38 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.ZonedDateTime
 import javax.inject.Inject
+
+/** The cards below Scores' rings that the profile menu can reorder or hide. */
+enum class ScoresCard {
+    MOVING, WORTH, YOUR_DAY, TONIGHT, TODAYS_LOAD, CHECK_IN;
+
+    val label: String
+        get() = when (this) {
+            MOVING -> tr("Moving today", "오늘의 움직임")
+            WORTH -> tr("Worth knowing", "알아둘 점")
+            YOUR_DAY -> tr("Your day", "오늘의 흐름")
+            TONIGHT -> tr("Tonight", "오늘 밤")
+            TODAYS_LOAD -> tr("Today’s load", "오늘의 부하")
+            CHECK_IN -> tr("How do you feel?", "오늘 컨디션은 어때요?")
+        }
+
+    companion object {
+        /** Automatic: mornings lead with what is worth knowing, evenings with tonight. */
+        fun automatic(evening: Boolean): List<ScoresCard> =
+            if (evening) listOf(MOVING, TONIGHT, TODAYS_LOAD, CHECK_IN) else listOf(MOVING, WORTH, YOUR_DAY, CHECK_IN)
+
+        /** A stored order plus any card added since it was saved, at the end. */
+        fun complete(order: List<ScoresCard>): List<ScoresCard> = order.distinct() + entries.filter { it !in order }
+    }
+}
 
 sealed interface HomeUiState {
     data object Loading : HomeUiState
@@ -45,7 +75,55 @@ class HomeViewModel @Inject constructor(
     private val coordinator: SyncCoordinator,
     private val profilePreferences: UserProfilePreferences,
     private val nights: NightRepository,
+    private val movingRepository: MovingRepository,
+    private val notificationSettings: NotificationSettings,
 ) : ViewModel() {
+
+    val reduceMotion: StateFlow<Boolean> = profilePreferences.reduceMotion
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), false)
+    val shapes: StateFlow<Boolean> = profilePreferences.shapes
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), false)
+    val notifications: StateFlow<Map<NotifyKind, Boolean>> = notificationSettings.state
+
+    fun setReduceMotion(on: Boolean) {
+        viewModelScope.launch { profilePreferences.setReduceMotion(on) }
+    }
+
+    fun setShapes(on: Boolean) {
+        viewModelScope.launch { profilePreferences.setShapes(on) }
+    }
+
+    fun setNotify(kind: NotifyKind, on: Boolean) = notificationSettings.set(kind, on)
+
+    /** Scores' cards: null is Automatic, otherwise the user's order. */
+    val cardOrder: StateFlow<List<ScoresCard>?> = profilePreferences.cardOrder
+        .map { names -> names?.mapNotNull { n -> ScoresCard.entries.firstOrNull { it.name == n } }?.let(ScoresCard::complete) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), null)
+
+    val hiddenCards: StateFlow<Set<ScoresCard>> = profilePreferences.hiddenCards
+        .map { names -> ScoresCard.entries.filter { it.name in names }.toSet() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptySet())
+
+    fun setCardOrder(order: List<ScoresCard>?) {
+        viewModelScope.launch { profilePreferences.setCardOrder(order?.map { it.name }) }
+    }
+
+    fun setHidden(card: ScoresCard, hidden: Boolean) {
+        viewModelScope.launch { profilePreferences.setHidden(card.name, hidden) }
+    }
+
+    /**
+     * Moving today, read from Health Connect whenever a fresh snapshot lands and
+     * held in memory only. Null until read, or when nothing was written.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val moving: StateFlow<MovingSnapshot?> = scoring.state
+        .mapLatest { s ->
+            val snapshot = (s as? ScoringState.Ready)?.snapshot ?: return@mapLatest null
+            val wakes = snapshot.nights.mapNotNull { (d, n) -> n.signals.sleep?.endEpochMs?.let { d to it } }.toMap()
+            runCatching { movingRepository.read(ZonedDateTime.now(), wakes) }.getOrNull()
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), null)
 
     private val dismissedAt = MutableStateFlow(0L)
 

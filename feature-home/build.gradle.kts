@@ -39,6 +39,9 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.hilt.navigation.compose)
 
+    // Reads a photo of an InBody sheet on the phone. The same recognizer Food's label reader uses.
+    implementation(libs.mlkit.text.recognition.korean)
+
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
 

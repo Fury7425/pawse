@@ -185,28 +185,8 @@ private fun DayFigure(type: ScoreType, day: DayReport?, today: Boolean) {
         note = loadNote(load, today)
     }
 
-    Row(verticalAlignment = Alignment.Bottom) {
-        Text(value, style = PawseType.Hero)
-        if (unit.isNotEmpty()) {
-            Spacer(Modifier.width(8.dp))
-            Text(
-                unit,
-                style = PawseType.Heading.copy(fontWeight = PawseType.Body.fontWeight),
-                color = grey,
-                modifier = Modifier.padding(bottom = 12.dp),
-            )
-        }
-        Row(
-            Modifier.weight(1f).padding(start = 8.dp, bottom = 12.dp),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Canvas(Modifier.size(8.dp)) { drawCircle(dot) }
-            Spacer(Modifier.width(6.dp))
-            Text(word, style = PawseType.BodyStrong, textAlign = TextAlign.End)
-        }
-    }
-    Text(note, style = PawseType.Label, color = grey, modifier = Modifier.padding(top = 8.dp))
+    // The number and its word sit in the page's hero ring; this keeps what makes it up.
+    Text(note, style = PawseType.Label, color = grey, modifier = Modifier.padding(top = 16.dp).semantics { contentDescription = "$value $unit, $word. $note" })
 
     if (type == ScoreType.BODY && body != null) BodyColumns(body)
     if (type == ScoreType.LOAD && load != null) LoadColumns(load, today)

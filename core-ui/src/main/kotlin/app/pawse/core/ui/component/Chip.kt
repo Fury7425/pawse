@@ -1,7 +1,6 @@
 package app.pawse.core.ui.component
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -13,15 +12,15 @@ import androidx.compose.ui.unit.dp
 import app.pawse.core.ui.theme.PawseType
 
 /**
- * A small qualifier: "Still settling", "Our default", "Lower confidence".
+ * A tag: "Temporary", "Written on this phone", "Lower confidence". Says where words
+ * came from or that a figure is provisional.
  *
  * Deliberately not Material's `AssistChip`, which is an interactive affordance
  * with a touch target and a ripple. Nothing here is tappable; these are labels
  * that happen to be enclosed, and dressing a label as a control is how a calm
  * screen turns into a cockpit.
  *
- * Chrome only — outline and surface, never a band colour. Colour in this app means
- * score state or deviation direction, and a provenance tag is neither.
+ * Raised fill and secondary text, 22 tall, 6 radius: never a band colour.
  */
 @Composable
 fun Chip(
@@ -31,11 +30,11 @@ fun Chip(
 ) {
     Text(
         text = text,
-        style = PawseType.Label,
+        style = PawseType.Micro.copy(letterSpacing = PawseType.Label.letterSpacing),
         color = contentColor,
+        maxLines = 1,
         modifier = modifier
-            .background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(6.dp))
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(6.dp))
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(6.dp))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
     )
 }

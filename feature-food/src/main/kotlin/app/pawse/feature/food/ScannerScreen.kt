@@ -89,6 +89,7 @@ import app.pawse.core.ui.component.SecondaryButton
 import app.pawse.core.ui.component.cardSurface
 import app.pawse.core.ui.component.lift
 import app.pawse.core.ui.component.pressable
+import app.pawse.core.ui.theme.PawseTheme
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.feature.food.camera.BarcodeFrameReader
 import app.pawse.feature.food.camera.CameraPreview
@@ -122,6 +123,8 @@ fun ScannerScreen(
     onProductChosen: (Long) -> Unit,
     onManualEntry: () -> Unit,
     modifier: Modifier = Modifier,
+    /** After the plate is logged: back to the food log. */
+    onLogged: () -> Unit = onBack,
     viewModel: ScannerViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
@@ -214,6 +217,10 @@ fun ScannerScreen(
                     onDecline = viewModel::dismissConsent,
                 )
 
+                // Aiming at a barcode: the logger sits under the camera, so a food eaten
+                // before is one tap and a plate of them one button.
+                state is ScanState.Scanning && mode == ScanMode.BARCODE -> Logger(viewModel, onManualEntry, onLogged)
+
                 else -> AnimatedContent(
                     targetState = state,
                     contentKey = { it::class },
@@ -234,6 +241,88 @@ fun ScannerScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * The logger under the camera: search, recent foods with + to put them on the
+ * plate, Add manually, and a plate bar whose button says what it will log.
+ */
+@Composable
+private fun Logger(viewModel: ScannerViewModel, onManualEntry: () -> Unit, onLogged: () -> Unit) {
+    val foods by viewModel.foods.collectAsStateWithLifecycle()
+    val query by viewModel.query.collectAsStateWithLifecycle()
+    val plate by viewModel.plate.collectAsStateWithLifecycle()
+    val meal by viewModel.meal.collectAsStateWithLifecycle()
+    val s = PawseTheme.semantics
+    Column(Modifier.fillMaxWidth()) {
+        PawseField(value = query, onValueChange = viewModel::search, placeholder = tr("Search foods", "음식 검색"), height = 48.dp, textStyle = PawseType.Body)
+        Text(
+            if (query.isBlank()) tr("Recent", "최근") else tr("Saved on this phone", "이 휴대폰에 저장된 음식"),
+            style = PawseType.Label,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 16.dp),
+        )
+        if (foods.isEmpty()) {
+            Muted(if (query.isBlank()) tr("Foods you scan show up here.", "스캔한 음식이 여기에 나와요.") else tr("Nothing saved by that name yet.", "그 이름으로 저장된 음식이 없어요."))
+        }
+        foods.forEach { food ->
+            val on = plate.any { it.id == food.id }
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(food.name, style = PawseType.BodyStrong, maxLines = 1)
+                    Text(
+                        listOfNotNull(food.servingLabel ?: FoodCopy.grams(ScannerViewModel.portion(food)), ScannerViewModel.kcal(food)?.let { "${it.roundToInt()} kcal" }).joinToString(" · "),
+                        style = PawseType.Micro,
+                        color = s.faint,
+                    )
+                }
+                Box(
+                    Modifier
+                        .size(48.dp)
+                        .pressable(role = Role.Checkbox) { viewModel.togglePlate(food) }
+                        .background(if (on) s.selection else MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)
+                        .semantics {
+                            contentDescription = if (on) tr("Take ${food.name} off the plate", "${food.name} 빼기") else tr("Add ${food.name} to the plate", "${food.name} 담기")
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Glyph(if (on) Glyphs.Check else Glyphs.Plus, size = 20.dp, strokeWidth = 2.2f, color = if (on) s.onSelection else MaterialTheme.colorScheme.onSurface)
+                }
+            }
+        }
+        SecondaryButton(tr("Add manually", "직접 추가"), onClick = onManualEntry, glyph = Glyphs.Pencil, textStyle = PawseType.BodyStrong, modifier = Modifier.padding(top = 8.dp).fillMaxWidth())
+        val total = plate.sumOf { ScannerViewModel.kcal(it) ?: 0.0 }.roundToInt()
+        Row(
+            Modifier
+                .padding(top = 16.dp)
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(32.dp))
+                .padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                Modifier
+                    .weight(1f)
+                    .pressable(onClick = viewModel::cycleMeal)
+                    .semantics { contentDescription = tr("Meal: ${FoodCopy.meal(meal)}. Tap to change.", "식사: ${FoodCopy.meal(meal)}. 눌러서 바꾸기.") },
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(FoodCopy.meal(meal), style = PawseType.Micro, color = s.faint)
+                    Glyph(Glyphs.ChevronDown, size = 12.dp, color = s.faint)
+                }
+                Text(
+                    if (plate.isEmpty()) tr("Plate is empty", "아직 담은 게 없어요") else tr("${plate.size} on the plate", "${plate.size}개 담음"),
+                    style = PawseType.BodyStrong,
+                )
+            }
+            PrimaryButton(
+                text = if (plate.isEmpty()) tr("Log", "기록") else tr("Log $total kcal", "${total}kcal 기록"),
+                onClick = { viewModel.logPlate(onLogged) },
+                enabled = plate.isNotEmpty(),
+                modifier = Modifier.width(150.dp),
+            )
         }
     }
 }

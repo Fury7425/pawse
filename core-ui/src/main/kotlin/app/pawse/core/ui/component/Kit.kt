@@ -124,6 +124,7 @@ object Glyphs {
     const val ChevronRight = "M9 6l6 6-6 6"
     const val ChevronLeft = "M15 6l-6 6 6 6"
     const val ChevronDown = "M6 9l6 6 6-6"
+    const val ChevronUp = "M6 15l6-6 6 6"
     const val Arrow = "M5 12h14M13 6l6 6-6 6"
     const val Sliders = "M4 7h9M17 7h3M4 17h3M11 17h9M13 7a2 2 0 1 0 4 0a2 2 0 1 0-4 0M7 17a2 2 0 1 0 4 0a2 2 0 1 0-4 0"
     const val Plus = "M12 5v14M5 12h14"
@@ -507,10 +508,13 @@ fun ScoreRing(
     glow: Boolean = true,
     stroke: Float = 7f,
     range: ClosedFloatingPointRange<Float>? = null,
+    /** A pinned day's value: a grey tick just outside the ring, the one ghost style. */
+    ghost: Float? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val track = PawseTheme.semantics.baselineOuter
     val band = PawseTheme.semantics.baselineBand
+    val ghostColor = MaterialTheme.colorScheme.onSurfaceVariant
     val targetColor = MaterialTheme.colorScheme.onSurface
     val reduce = LocalReduceMotion.current
     val sweep = remember { Animatable(0f) }
@@ -557,6 +561,7 @@ fun ScoreRing(
                 )
             }
             target?.let { tick(it.coerceIn(0f, 1f), 47f, 35f, 2.5f, targetColor) }
+            ghost?.let { tick(it.coerceIn(0f, 1f), 50f, 46.5f, 1.5f, ghostColor) }
         }
         content()
     }

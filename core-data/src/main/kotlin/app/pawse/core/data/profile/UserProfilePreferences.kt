@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import app.pawse.scoring.model.BiologicalSex
 import app.pawse.scoring.model.UserProfile
@@ -74,6 +75,49 @@ class UserProfilePreferences @Inject constructor(
 
     suspend fun resetCalibration(today: LocalDate = LocalDate.now()) {
         store.edit { it[calibrationSinceKey] = today.toString() }
+    }
+
+    private val reduceMotionKey = booleanPreferencesKey("reduce_motion")
+    private val shapesKey = booleanPreferencesKey("shapes_with_colour")
+
+    /** Pawse's own reduce-motion switch, beside the system's all-or-nothing one. */
+    val reduceMotion: Flow<Boolean> = store.data.map { it[reduceMotionKey] ?: false }
+
+    suspend fun setReduceMotion(on: Boolean) {
+        store.edit { it[reduceMotionKey] = on }
+    }
+
+    /** Shapes as well as colour on every band dot, since Android has no Differentiate Without Colour. */
+    val shapes: Flow<Boolean> = store.data.map { it[shapesKey] ?: false }
+
+    suspend fun setShapes(on: Boolean) {
+        store.edit { it[shapesKey] = on }
+    }
+
+    private val cardOrderKey = stringPreferencesKey("card_order")
+    private val hiddenCardsKey = stringSetPreferencesKey("hidden_cards")
+
+    /** Scores' cards in the user's order, or null for Automatic (they follow the time of day). */
+    val cardOrder: Flow<List<String>?> = store.data.map { prefs -> prefs[cardOrderKey]?.split(',')?.filter { it.isNotBlank() } }
+
+    suspend fun setCardOrder(order: List<String>?) {
+        store.edit { if (order == null) it.remove(cardOrderKey) else it[cardOrderKey] = order.joinToString(",") }
+    }
+
+    /** Cards hidden from Scores in My order. */
+    val hiddenCards: Flow<Set<String>> = store.data.map { it[hiddenCardsKey].orEmpty() }
+
+    suspend fun setHidden(card: String, hidden: Boolean) {
+        store.edit { it[hiddenCardsKey] = if (hidden) it[hiddenCardsKey].orEmpty() + card else it[hiddenCardsKey].orEmpty() - card }
+    }
+
+    private val goalKey = doublePreferencesKey("goal_kg")
+
+    /** An optional goal weight: a dashed line on the chart and an estimate in whole months. */
+    val goalKg: Flow<Double?> = store.data.map { it[goalKey] }
+
+    suspend fun setGoalKg(kg: Double?) {
+        store.edit { if (kg == null) it.remove(goalKey) else it[goalKey] = kg }
     }
 
     private val appearanceKey = stringPreferencesKey("appearance")

@@ -1,35 +1,55 @@
 package app.pawse.feature.home
 
+import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.pawse.core.data.body.BodyWriter
+import app.pawse.core.data.body.InBodyExtra
+import app.pawse.core.data.body.InBodyStore
 import app.pawse.core.data.body.RecentWeighIn
 import app.pawse.core.data.body.WeighIn
 import app.pawse.core.data.health.HealthConnectGateway
 import app.pawse.scoring.tr
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import java.io.File
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.util.Locale
 import javax.inject.Inject
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlin.math.roundToInt
 
-/** The optional figures under "Body composition", with the range a real one falls in. */
+/**
+ * The optional figures under "Body composition", with the range a real one falls in.
+ * Skeletal muscle and visceral fat stay in Pawse: Health Connect has no record for them.
+ */
 enum class BodyFigure(private val en: String, private val ko: String, val unit: String) {
     FAT("Body fat", "체지방률", "%"),
+    MUSCLE("Skeletal muscle", "골격근량", "kg"),
+    VISCERAL("Visceral fat level", "내장지방 레벨", ""),
     LEAN("Lean mass", "제지방량", "kg"),
     WATER("Body water", "체수분", "kg"),
     BONE("Bone mass", "골량", "kg");
 
     val label: String get() = tr(en, ko)
 
-    /** Lean and water can't outweigh the person they were measured on. */
+    /** Lean, muscle and water can't outweigh the person they were measured on. */
     fun range(weightKg: Double?): ClosedFloatingPointRange<Double> = when (this) {
         FAT -> 2.0..75.0
+        MUSCLE -> 5.0..(weightKg ?: 80.0).coerceAtMost(80.0)
+        VISCERAL -> 1.0..30.0
         LEAN -> 10.0..(weightKg ?: WeighInUiState.MAX_KG)
         WATER -> 5.0..(weightKg ?: WeighInUiState.MAX_KG)
         BONE -> 0.5..10.0
@@ -50,6 +70,10 @@ data class WeighInUiState(
     val problem: String? = null,
     val busy: Boolean = false,
     val saved: Boolean = false,
+    /** A photo of the result sheet is being read. */
+    val reading: Boolean = false,
+    /** What the last photo gave, in words, until the next one. */
+    val readNote: String? = null,
 ) {
     val weightKg: Double? get() = parse(weightText)?.takeIf { it in MIN_KG..MAX_KG }
     val weightBad: Boolean get() = weightText.isNotBlank() && weightKg == null
@@ -62,15 +86,33 @@ data class WeighInUiState(
         val range = figure.range(weightKg)
         val value = parse(text)
         if (value != null && value in range) return null
-        return if (figure.unit == "%") {
-            val lo = range.start.toInt()
-            val hi = range.endInclusive.toInt()
-            tr("Between $lo and $hi%", "$lo–$hi% 사이로 입력하세요")
-        } else {
-            val lo = oneDecimal(range.start)
-            val hi = oneDecimal(range.endInclusive)
-            tr("Between $lo and $hi kg", "$lo–$hi kg 사이로 입력하세요")
+        return when (figure.unit) {
+            "%" -> {
+                val lo = range.start.toInt()
+                val hi = range.endInclusive.toInt()
+                tr("Between $lo and $hi%", "$lo–$hi% 사이로 입력하세요")
+            }
+            "" -> {
+                val lo = range.start.toInt()
+                val hi = range.endInclusive.toInt()
+                tr("A level from $lo to $hi", "$lo–$hi 사이 레벨로 입력하세요")
+            }
+            else -> {
+                val lo = oneDecimal(range.start)
+                val hi = oneDecimal(range.endInclusive)
+                tr("Between $lo and $hi kg", "$lo–$hi kg 사이로 입력하세요")
+            }
         }
+    }
+
+    /** What only Pawse keeps from this result, or null when neither was given. */
+    fun extra(zone: ZoneId = ZoneId.systemDefault()): InBodyExtra? {
+        fun ok(f: BodyFigure) = figure(f)?.takeIf { figureError(f) == null }
+        val muscle = ok(BodyFigure.MUSCLE)
+        val visceral = ok(BodyFigure.VISCERAL)?.roundToInt()
+        if (muscle == null && visceral == null) return null
+        val date = if (earlier) earlierAt.toLocalDate() else java.time.LocalDate.now(zone)
+        return InBodyExtra(date, muscle, visceral)
     }
 
     val filledFigures: Int get() = BodyFigure.entries.count { figure(it) != null && figureError(it) == null }
@@ -121,6 +163,8 @@ data class WeighInUiState(
 class WeighInViewModel @Inject constructor(
     private val writer: BodyWriter,
     private val gateway: HealthConnectGateway,
+    private val inBody: InBodyStore,
+    @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(WeighInUiState())
@@ -151,6 +195,61 @@ class WeighInViewModel @Inject constructor(
 
     fun setFigure(figure: BodyFigure, text: String) =
         _state.update { it.copy(figures = it.figures + (figure to clean(text)), problem = null) }
+
+    /**
+     * Reads a photo of the result sheet on this phone, fills in what it finds, and
+     * deletes the photo. Nothing is saved until the user checks the numbers and taps Save.
+     */
+    fun readSheet(photo: Uri, file: File) {
+        _state.update { it.copy(reading = true, readNote = null) }
+        viewModelScope.launch {
+            val lines = runCatching { recognize(photo) }.getOrNull()
+            file.delete()
+            val read = lines?.let(InBodySheet::parse).orEmpty()
+            _state.update { s ->
+                val weight = read[SheetField.WEIGHT]
+                // Fat as a percent of that weight is arithmetic on two printed numbers, not a guess.
+                val fat = read[SheetField.FAT_PERCENT]
+                    ?: read[SheetField.FAT_MASS]?.let { kg -> (weight ?: s.weightKg)?.let { kg / it * 100.0 } }
+                val figures = listOfNotNull(
+                    fat?.let { BodyFigure.FAT to it },
+                    read[SheetField.MUSCLE]?.let { BodyFigure.MUSCLE to it },
+                    read[SheetField.VISCERAL]?.let { BodyFigure.VISCERAL to it },
+                    read[SheetField.LEAN]?.let { BodyFigure.LEAN to it },
+                    read[SheetField.WATER]?.let { BodyFigure.WATER to it },
+                ).associate { (f, v) -> f to if (f == BodyFigure.VISCERAL) v.roundToInt().toString() else WeighInUiState.oneDecimal(v) }
+                val count = figures.size + if (weight != null) 1 else 0
+                s.copy(
+                    reading = false,
+                    weightText = weight?.let(WeighInUiState::oneDecimal) ?: s.weightText,
+                    figures = s.figures + figures,
+                    readNote = when {
+                        lines == null -> tr("Couldn't read the photo. Try again, or type the numbers in.", "사진을 읽지 못했어요. 다시 찍거나 직접 입력하세요.")
+                        count == 0 -> tr("No InBody numbers found. Try a flat, well-lit photo of the whole sheet.", "인바디 숫자를 찾지 못했어요. 결과지 전체를 평평하고 밝게 찍어 보세요.")
+                        else -> tr(
+                            "$count read from the sheet. Check each one before saving.",
+                            "결과지에서 ${count}개를 읽었어요. 저장하기 전에 하나씩 확인하세요.",
+                        )
+                    },
+                )
+            }
+        }
+    }
+
+    private suspend fun recognize(photo: Uri): List<SheetLine> = suspendCancellableCoroutine { cont ->
+        val recognizer = TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
+        cont.invokeOnCancellation { recognizer.close() }
+        recognizer.process(InputImage.fromFilePath(context, photo))
+            .addOnSuccessListener { text ->
+                cont.resume(
+                    text.textBlocks.flatMap { block ->
+                        block.lines.mapNotNull { line -> line.boundingBox?.let { SheetLine(line.text, it.left, it.top, it.right, it.bottom) } }
+                    },
+                )
+            }
+            .addOnFailureListener { cont.resumeWithException(it) }
+            .addOnCompleteListener { recognizer.close() }
+    }
 
     /** Asks for whichever write grants this weigh-in needs and doesn't have, then saves. */
     fun save() {
@@ -203,6 +302,7 @@ class WeighInViewModel @Inject constructor(
     private suspend fun write() {
         _state.update { it.copy(busy = true, problem = null) }
         val ok = writer.write(_state.value.toWeighIn())
+        if (ok) _state.value.extra()?.let { inBody.add(it) }
         _state.update {
             if (ok) {
                 it.copy(busy = false, saved = true)

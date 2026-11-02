@@ -88,4 +88,16 @@ class FoodPreferences @Inject constructor(
     suspend fun removePendingDelete(recordId: String) {
         store.edit { it[pendingDeletesKey] = it[pendingDeletesKey].orEmpty() - recordId }
     }
+
+    private val incompleteKey = stringSetPreferencesKey("incomplete_days")
+
+    /**
+     * Days marked as not fully logged, as ISO dates. Food says "partly logged" on
+     * them instead of a gap, and the weekly weight check leaves them out.
+     */
+    val incompleteDays: Flow<Set<String>> = store.data.map { it[incompleteKey].orEmpty() }
+
+    suspend fun setIncomplete(date: String, incomplete: Boolean) {
+        store.edit { it[incompleteKey] = if (incomplete) it[incompleteKey].orEmpty() + date else it[incompleteKey].orEmpty() - date }
+    }
 }
