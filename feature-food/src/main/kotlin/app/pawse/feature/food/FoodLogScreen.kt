@@ -300,7 +300,7 @@ private fun WeekStrip(
                     .weight(1f)
                     .height(64.dp)
                     .pressable { onPick(foodDay.date) }
-                    .then(if (isSelected) Modifier.cardSurface(RoundedCornerShape(12.dp), 12.dp) else Modifier)
+                    .then(if (isSelected) Modifier.cardSurface(RoundedCornerShape(12.dp)) else Modifier)
                     .padding(top = 8.dp)
                     .semantics(mergeDescendants = true) {
                         contentDescription = foodDay.date.format(DateTimeFormatter.ofPattern(tr("EEE d MMM", "M월 d일 (E)"), Locale.getDefault())) +
@@ -465,7 +465,7 @@ private fun AgainChip(entry: FoodLogEntry, onClick: () -> Unit) {
         Modifier
             .height(44.dp)
             .pressable(onClick = onClick)
-            .cardSurface(RoundedCornerShape(12.dp), 12.dp)
+            .cardSurface(RoundedCornerShape(12.dp))
             .padding(start = 10.dp, end = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -543,7 +543,7 @@ private fun EntryRow(
             Box(
                 Modifier
                     .size(40.dp)
-                    .cardSurface(RoundedCornerShape(12.dp), 12.dp),
+                    .cardSurface(RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center,
             ) {
                 Glyph(sourceGlyph(entry.source), size = 18.dp, color = onv)

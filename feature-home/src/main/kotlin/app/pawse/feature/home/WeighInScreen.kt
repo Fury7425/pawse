@@ -540,7 +540,7 @@ private fun WeightRuler(kg: Double?, onKg: (Double) -> Unit, modifier: Modifier 
         modifier
             .fillMaxWidth()
             .height(64.dp)
-            .cardSurface(RoundedCornerShape(12.dp), 12.dp)
+            .cardSurface(RoundedCornerShape(12.dp))
             .clearAndSetSemantics {},
     ) {
         LazyRow(

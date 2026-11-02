@@ -29,8 +29,10 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import java.time.LocalDate
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.math.roundToInt
 
 /** Where a finished read shows up outside the app: the widget, and once a week a summary. */
 @Singleton
@@ -82,16 +84,16 @@ class TodayWidget : AppWidgetProvider() {
                     "level",
                     if (today.illness.level == IllnessLevel.ALERT) ALERT else body?.band?.name,
                 )
-                putString("sleep", tr("Sleep  ", "수면  ") + ScoreCopy.debt(today.sleep.debtHours))
-                val low = load.rangeLow
-                val high = load.rangeHigh
+                // The same numbers as the rings: hours slept, and points against today's range. No debt counter.
+                val slept = today.sleep.lastNightMinutes?.let { String.format(Locale.getDefault(), "%.1f h", it / 60.0) } ?: "—"
+                putString("sleep", tr("Sleep  ", "수면  ") + slept)
+                val points = load.points.roundToInt()
                 putString(
                     "load",
-                    tr("Load  ", "부하  ") + when {
-                        load.rest -> tr("rest", "휴식")
-                        low != null && high != null -> "${ScoreCopy.load(low)}–${ScoreCopy.load(high)}"
-                        else -> "—"
-                    },
+                    tr("Load  ", "부하  ") + (
+                        load.pointsRange?.let { r -> tr("$points of ${r.low}–${r.high}", "${r.low}–${r.high} 중 $points") }
+                            ?: points.toString()
+                        ),
                 )
                 putString(
                     "energy",

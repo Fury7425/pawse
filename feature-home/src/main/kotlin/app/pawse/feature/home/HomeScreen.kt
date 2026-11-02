@@ -80,7 +80,7 @@ import app.pawse.scoring.config.ScoringConfig
 import app.pawse.scoring.model.BodyStatus
 import app.pawse.scoring.model.DayTag
 import app.pawse.scoring.model.EnergyForecast
-import app.pawse.scoring.model.FormBand
+import app.pawse.scoring.load.LoadPoints
 import app.pawse.scoring.model.IllnessLevel
 import app.pawse.scoring.model.LoadReading
 import app.pawse.scoring.model.ScoreType
@@ -209,7 +209,6 @@ private fun TodayContent(
     }
     val alert = today.illness.level == IllnessLevel.ALERT
     val glow = if (today.body != null || alert) bodyColor(today.body?.band, today.illness.level) else null
-    val load = today.load
     val pad = Modifier.padding(horizontal = 24.dp)
 
     LazyColumn(
@@ -289,10 +288,6 @@ private fun TodayContent(
             }
         }
 
-        if (load.rest || (load.rangeLow != null && load.rangeHigh != null)) {
-            item { RangeCard(load, onClick = { onOpenExplain(ScoreType.LOAD) }, modifier = pad.padding(top = 16.dp)) }
-        }
-
         item { Spacer(Modifier.height(32.dp)) }
         focusSection(focus, snapshot, onOpenExplain, pad)
 
@@ -312,6 +307,8 @@ private fun TodayContent(
                 Text(ScoreCopy.FORECAST_NOTE, style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = pad)
             }
         }
+
+        item { VitalsCard(snapshot, onClick = { onOpenExplain(ScoreType.SLEEP) }, modifier = pad.padding(top = 10.dp)) }
 
         item { CheckInCard(snapshot, onCheckIn, onTag, modifier = pad.padding(top = 20.dp)) }
 
@@ -448,11 +445,13 @@ private class RingFace(
     val dot: Color,
     val word: String,
     val target: Float? = null,
+    val range: ClosedFloatingPointRange<Float>? = null,
 )
 
 /**
- * Body is its score on its band colour. Sleep is last night against your need and
- * Load is today against the top of its range; both are real units, so both stay grey.
+ * Body is its score on its band colour. Sleep is last night against your need, with
+ * the need as a tick; Load is today's points on a 16-point track with today's range
+ * drawn on it. Both are real units, so both stay grey, and no running debt is shown.
  */
 @Composable
 private fun ringFace(type: ScoreType, snapshot: ScoringSnapshot): RingFace {
@@ -482,44 +481,50 @@ private fun ringFace(type: ScoreType, snapshot: ScoringSnapshot): RingFace {
         ScoreType.SLEEP -> {
             val sleep = today.sleep
             val slept = sleep.lastNightMinutes
+            // The full ring is 10 hours, so need sits as a tick inside it and a long night still reads.
             RingFace(
-                fraction = slept?.let { (it / (sleep.needHours * 60.0)).toFloat() },
+                fraction = slept?.let { (it / SLEEP_RING_MINUTES).toFloat() },
                 arc = grey,
                 glow = false,
                 value = slept?.let { String.format(Locale.getDefault(), "%.1f", it / 60.0) } ?: "—",
                 unit = if (slept != null) "h" else "",
                 dot = neutral,
-                word = sleep.debtHours?.let(ScoreCopy::debt) ?: tr("Settling", "기준 잡는 중"),
+                word = slept?.let { needWord(it / 60.0, sleep.needHours) } ?: tr("No night", "기록 없음"),
+                target = (sleep.needHours * 60.0 / SLEEP_RING_MINUTES).toFloat(),
             )
         }
 
         ScoreType.LOAD -> {
             val load = today.load
-            // The full ring is the top of today's range; the tick is where the range starts.
-            val top = load.rangeHigh?.takeIf { it > 0.0 && !load.rest }
+            val range = load.pointsRange
+            val points = ScoringConfig.DEFAULT.points
+            val shown = load.points.roundToInt()
             RingFace(
-                fraction = top?.let { (load.todayLoad / it).toFloat() },
+                fraction = LoadPoints.ringFraction(load.points, points),
                 arc = grey,
                 glow = false,
-                value = ScoreCopy.load(load.todayLoad),
+                value = shown.toString(),
                 unit = "",
                 dot = neutral,
-                word = formWord(load),
-                target = top?.let { high -> load.rangeLow?.let { (it / high).toFloat() } },
+                word = when {
+                    range == null -> tr("$shown · no range yet", "$shown · 아직 범위 없음")
+                    range.rest -> tr("$shown of 0–${range.high} · rest", "0–${range.high} 중 $shown · 휴식")
+                    else -> tr("$shown of ${range.low}–${range.high}", "${range.low}–${range.high} 중 $shown")
+                },
+                range = range?.let { it.low.toFloat() / points.ringPoints..it.high.toFloat() / points.ringPoints },
             )
         }
     }
 }
 
-private fun formWord(load: LoadReading): String = when {
-    load.rest -> tr("Rest today", "오늘은 휴식")
-    else -> when (load.formBand) {
-        FormBand.FRESH -> tr("Fresh", "개운함")
-        FormBand.PRODUCTIVE -> tr("Productive", "효과적")
-        FormBand.HEAVY -> tr("Heavy", "무거움")
-        null -> tr("Building", "쌓는 중")
-    }
+/** Within half an hour of need reads as close: a sentence, never a counter. */
+private fun needWord(sleptHours: Double, needHours: Double): String = when {
+    kotlin.math.abs(sleptHours - needHours) <= 0.5 -> tr("Close to your need", "필요량에 가까움")
+    sleptHours < needHours -> tr("Short of your need", "필요량보다 짧음")
+    else -> tr("Longer than your need", "필요량보다 김")
 }
+
+private const val SLEEP_RING_MINUTES = 600.0
 
 /** Sleep, Body and Load as rings, Body a size up; tapping one picks the section below. */
 @Composable
@@ -579,6 +584,7 @@ private fun RingTile(
             size = if (big) 112.dp else 84.dp,
             glow = face.glow,
             target = face.target,
+            range = face.range,
         ) {
             if (face.value == null) {
                 Glyph(scoreGlyph(type), size = 28.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -603,65 +609,6 @@ private fun RingTile(
             Text(ScoreCopy.name(type), style = PawseType.BodyStrong)
         }
         BandDot(color = face.dot, label = face.word)
-    }
-}
-
-/** Today's load against the range this morning's Body set. */
-@Composable
-private fun RangeCard(load: LoadReading, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val low = load.rangeLow
-    val high = load.rangeHigh
-    val inRange = !load.rest && low != null && high != null
-    val track = PawseTheme.semantics.baselineOuter
-    val band = PawseTheme.semantics.baselineBand
-    val fill = MaterialTheme.colorScheme.onSurfaceVariant
-    val marker = MaterialTheme.colorScheme.onSurface
-    PawseCard(modifier = modifier, onClick = onClick, padding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(tr("Today’s range", "오늘의 범위"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-            Text(
-                if (inRange) tr("Load", "부하") + " ${ScoreCopy.load(low!!)}–${ScoreCopy.load(high!!)}" else tr("Rest", "휴식"),
-                style = PawseType.BodyStrong,
-            )
-            Spacer(Modifier.width(8.dp))
-            Glyph(Glyphs.ChevronRight, size = 16.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Spacer(Modifier.height(6.dp))
-        Canvas(
-            Modifier
-                .fillMaxWidth()
-                .height(14.dp),
-        ) {
-            val bar = 6.dp.toPx()
-            val top = (size.height - bar) / 2f
-            val r = CornerRadius(bar / 2f)
-            val scale = maxOf((high ?: 0.0) * 1.25, load.todayLoad, 1.0)
-            fun x(v: Double) = (v / scale).coerceIn(0.0, 1.0).toFloat() * size.width
-            drawRoundRect(track, Offset(0f, top), Size(size.width, bar), r)
-            if (inRange) drawRoundRect(band, Offset(x(low!!), top), Size(x(high!!) - x(low), bar), r)
-            val done = x(load.todayLoad)
-            if (done > 0f) drawRoundRect(fill, Offset(0f, top), Size(done, bar), r)
-            if (inRange) {
-                drawRoundRect(marker, Offset(x(low!!) - 1.dp.toPx(), 0f), Size(2.dp.toPx(), size.height), CornerRadius(1.dp.toPx()))
-            }
-        }
-        Spacer(Modifier.height(4.dp))
-        Row {
-            Text(
-                tr("${ScoreCopy.load(load.todayLoad)} so far", "지금까지 ${ScoreCopy.load(load.todayLoad)}"),
-                style = PawseType.Label,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                when {
-                    load.rest -> tr("Your overnight heart rate has been high", "야간 심박수가 높았어요")
-                    else -> load.typicalDayLoad?.let { tr("Your typical day is ${ScoreCopy.load(it)}", "평소 하루는 ${ScoreCopy.load(it)}") } ?: ""
-                },
-                style = PawseType.Label,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
     }
 }
 
@@ -1051,7 +998,7 @@ private fun AlsoCard(
         Spacer(Modifier.height(6.dp))
         if (value != null) {
             Row(verticalAlignment = Alignment.Bottom) {
-                Text(value, style = PawseType.NumeralSmall)
+                Text(value, style = PawseType.Numeral)
                 if (suffix.isNotEmpty()) {
                     Text(
                         suffix,
@@ -1134,6 +1081,60 @@ private fun FormCard(snapshot: ScoringSnapshot, onClick: () -> Unit, modifier: M
                 max = null,
                 modifier = Modifier.fillMaxWidth().height(36.dp),
             )
+        }
+    }
+}
+
+/**
+ * Last night's five overnight readings, each against your usual range: the same
+ * stored figures and bands as the Sleep tab. All grey, because none is a grade.
+ */
+@Composable
+private fun VitalsCard(snapshot: ScoringSnapshot, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val night = snapshot.rows(1).single()
+    if (night.rec == null) return
+    val grey = MaterialTheme.colorScheme.onSurfaceVariant
+    PawseCard(modifier = modifier, onClick = onClick) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(tr("Last night’s vitals", "지난밤 생체 신호"), style = PawseType.Label, color = grey, modifier = Modifier.weight(1f))
+            Glyph(Glyphs.ChevronRight, size = 16.dp, color = grey)
+        }
+        Spacer(Modifier.height(12.dp))
+        Row {
+            listOf(
+                Triple(NightFigure.HRV, Glyphs.Recovery, "HRV"),
+                Triple(NightFigure.HR, Glyphs.Heart, tr("Heart", "심박")),
+                Triple(NightFigure.SPO2, Glyphs.Drop, "SpO₂"),
+                Triple(NightFigure.BR, Glyphs.Breath, tr("Breath", "호흡")),
+                Triple(NightFigure.TEMP, Glyphs.Thermometer, tr("Temp", "온도")),
+            ).forEach { (figure, glyph, name) ->
+                val value = figure.of(night)
+                val usual = snapshot.usual(figure::of)
+                // Inside the band the trend shades, or which side of it.
+                val word = when {
+                    value == null || usual == null -> ""
+                    value > usual.hi -> tr("High", "높음")
+                    value < usual.lo -> tr("Low", "낮음")
+                    else -> tr("Usual", "평소")
+                }
+                // The number alone: the name above says what it is, and Korean units carry no space.
+                val shown = value?.let { figure.text(it).takeWhile { c -> c.isDigit() || c in "+−-.," } } ?: "—"
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .semantics(mergeDescendants = true) {
+                            contentDescription = "${figure.title()} ${value?.let(figure::text) ?: tr("not recorded", "기록 없음")}" +
+                                (if (word.isNotEmpty()) ", $word" else "")
+                        },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Glyph(glyph, size = 16.dp, strokeWidth = 2f, color = grey)
+                    Spacer(Modifier.height(4.dp))
+                    Text(name, style = PawseType.Label, color = grey, maxLines = 1)
+                    Text(shown, style = PawseType.MetricValue, maxLines = 1, color = if (value != null) MaterialTheme.colorScheme.onSurface else grey)
+                    Text(word, style = PawseType.Label, color = grey, maxLines = 1)
+                }
+            }
         }
     }
 }
@@ -1233,7 +1234,7 @@ private fun Pill(text: String, selected: Boolean, onClick: () -> Unit, modifier:
                 if (selected) {
                     Modifier.background(MaterialTheme.colorScheme.onSurface, RoundedCornerShape(12.dp))
                 } else {
-                    Modifier.cardSurface(RoundedCornerShape(12.dp), 12.dp)
+                    Modifier.cardSurface(RoundedCornerShape(12.dp))
                 },
             )
             .padding(horizontal = 14.dp),

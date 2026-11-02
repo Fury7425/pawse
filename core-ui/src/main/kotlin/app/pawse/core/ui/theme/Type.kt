@@ -50,45 +50,49 @@ private fun style(size: Int, line: Int, weight: FontWeight, tracking: Double = 0
  */
 private val NumeralWeight = FontWeight(250)
 
+/**
+ * Nine sizes, a 12 sp floor. Large type is tracked about -2.5%, never tighter, so
+ * light numerals keep their counters open.
+ */
 object PawseType {
 
-    /** The one hero numeral on a screen: a day's kcal, a weight. */
-    val Hero = style(84, 88, NumeralWeight, -4.0).copy(lineHeightStyle = tightLineHeight)
+    /** The one hero numeral on a screen: a day's kcal, a weight trend. */
+    val Hero = style(64, 68, NumeralWeight, -1.6).copy(lineHeightStyle = tightLineHeight)
 
-    /** Numerals inside a large ring, a portion's kcal, a BMR. */
-    val Numeral = style(36, 44, NumeralWeight, -1.44)
+    /** The ring numeral on a detail page. */
+    val RingXL = style(56, 60, NumeralWeight, -1.4).copy(lineHeightStyle = tightLineHeight)
 
-    /** Numerals on an "Also today" card. */
-    val NumeralSmall = style(32, 40, NumeralWeight, -1.2)
+    /** Numerals inside a large ring, a portion's kcal, a bedtime, a card's figure. */
+    val Numeral = style(36, 44, NumeralWeight, -0.9)
 
     /** Numerals inside a small ring. */
-    val RingSmall = style(26, 30, NumeralWeight, -1.04)
+    val RingSmall = style(24, 28, NumeralWeight, -0.5)
 
-    /** Onboarding's one big heading. */
-    val Display = style(32, 40, FontWeight.Medium, -0.8)
+    /** The one sentence of guidance: smaller than v2 so Body leads, full contrast. */
+    val Guidance = style(22, 28, FontWeight.Normal, -0.3)
 
-    /** Today's warm line: larger and lighter than a title, so it reads as a sentence. */
-    val Guidance = style(28, 34, FontWeight.Normal, -0.6)
+    /** Screen titles, and first run's one heading. */
+    val Title = style(24, 32, FontWeight.Medium, -0.5)
 
-    /** Screen titles. */
-    val Title = style(24, 32, FontWeight.Medium, -0.48)
-
-    /** Section heads, dates, product names. */
+    /** Section heads, names, dates, metric values. */
     val Heading = style(16, 24, FontWeight.Medium)
+
+    /** Metric values folded into [Heading]; kept as a name so call sites read as what they show. */
+    val MetricValue = Heading
 
     val Body = style(14, 20, FontWeight.Normal)
 
     /** Button and tab labels. */
     val BodyStrong = style(14, 20, FontWeight.Medium)
 
-    /** Secondary numerals: a metric's raw value on a baseline row. */
-    val MetricValue = style(17, 22, FontWeight.Medium)
-
     /** Signed point contribution: -7, +3. */
     val Delta = style(14, 18, FontWeight.SemiBold)
 
-    /** Dense labels. Metric names, units, coverage. */
+    /** Secondary labels. Metric names, units, coverage. */
     val Label = style(13, 18, FontWeight.Normal)
+
+    /** Sync lines, captions, axis labels: the floor. */
+    val Micro = style(12, 16, FontWeight.Normal, 0.2)
 }
 
 /**
@@ -100,7 +104,7 @@ val PawseTypography = Typography().run {
         displayLarge = displayLarge.copy(fontFamily = PawseFontFamily, fontWeight = NumeralWeight, fontFeatureSettings = TABULAR),
         displayMedium = displayMedium.copy(fontFamily = PawseFontFamily, fontWeight = NumeralWeight, fontFeatureSettings = TABULAR),
         displaySmall = PawseType.Numeral,
-        headlineLarge = PawseType.Display,
+        headlineLarge = PawseType.Title,
         headlineMedium = PawseType.Title,
         headlineSmall = PawseType.Title,
         titleLarge = PawseType.Title,

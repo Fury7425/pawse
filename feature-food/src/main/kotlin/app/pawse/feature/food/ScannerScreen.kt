@@ -411,7 +411,7 @@ private fun ScanStatePanel(
                     Box(
                         Modifier
                             .size(width = 72.dp, height = 40.dp)
-                            .cardSurface(RoundedCornerShape(12.dp), 12.dp),
+                            .cardSurface(RoundedCornerShape(12.dp)),
                         contentAlignment = Alignment.Center,
                     ) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -176,8 +176,8 @@ data class LoadConfig(
     val fitnessDays: Double = 42.0,
     val fatigueDays: Double = 7.0,
     val seedDays: Int = 14,
-    /** Form above this reads as fresh... */
-    val freshAbove: Double = -0.10,
+    /** Form above this reads as fresh (v2.5: the design's +5%, which people see)... */
+    val freshAbove: Double = 0.05,
     /** ...below this as heavy. Never labelled as injury risk. */
     val heavyBelow: Double = -0.30,
     /** Typical training day: median of non-zero days over this window. */
@@ -231,6 +231,144 @@ data class LearningConfig(
     val curveUnitsPerCheckInPoint: Double = 0.1,
 )
 
+/** v2.5 Energy: burned so far, burned by bedtime, and the weekly weight check k. */
+@Serializable
+data class EnergyBalanceConfig(
+    /** Energy spent digesting food, a common default. */
+    val digestionShare: Double = 0.10,
+    /** Rough body-tissue energy per kg. A default, not a measured value. */
+    val kcalPerKg: Double = 7700.0,
+    val checkWindowDays: Int = 28,
+    /** k stays 1 until there are this many fully logged days... */
+    val minLoggedDays: Int = 14,
+    /** ...and this many weigh-ins in the window. */
+    val minWeighIns: Int = 8,
+    /** A day counts as fully logged with this many meals and not marked incomplete. */
+    val minMeals: Int = 2,
+    /** Days of prior pulling k toward 1. */
+    val priorDays: Double = 14.0,
+    val kMin: Double = 0.85,
+    val kMax: Double = 1.15,
+    /** Shown figures round to this many kcal. */
+    val roundKcal: Int = 10,
+)
+
+/** v2.5 Weight: the gap-aware trend, the goal estimate and composition's usual. */
+@Serializable
+data class WeightConfig(
+    /** alpha = 1 - keep^dt: 0.1 a day with daily weigh-ins, the design's rule. */
+    val trendKeep: Double = 0.9,
+    /** Composition moves slower than weight. */
+    val compositionKeep: Double = 0.95,
+    /** A reading this far from the trend, or this far from your usual hour, counts at half weight. */
+    val oddShare: Double = 0.025,
+    val oddHours: Double = 4.0,
+    val goalWindowDays: Int = 28,
+    val goalMinDays: Int = 21,
+    val goalMinWeighIns: Int = 8,
+    /** Below this pace toward the goal there is no clear trend. */
+    val goalMinKgPerWeek: Double = 0.05,
+    val weeksPerMonth: Double = 4.35,
+    /** Faster than this share of body weight a week, for [paceWeeks], stops the projection. */
+    val paceShare: Double = 0.01,
+    val paceWeeks: Int = 3,
+    val usualDays: Int = 60,
+    val usualMinReadings: Int = 4,
+)
+
+/** v2.5 Cardio fitness: a slow filter on VO2max, then fitness age from a reference curve. */
+@Serializable
+data class FitnessConfig(
+    /** sigma_v as a share of each watch reading. A default. */
+    val readingNoiseShare: Double = 0.12,
+    /** sigma_w, mL/kg/min per sqrt(day). A default. */
+    val driftPerSqrtDay: Double = 0.2,
+    /** The fitness-age range runs at VO2max +/- at least this. */
+    val minSpread: Double = 3.0,
+    val minReadings: Int = 2,
+    val minSpanDays: Int = 14,
+    val minAge: Double = 20.0,
+    val maxAge: Double = 85.0,
+    /** Uth et al. 2004 heart-rate ratio, only without a watch VO2max. Approximate. */
+    val hrRatioFactor: Double = 15.3,
+    /** FRIEND registry medians by decade midpoint (Kaminsky 2015), mL/kg/min. Swappable. */
+    val referenceAges: List<Double> = listOf(25.0, 35.0, 45.0, 55.0, 65.0, 75.0),
+    val referenceMen: List<Double> = listOf(48.0, 42.4, 37.8, 32.6, 28.2, 24.4),
+    val referenceWomen: List<Double> = listOf(37.6, 30.2, 26.7, 23.4, 20.0, 18.3),
+)
+
+/** v2.5 Load points: TRIMP scaled so your own typical active day is 10. */
+@Serializable
+data class PointsConfig(
+    val pointsAtReference: Double = 10.0,
+    val referenceDays: Int = 60,
+    /** A day with a session at least this long counts as active. */
+    val activeSessionMinutes: Double = 10.0,
+    val minActiveDays: Int = 10,
+    /** Roughly a 45-minute moderate session, until there are active days. */
+    val defaultReference: Double = 60.0,
+    /** r = round(5 + Body / 20), range r to r + 5. */
+    val rangeBase: Double = 5.0,
+    val rangeBodyDivisor: Double = 20.0,
+    val rangeWidth: Int = 5,
+    /** With the illness alert, or Strained twice running, the range drops to 0 to this. */
+    val restHigh: Int = 5,
+    /** The ring's track runs to this many points. */
+    val ringPoints: Int = 16,
+    /** Walking counts by cadence when heart rate covers less than this share of its minutes. */
+    val hrCoverage: Double = 0.70,
+    val moderateCadence: Double = 100.0,
+    val vigorousCadence: Double = 130.0,
+    /** Assumed heart-rate reserve per cadence band. Defaults. */
+    val moderateReserve: Double = 0.45,
+    val vigorousReserve: Double = 0.65,
+)
+
+/** v2.5 Moving today: steps and active energy against your usual by this time since waking. */
+@Serializable
+data class MovingConfig(
+    val windowDays: Int = 28,
+    /** Fewer days of today's type than this, and all days in the window are used. */
+    val minSameType: Int = 8,
+    /** Fewer days than this reads "Learning your usual". */
+    val minDays: Int = 7,
+    val lowQuantile: Double = 0.25,
+    val highQuantile: Double = 0.75,
+)
+
+/** v2.5 Sleep need that moves: tonight's need, bedtime and wind-down. */
+@Serializable
+data class TonightConfig(
+    val minutesPerPoint: Double = 4.0,
+    val maxLoadMinutes: Double = 30.0,
+    val illnessMinutes: Double = 30.0,
+    val napMinMinutes: Double = 20.0,
+    val napCreditShare: Double = 0.5,
+    val napMaxCreditMinutes: Double = 30.0,
+    /** Tonight's need never goes more than this above the base need. */
+    val maxAboveNeedMinutes: Double = 45.0,
+    val windDownMinutes: Double = 50.0,
+    val typicalPointsDays: Int = 28,
+    val latencyNights: Int = 14,
+)
+
+/** v2.5 Attention: what Pawse points out and what it says. */
+@Serializable
+data class AttentionConfig(
+    /** HRV and sleeping HR are worth knowing past this robust z... */
+    val signalZ: Double = 1.5,
+    /** ...or past this two mornings running. */
+    val signalRunZ: Double = 1.0,
+    /** Unscored vitals only past this. */
+    val vitalZ: Double = 2.0,
+    val maxItems: Int = 2,
+    val weeklyZ: Double = 0.5,
+    val weeklyItems: Int = 2,
+    val weeklyHistoryWeeks: Int = 12,
+    /** Until this many weeks, s is half the daily SD. */
+    val weeklyMinWeeks: Int = 6,
+)
+
 @Serializable
 data class ScoringConfig(
     val baseline: BaselineConfig = BaselineConfig(),
@@ -241,10 +379,17 @@ data class ScoringConfig(
     val load: LoadConfig = LoadConfig(),
     val context: ContextConfig = ContextConfig(),
     val learning: LearningConfig = LearningConfig(),
+    val balance: EnergyBalanceConfig = EnergyBalanceConfig(),
+    val weight: WeightConfig = WeightConfig(),
+    val fitness: FitnessConfig = FitnessConfig(),
+    val points: PointsConfig = PointsConfig(),
+    val moving: MovingConfig = MovingConfig(),
+    val tonight: TonightConfig = TonightConfig(),
+    val attention: AttentionConfig = AttentionConfig(),
 ) {
     companion object {
         /** Bumped whenever engine *structure* changes, independent of default edits. */
-        const val SCORING_VERSION: String = "2.0.0"
+        const val SCORING_VERSION: String = "2.5.0"
 
         private val json = Json { prettyPrint = false; encodeDefaults = true }
 

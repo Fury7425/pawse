@@ -253,7 +253,7 @@ private fun Explain(onContinue: () -> Unit) {
             Text("Pawse", style = PawseType.Heading)
 
             Spacer(Modifier.height(28.dp))
-            Text(tr("What this reads", "읽는 데이터"), style = PawseType.Display)
+            Text(tr("What this reads", "읽는 데이터"), style = PawseType.Title)
             Spacer(Modifier.height(8.dp))
             Text(
                 tr(
@@ -326,7 +326,7 @@ private fun Report(report: CapabilityReport, error: String?, onContinue: () -> U
         ) {
             Steps(done = 3)
             Spacer(Modifier.height(32.dp))
-            Text(tr("What we can measure", "측정할 수 있는 것"), style = PawseType.Display)
+            Text(tr("What we can measure", "측정할 수 있는 것"), style = PawseType.Title)
             Spacer(Modifier.height(8.dp))
             Text(
                 tr(

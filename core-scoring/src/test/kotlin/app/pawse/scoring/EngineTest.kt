@@ -207,7 +207,8 @@ class EngineTest {
         val config = LoadConfig()
         TrainingLoad.range(100.0, 50, config) shouldBe (75.0 to 125.0)
         TrainingLoad.range(100.0, 80, config).first shouldBe (97.5 plusOrMinus 1e-9)
-        TrainingLoad.formBand(-0.05, config) shouldBe FormBand.FRESH
+        TrainingLoad.formBand(0.08, config) shouldBe FormBand.FRESH
+        TrainingLoad.formBand(-0.05, config) shouldBe FormBand.PRODUCTIVE
         TrainingLoad.formBand(-0.2, config) shouldBe FormBand.PRODUCTIVE
         TrainingLoad.formBand(-0.4, config) shouldBe FormBand.HEAVY
     }

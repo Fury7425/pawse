@@ -79,6 +79,7 @@ import app.pawse.core.ui.component.swapIn
 import app.pawse.core.ui.theme.PawseTheme
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.scoring.config.ScoringConfig
+import app.pawse.scoring.math.Stats
 import app.pawse.scoring.model.DayReport
 import app.pawse.scoring.model.IllnessLevel
 import app.pawse.scoring.model.Metric
@@ -99,10 +100,12 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
-import kotlin.math.sqrt
 
 /** A figure on the Sleep tab, and the trend it opens in place. */
-internal enum class NightFigure { ASLEEP, TIMING, SCORE, BODY, HR, HRV, SPO2, BR, TEMP }
+internal enum class NightFigure { ASLEEP, TIMING, SCORE, BODY, HR, HRV, SPO2, BR, TEMP, EFFICIENCY, DEEP_REM }
+
+/** Figures in minutes, written as durations rather than a number and a unit. */
+private val NightFigure.duration: Boolean get() = this == NightFigure.ASLEEP || this == NightFigure.DEEP_REM
 
 private val RANGES = listOf(7, 30, 90)
 
@@ -110,8 +113,8 @@ private val RANGES = listOf(7, 30, 90)
 private const val USUAL_END = 67
 private const val USUAL_NIGHTS = 60
 
-private val Big56 = PawseType.Hero.copy(fontSize = 56.sp, lineHeight = 64.sp, letterSpacing = (-2).sp)
-private val Big44 = PawseType.Hero.copy(fontSize = 44.sp, lineHeight = 52.sp, letterSpacing = (-1.5).sp)
+private val Big56 = PawseType.RingXL
+private val Big44 = PawseType.Hero.copy(fontSize = 44.sp, lineHeight = 52.sp, letterSpacing = (-1.1).sp)
 private val Figure15 = PawseType.BodyStrong.copy(fontSize = 15.sp, lineHeight = 20.sp)
 
 /**
@@ -225,6 +228,7 @@ private fun NightPage(
             value = (sleep?.wasoMinutes ?: night.wasoMinutes)?.let(::dur) ?: "—",
             sub = wakeUps(night.awakenings),
             modifier = Modifier.weight(1f),
+            onClick = { onOpen(NightFigure.EFFICIENCY) },
         )
     }
 
@@ -288,6 +292,7 @@ private fun NightPage(
             ),
             Modifier.padding(top = 10.dp),
         )
+        LinkCard(tr("Deep and REM, night by night", "깊은 잠과 렘수면, 밤마다"), Modifier.padding(top = 12.dp)) { onOpen(NightFigure.DEEP_REM) }
     } else {
         Note(
             tr(
@@ -393,7 +398,7 @@ private fun MiniCard(label: String, value: String, sub: String, modifier: Modifi
         modifier
             .fillMaxHeight()
             .then(if (onClick != null) Modifier.pressable(onClick = onClick) else Modifier)
-            .cardSurface(RoundedCornerShape(14.dp), 14.dp)
+            .cardSurface(RoundedCornerShape(14.dp))
             .padding(12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -752,7 +757,7 @@ private fun FedInto(row: NightRow, rec: NightRecord, latest: Boolean, onOpen: (N
     PawseCard(onClick = { onOpen(NightFigure.SCORE) }) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(tr("Sleep score", "수면 점수"), style = PawseType.BodyStrong, modifier = Modifier.weight(1f))
-            Text(sleep?.score?.toString() ?: "—", style = PawseType.NumeralSmall)
+            Text(sleep?.score?.toString() ?: "—", style = PawseType.Numeral)
             Spacer(Modifier.width(8.dp))
             Glyph(Glyphs.ChevronRight, size = 16.dp, color = grey)
         }
@@ -890,7 +895,7 @@ private fun Trend(
                         Modifier
                             .weight(1f)
                             .fillMaxHeight()
-                            .cardSurface(RoundedCornerShape(14.dp), 14.dp)
+                            .cardSurface(RoundedCornerShape(14.dp))
                             .padding(horizontal = 14.dp, vertical = 12.dp),
                     ) {
                         Text(stat.key, style = PawseType.Label, color = grey)
@@ -954,6 +959,11 @@ internal fun TrendChart(
             frac = { ((it - 1260.0) / 840.0).toFloat() }
             listOfNotNull(usual, wakeUsual).forEach { bands += it.lo to it.hi }
             labels = listOf(1320, 1560, 1800, 2040).map { ScoreCopy.minuteOfDay(it) to it.toDouble() }
+        }
+        NightFigure.DEEP_REM -> {
+            frac = { (1 - it.coerceAtMost(300.0) / 300.0).toFloat() }
+            usual?.let { bands += it.lo to it.hi }
+            labels = listOf(240.0, 120.0).map { tr("${(it / 60).toInt()} h", "${(it / 60).toInt()}시간") to it }
         }
         else -> {
             val band = if (figure == NightFigure.BODY) 31.0 to 69.0 else usual?.let { it.lo to it.hi }
@@ -1186,23 +1196,26 @@ internal fun NightFigure.of(r: NightRow): Double? = when (this) {
     NightFigure.SPO2 -> r.rec?.signals?.spo2
     NightFigure.BR -> r.rec?.signals?.breathingRate
     NightFigure.TEMP -> r.rec?.signals?.skinTempDelta
+    NightFigure.EFFICIENCY -> r.rec?.sleep?.efficiencyPercent
+    // Nights written without stages are left out rather than read as none.
+    NightFigure.DEEP_REM -> r.rec?.sleep?.takeIf { it.hasStages }?.let { (it.deepMinutes ?: 0.0) + (it.remMinutes ?: 0.0) }
 }
 
 /**
- * Your usual for a figure, mean ± one SD over the 60 nights ending a week ago.
+ * Your usual for a figure over the 60 nights ending a week ago. Drawn as a ±1 SD
+ * band, but worked out as median ± 1.4826 × MAD so one sick week cannot widen it.
  * Display statistics over stored figures, not a score: nothing here feeds a number
  * the engine printed.
  */
-internal class Usual(val mean: Double, val sd: Double, val nights: Int) {
-    val lo: Double get() = mean - sd
-    val hi: Double get() = mean + sd
+internal class Usual(val mid: Double, val sd: Double, val nights: Int) {
+    val lo: Double get() = mid - sd
+    val hi: Double get() = mid + sd
 }
 
 internal fun ScoringSnapshot.usual(get: (NightRow) -> Double?): Usual? {
     val xs = rows(USUAL_END).take(USUAL_NIGHTS).mapNotNull(get)
     if (xs.size < 2) return null
-    val m = xs.average()
-    return Usual(m, sqrt(xs.sumOf { (it - m) * (it - m) } / xs.size), xs.size)
+    return Usual(Stats.median(xs)!!, Stats.robustSpread(xs)!!, xs.size)
 }
 
 private fun ScoringSnapshot.wakeUsual(): Usual? =
@@ -1258,7 +1271,7 @@ private fun readingOf(figure: NightFigure, row: NightRow, usual: Usual?, need: D
         else -> figure.of(row)?.let { v ->
             val text = figure.text(v)
             val note = usual?.let { u ->
-                val d = v - u.mean
+                val d = v - u.mid
                 val size = if (figure == NightFigure.TEMP) String.format(Locale.getDefault(), "%.2f °C", abs(d)) else figure.text(abs(d))
                 when {
                     abs(d) < 0.4 * u.sd -> tr("About your usual.", "평소와 비슷해요.")
@@ -1266,7 +1279,7 @@ private fun readingOf(figure: NightFigure, row: NightRow, usual: Usual?, need: D
                     else -> tr("$size below your usual.", "평소보다 $size 낮아요.")
                 } + tr(" Usually ${span(figure, u)}.", " 평소 범위는 ${span(figure, u)}예요.")
             } ?: tr("Your usual needs more nights.", "평소 범위를 잡으려면 밤이 더 필요해요.")
-            Reading(text.substringBefore(' '), text.substringAfter(' ', ""), note)
+            if (figure.duration) Reading(text, "", note) else Reading(text.substringBefore(' '), text.substringAfter(' ', ""), note)
         }
     }
     return reading ?: Reading("—", "", tr("Not recorded. Nothing came in from your watch that night.", "기록 없음. 그날 밤 시계에서 들어온 기록이 없어요."))
@@ -1296,11 +1309,22 @@ private fun statsOf(snapshot: ScoringSnapshot, figure: NightFigure, rows: List<N
         )
     }
     val recorded = known.map { vals[it]!! }
+    val n = rows.size
+    // The same number of nights just before, when at least half of them were recorded.
+    val before = snapshot.rows(2 * n).take(n).mapNotNull(figure::of).takeIf { it.size >= 2 && 2 * it.size >= n }
+    val change = before?.takeIf { recorded.isNotEmpty() }?.let { recorded.average() - it.average() }?.let { d ->
+        // The trend's own "about your usual" rule, so the two never disagree.
+        if (abs(d) < 0.4 * (usual?.sd ?: 0.0)) {
+            tr("About the same as the $n before.", "이전 ${n}밤과 비슷해요.")
+        } else {
+            tr("${figure.change(d)} on the $n before.", "이전 ${n}밤보다 ${figure.change(d)}.")
+        }
+    }
     return listOf(
         Stat(
             tr("Average", "평균"),
             recorded.takeIf { it.isNotEmpty() }?.average()?.let { figure.text(it) } ?: "—",
-            tr("${recorded.size} of ${rows.size} nights recorded", "${rows.size}밤 중 ${recorded.size}밤 기록"),
+            tr("${recorded.size} of $n nights recorded", "${n}밤 중 ${recorded.size}밤 기록") + (change?.let { "\n$it" } ?: ""),
         ),
         if (figure == NightFigure.BODY) {
             Stat(tr("Your usual", "내 평소"), tr("31–69 Typical", "31–69 평소 수준"), tr("Inside your own normal", "내 평소 범위 안"))
@@ -1311,9 +1335,16 @@ private fun statsOf(snapshot: ScoringSnapshot, figure: NightFigure, rows: List<N
                 usual?.let { tr("From ${it.nights} nights", "${it.nights}밤 기준") } ?: tr("Needs more nights", "밤이 더 필요해요"),
             )
         },
-        extreme(iHi, if (figure == NightFigure.ASLEEP) tr("Longest", "가장 길게") else tr("Highest", "가장 높음")),
-        extreme(iLo, if (figure == NightFigure.ASLEEP) tr("Shortest", "가장 짧게") else tr("Lowest", "가장 낮음")),
+        extreme(iHi, if (figure.duration) tr("Longest", "가장 길게") else tr("Highest", "가장 높음")),
+        extreme(iLo, if (figure.duration) tr("Shortest", "가장 짧게") else tr("Lowest", "가장 낮음")),
     )
+}
+
+/** A difference in the figure's own unit, signed: "+18 min", "−3 bpm". */
+private fun NightFigure.change(d: Double): String {
+    if (this == NightFigure.TEMP) return text(d)
+    val sign = if (d < 0) "−" else "+"
+    return sign + if (duration) dur(abs(d)) else text(abs(d))
 }
 
 // --- Words and numbers -----------------------------------------------------------
@@ -1327,19 +1358,21 @@ internal fun NightFigure.text(v: Double): String = when (this) {
     NightFigure.SPO2 -> ScoreCopy.formatRaw(Metric.SPO2, v)
     NightFigure.BR -> ScoreCopy.formatRaw(Metric.RESPIRATORY_RATE, v)
     NightFigure.TEMP -> ScoreCopy.formatRaw(Metric.SKIN_TEMPERATURE, v)
+    NightFigure.EFFICIENCY -> "${v.roundToInt()}%"
+    NightFigure.DEEP_REM -> dur(v)
 }
 
 /** A figure without its unit, for axis labels and ranges. */
 private fun bare(text: String): String = text.substringBefore(' ').removeSuffix("%")
 
 internal fun span(figure: NightFigure, u: Usual): String =
-    if (figure == NightFigure.ASLEEP) {
+    if (figure.duration) {
         "${hm(u.lo)}–${hm(u.hi)}"
     } else {
         bare(figure.text(u.lo)) + (if (u.lo < 0) tr(" to ", " ~ ") else "–") + figure.text(u.hi)
     }
 
-private fun NightFigure.title(): String = when (this) {
+internal fun NightFigure.title(): String = when (this) {
     NightFigure.ASLEEP -> tr("Time asleep", "수면 시간")
     NightFigure.TIMING -> tr("Bedtime and wake", "취침과 기상")
     NightFigure.SCORE -> tr("Sleep score", "수면 점수")
@@ -1349,6 +1382,8 @@ private fun NightFigure.title(): String = when (this) {
     NightFigure.SPO2 -> tr("Blood oxygen", "혈중 산소")
     NightFigure.BR -> tr("Breathing rate", "호흡수")
     NightFigure.TEMP -> tr("Skin temperature", "피부 온도")
+    NightFigure.EFFICIENCY -> tr("Sleep efficiency", "수면 효율")
+    NightFigure.DEEP_REM -> tr("Deep and REM", "깊은 잠과 렘수면")
 }
 
 private fun NightFigure.lead(): String = when (this) {
@@ -1421,6 +1456,22 @@ private fun NightFigure.about(): String {
                 "several nights is one of the detector’s signs. Your cycle moves it too.",
             "기기는 자체 기준 대비 피부 온도를 기록해요. 이 값은 그 밤의 평균이에요. 며칠 밤 이어지는 상승은 감지기가 " +
                 "살피는 신호 중 하나이며, 생리 주기도 영향을 줘요.",
+        )
+        NightFigure.EFFICIENCY -> tr(
+            "The share of your time in bed spent asleep, lights out to final wake. It is half of the Sleep score’s " +
+                "continuity part, against ${sleep.efficiencyTargetPercent.roundToInt()}%. A low night is usually a long time " +
+                "falling asleep or a long wake in the night; the Awake card says which.",
+            "누운 시간 중 실제로 잠든 시간의 비율로, 불 끈 시각부터 마지막으로 깬 시각까지예요. 수면 점수 연속성 항목의 " +
+                "절반이며 기준은 ${sleep.efficiencyTargetPercent.roundToInt()}%예요. 낮은 밤은 대개 잠들기까지 오래 걸렸거나 " +
+                "밤사이 오래 깨어 있었던 경우예요. 어느 쪽인지는 ‘깬 시간’ 카드에서 볼 수 있어요.",
+        )
+        NightFigure.DEEP_REM -> tr(
+            "Deep and REM sleep added together, from your watch’s stages, against your own usual rather than a target. " +
+                "Shown, never scored: wrist staging is the least reliable thing a watch measures, so read it over weeks, " +
+                "not one night. Nights written without stages are left out.",
+            "시계가 기록한 수면 단계 중 깊은 잠과 렘수면을 더한 값이며, 정해진 목표가 아니라 내 평소와 비교해요. " +
+                "보여주기만 하고 점수에는 넣지 않아요. 손목으로 재는 수면 단계는 시계가 측정하는 것 중 가장 부정확하니 " +
+                "하룻밤보다 몇 주의 흐름으로 보세요. 단계 없이 기록된 밤은 빼요.",
         )
     }
 }
