@@ -109,7 +109,7 @@ fun BodyScreen(
                         Modifier
                             .height(44.dp)
                             .pressable(onClick = onAddWeighIn)
-                            .cardSurface(RoundedCornerShape(22.dp), 22.dp)
+                            .cardSurface(RoundedCornerShape(22.dp))
                             .padding(start = 10.dp, end = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {

@@ -216,7 +216,7 @@ private fun DateStrip(snapshot: ScoringSnapshot, type: ScoreType, back: Int, onP
                     .weight(1f)
                     .height(72.dp)
                     .pressable(role = Role.Tab) { onPick(d) }
-                    .then(if (picked) Modifier.cardSurface(RoundedCornerShape(12.dp), 12.dp) else Modifier)
+                    .then(if (picked) Modifier.cardSurface(RoundedCornerShape(12.dp)) else Modifier)
                     .semantics { selected = picked }
                     .padding(top = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,

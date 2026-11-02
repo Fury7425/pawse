@@ -13,6 +13,8 @@ import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -77,6 +79,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.KeyboardType
@@ -174,31 +177,16 @@ fun Modifier.pressable(enabled: Boolean = true, role: Role = Role.Button, onClic
 }
 
 /**
- * A card: its fill lit softly from above, the hairline, the one-pixel highlight
- * along its top edge, and one deep shadow under it. Bedside drops the light and
- * the shadow.
+ * A card: one fill step up from the page, lit softly from above, and one hairline.
+ * Depth comes from lightness, not lines and shadows: shadows are kept for things
+ * that float. Bedside drops the light.
  */
 @Composable
-fun Modifier.cardSurface(shape: Shape = RoundedCornerShape(16.dp), radius: Dp = 16.dp): Modifier {
-    val semantics = PawseTheme.semantics
-    val highlight = semantics.highlight
-    return this
-        .then(
-            if (semantics.cardShadow.alpha > 0f) {
-                Modifier.shadow(10.dp, shape, clip = false, ambientColor = semantics.cardShadow, spotColor = semantics.cardShadow)
-            } else {
-                Modifier
-            },
-        )
-        .clip(shape)
-        .background(MaterialTheme.colorScheme.surfaceContainer)
-        .background(Brush.verticalGradient(0f to semantics.sheen, 0.64f to Color.Transparent))
-        .drawBehind {
-            val inset = radius.toPx()
-            drawLine(highlight, Offset(inset, 1.5f), Offset(size.width - inset, 1.5f), strokeWidth = 1.dp.toPx())
-        }
-        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
-}
+fun Modifier.cardSurface(shape: Shape = RoundedCornerShape(16.dp)): Modifier = this
+    .clip(shape)
+    .background(MaterialTheme.colorScheme.surfaceContainer)
+    .background(Brush.verticalGradient(0f to PawseTheme.semantics.sheen, 0.64f to Color.Transparent))
+    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
 
 @Composable
 fun PawseCard(
@@ -224,14 +212,14 @@ fun ctaBrush(): Brush {
     return Brush.verticalGradient(listOf(lerp(on, Color.White, 0.12f), lerp(on, Color.Black, 0.10f)))
 }
 
-/** The pill everything important ends on. */
+/** The pill everything important ends on. 48 in content, 56-64 as a bottom action; its label says the result. */
 @Composable
 fun PrimaryButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    height: Dp = 52.dp,
+    height: Dp = 48.dp,
     elevated: Boolean = false,
 ) {
     Box(
@@ -254,12 +242,13 @@ fun PrimaryButton(
     }
 }
 
+/** The raised graphite pill: a control on a card, one step lighter than it. */
 @Composable
 fun SecondaryButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    height: Dp = 52.dp,
+    height: Dp = 48.dp,
     glyph: String? = null,
     radius: Dp = height / 2,
     textStyle: TextStyle = PawseType.Heading,
@@ -268,7 +257,7 @@ fun SecondaryButton(
         modifier = modifier
             .height(height)
             .pressable(onClick = onClick)
-            .cardSurface(RoundedCornerShape(radius), radius),
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(radius)),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -291,7 +280,7 @@ fun GhostButton(
     Row(
         modifier = modifier
             .offset(x = (-12).dp)
-            .height(44.dp)
+            .height(48.dp)
             .clip(RoundedCornerShape(12.dp))
             .pressable(onClick = onClick)
             .padding(horizontal = 12.dp),
@@ -305,7 +294,7 @@ fun GhostButton(
     }
 }
 
-/** A 44 dp icon-only button. The description is required: it is the button's name. */
+/** A 48 dp icon-only button. The description is required: it is the button's name. */
 @Composable
 fun GlyphButton(
     glyph: String,
@@ -315,8 +304,8 @@ fun GlyphButton(
 ) {
     Box(
         modifier = modifier
-            .size(44.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .size(48.dp)
+            .clip(CircleShape)
             .pressable(onClick = onClick)
             .semantics { this.contentDescription = contentDescription },
         contentAlignment = Alignment.Center,
@@ -331,7 +320,7 @@ fun BackLink(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) 
     Row(
         modifier = modifier
             .offset(x = (-10).dp)
-            .height(44.dp)
+            .height(48.dp)
             .clip(RoundedCornerShape(12.dp))
             .pressable(onClick = onClick)
             .padding(start = 6.dp, end = 14.dp),
@@ -343,7 +332,11 @@ fun BackLink(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) 
     }
 }
 
-/** A segmented control whose selection slides rather than jumps. */
+/**
+ * A segmented control whose selection slides rather than jumps: the track fill, a
+ * thumb one step lighter with a hairline, 240 ms. Thumb radius is the track's 12
+ * less its 4 padding.
+ */
 @Composable
 fun <T> Segmented(
     options: List<T>,
@@ -355,12 +348,12 @@ fun <T> Segmented(
     glyph: ((T) -> String)? = null,
 ) {
     val index = options.indexOf(selected)
-    val thumb = MaterialTheme.colorScheme.surfaceContainerHigh
-    val thumbLine = MaterialTheme.colorScheme.outline
+    val thumb = PawseTheme.semantics.segmentThumb
+    val thumbLine = MaterialTheme.colorScheme.outlineVariant
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .cardSurface(RoundedCornerShape(12.dp), 12.dp)
+            .background(PawseTheme.semantics.baselineOuter, RoundedCornerShape(12.dp))
             .padding(4.dp),
     ) {
         val segment = maxWidth / options.size
@@ -371,8 +364,8 @@ fun <T> Segmented(
                     .offset(x = offset)
                     .width(segment)
                     .height(height)
-                    .background(thumb, RoundedCornerShape(9.dp))
-                    .border(1.dp, thumbLine, RoundedCornerShape(9.dp)),
+                    .background(thumb, RoundedCornerShape(8.dp))
+                    .border(1.dp, thumbLine, RoundedCornerShape(8.dp)),
             )
         }
         Row {
@@ -407,7 +400,10 @@ fun <T> Segmented(
     }
 }
 
-/** Equal-width choices; the chosen one inverts. For meals, sexes, quick amounts. */
+/**
+ * Equal-width choices; the chosen one takes the selection fill, 160 ms. The one
+ * selection recipe, for meals, sexes, quick amounts and the check-in.
+ */
 @Composable
 fun <T> ChoiceRow(
     options: List<T>,
@@ -416,29 +412,30 @@ fun <T> ChoiceRow(
     label: (T) -> String,
     modifier: Modifier = Modifier,
 ) {
+    val semantics = PawseTheme.semantics
     Row(modifier = modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         options.forEach { option ->
             val chosen = option == selected
+            val fill by animateColorAsState(
+                if (chosen) semantics.selection else MaterialTheme.colorScheme.surfaceContainerHigh,
+                tween(160, easing = EaseOut),
+                label = "choice",
+            )
+            val ink by animateColorAsState(
+                if (chosen) semantics.onSelection else MaterialTheme.colorScheme.onSurface,
+                tween(160, easing = EaseOut),
+                label = "choiceInk",
+            )
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .height(44.dp)
-                    .pressable { onSelect(option) }
-                    .then(
-                        if (chosen) {
-                            Modifier.background(MaterialTheme.colorScheme.onSurface, RoundedCornerShape(12.dp))
-                        } else {
-                            Modifier.cardSurface(RoundedCornerShape(12.dp), 12.dp)
-                        },
-                    ),
+                    .height(48.dp)
+                    .pressable(role = Role.RadioButton) { onSelect(option) }
+                    .semantics { this.selected = chosen }
+                    .background(fill, RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    label(option),
-                    style = PawseType.BodyStrong,
-                    color = if (chosen) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                )
+                Text(label(option), style = PawseType.BodyStrong, color = ink, maxLines = 1)
             }
         }
     }
@@ -496,7 +493,10 @@ fun PawseField(
     )
 }
 
-/** A score on a ring: the arc is the value, and an optional bold tick marks a target. */
+/**
+ * A score on a ring: the arc is the value, an optional bold tick marks a target, and
+ * an optional [range] is drawn on the track in the band tone (Load's 9-14).
+ */
 @Composable
 fun ScoreRing(
     fraction: Float?,
@@ -506,12 +506,25 @@ fun ScoreRing(
     target: Float? = null,
     glow: Boolean = true,
     stroke: Float = 7f,
+    range: ClosedFloatingPointRange<Float>? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val track = PawseTheme.semantics.baselineOuter
+    val band = PawseTheme.semantics.baselineBand
     val targetColor = MaterialTheme.colorScheme.onSurface
+    val reduce = LocalReduceMotion.current
     val sweep = remember { Animatable(0f) }
-    LaunchedEffect(fraction) { sweep.animateTo((fraction ?: 0f).coerceIn(0f, 1f), tween(760, easing = EaseOut)) }
+    // The first fill draws in 700 ms on EaseOut; a changed value glides 400 ms on EaseInOut.
+    var drawn by remember { mutableStateOf(false) }
+    LaunchedEffect(fraction) {
+        val to = (fraction ?: 0f).coerceIn(0f, 1f)
+        when {
+            reduce -> sweep.snapTo(to)
+            drawn -> sweep.animateTo(to, tween(PawseMotion.VALUE, easing = EaseInOut))
+            else -> sweep.animateTo(to, tween(PawseMotion.FIRST_DRAW, easing = EaseOut))
+        }
+        drawn = true
+    }
 
     Box(modifier.size(size), contentAlignment = Alignment.Center) {
         Canvas(Modifier.size(size)) {
@@ -520,6 +533,10 @@ fun ScoreRing(
             val topLeft = Offset(center.x - radius, center.y - radius)
             val arcSize = Size(radius * 2, radius * 2)
             drawCircle(track, radius, style = Stroke(stroke * unit))
+            range?.let { r ->
+                val from = r.start.coerceIn(0f, 1f)
+                drawArc(band, -90f + 360f * from, 360f * (r.endInclusive.coerceIn(0f, 1f) - from), false, topLeft, arcSize, style = Stroke(stroke * unit))
+            }
             if (sweep.value > 0f) {
                 if (glow) {
                     drawArc(color.copy(alpha = 0.12f), -90f, 360f * sweep.value, false, topLeft, arcSize, style = Stroke((stroke + 8f) * unit, cap = StrokeCap.Round))
@@ -580,28 +597,29 @@ fun SplitBar(parts: List<Pair<Float, Color>>, modifier: Modifier = Modifier, hei
     }
 }
 
-/** The dark pill that confirms an action and offers to take it back. */
+/** The raised graphite toast that confirms an action and offers to take it back. */
 @Composable
 fun UndoToast(text: String, onUndo: () -> Unit, modifier: Modifier = Modifier) {
+    val semantics = PawseTheme.semantics
     Row(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 52.dp)
             .lift(RoundedCornerShape(16.dp))
-            .background(ctaBrush(), RoundedCornerShape(16.dp))
+            .background(semantics.toast, RoundedCornerShape(16.dp))
             .padding(start = 16.dp, top = 6.dp, end = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text, style = PawseType.Body, color = MaterialTheme.colorScheme.background, modifier = Modifier.weight(1f))
+        Text(text, style = PawseType.Body, color = semantics.onToast, modifier = Modifier.weight(1f))
         Box(
             Modifier
-                .height(40.dp)
-                .clip(RoundedCornerShape(9.dp))
+                .height(48.dp)
+                .clip(RoundedCornerShape(10.dp))
                 .pressable(onClick = onUndo)
-                .padding(horizontal = 14.dp),
+                .padding(horizontal = 12.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text(tr("Undo", "되돌리기"), style = PawseType.Delta, color = MaterialTheme.colorScheme.background)
+            Text(tr("Undo", "되돌리기"), style = PawseType.Delta, color = semantics.onToast)
         }
     }
 }
@@ -631,23 +649,23 @@ fun BoxScope.BottomAction(
     }
 }
 
-/** A bottom sheet in the canvas's dress: surface fill, short handle, 16 dp corners. */
+/** A bottom sheet in the canvas's dress: sheet fill, short handle, 24 dp corners. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PawseSheet(onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = PawseTheme.semantics.sheet,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         scrimColor = Color.Black.copy(alpha = 0.5f),
         dragHandle = {
             Box(
                 Modifier
-                    .padding(top = 10.dp, bottom = 18.dp)
+                    .padding(top = 10.dp, bottom = 14.dp)
                     .size(width = 36.dp, height = 4.dp)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape),
+                    .background(MaterialTheme.colorScheme.outline, CircleShape),
             )
         },
     ) {
@@ -674,9 +692,9 @@ fun Modifier.aura(): Modifier {
     }
 }
 
-/** Expanding a row: the height snaps and only the new content fades in, 220 ms. Closing is instant. */
+/** Expanding a row: the height snaps and only the new content fades in, 220 ms. Closing fades in 120 ms. */
 val RevealEnter: EnterTransition = fadeIn(tween(220, easing = EaseOut)) + expandVertically(snap())
-val RevealExit: ExitTransition = ExitTransition.None
+val RevealExit: ExitTransition = fadeOut(tween(120, easing = EaseOut)) + shrinkVertically(snap(120))
 
 /**
  * A tab or range swap, 200 ms: the new content fades up 4 dp out of a 2 dp blur, so
@@ -687,11 +705,12 @@ val RevealExit: ExitTransition = ExitTransition.None
 fun rememberSwap(key: Any?): Animatable<Float, AnimationVector1D> {
     val reveal = remember { Animatable(1f) }
     var last by remember { mutableStateOf(key) }
+    val reduce = LocalReduceMotion.current
     LaunchedEffect(key) {
-        if (key == last) return@LaunchedEffect
+        if (key == last || reduce) return@LaunchedEffect
         last = key
         reveal.snapTo(0f)
-        reveal.animateTo(1f, tween(200, easing = EaseOut))
+        reveal.animateTo(1f, tween(PawseMotion.SWAP, easing = EaseOut))
     }
     return reveal
 }

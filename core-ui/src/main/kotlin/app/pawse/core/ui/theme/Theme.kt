@@ -10,6 +10,8 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import app.pawse.core.ui.component.LocalReduceMotion
+import app.pawse.core.ui.component.systemReduceMotion
 
 /**
  * Semantic colours that are not part of Material's scheme, because Material has no
@@ -29,14 +31,22 @@ data class PawseSemantics(
     /** The floating dock and scanner chrome: translucent surface and its hairline. */
     val glass: Color,
     val glassLine: Color,
-    /** The one-pixel top highlight on cards. Chrome, not signal. */
-    val highlight: Color,
     /** Light falling on a card's top edge, fading out by two thirds down. Transparent turns it off. */
     val sheen: Color,
-    /** The one deep, soft shadow under a card. Transparent turns it off. */
-    val cardShadow: Color,
     /** A faint cool light from the top of each screen. Dark only. */
     val aura: Color,
+    /** Micro text at the 4.5:1 floor: sync lines, captions, axis labels. */
+    val faint: Color,
+    /** Non-text marks only: meal dots, raw weigh-ins. Never text. */
+    val mark: Color,
+    /** One selection recipe: a chosen chip, the check-in, a coachmark, and what sits on it. */
+    val selection: Color,
+    val onSelection: Color,
+    val segmentThumb: Color,
+    /** The undo toast: raised graphite, not the light CTA fill. */
+    val toast: Color,
+    val onToast: Color,
+    val sheet: Color,
     /** Sleep stages, light to deep in one blue ramp, so no stage reads as good or bad. */
     val stageAwake: Color,
     val stageRem: Color,
@@ -59,12 +69,20 @@ private val DarkSemantics = PawseSemantics(
     neutral = PawseColors.NeutralDark,
     baselineBand = PawseColors.BaselineBandDark,
     baselineOuter = PawseColors.BaselineOuterDark,
+    // ponytail: 90% with no blur. The design's 62% needs a backdrop blur (Haze, or
+    // RenderEffect on a captured layer on API 31+); drop the alpha when that lands.
     glass = PawseColors.DarkSurface.copy(alpha = 0.9f),
     glassLine = Color.White.copy(alpha = 0.10f),
-    highlight = Color.White.copy(alpha = 0.07f),
     sheen = Color.White.copy(alpha = 0.045f),
-    cardShadow = Color.Black.copy(alpha = 0.85f),
     aura = Color(0xFF96ACD2).copy(alpha = 0.09f),
+    faint = PawseColors.DarkOnSurfaceFaint,
+    mark = PawseColors.DarkMark,
+    selection = PawseColors.DarkSelection,
+    onSelection = PawseColors.DarkBackground,
+    segmentThumb = PawseColors.DarkSegmentThumb,
+    toast = PawseColors.DarkToast,
+    onToast = PawseColors.DarkOnSurface,
+    sheet = PawseColors.DarkSheet,
     stageAwake = Color(0xFFE6E8EA),
     stageRem = Color(0xFF9DB9F2),
     stageLight = Color(0xFF5E86DB),
@@ -83,10 +101,16 @@ private val LightSemantics = PawseSemantics(
     baselineOuter = PawseColors.BaselineOuterLight,
     glass = PawseColors.LightSurface.copy(alpha = 0.92f),
     glassLine = PawseColors.LightOnSurface.copy(alpha = 0.08f),
-    highlight = Color.White.copy(alpha = 0.7f),
     sheen = Color.Transparent,
-    cardShadow = PawseColors.LightOnSurface.copy(alpha = 0.16f),
     aura = Color.Transparent,
+    faint = PawseColors.LightOnSurfaceFaint,
+    mark = PawseColors.LightMark,
+    selection = PawseColors.LightSelection,
+    onSelection = PawseColors.LightSurface,
+    segmentThumb = PawseColors.LightSegmentThumb,
+    toast = PawseColors.LightToast,
+    onToast = PawseColors.LightSurface,
+    sheet = PawseColors.LightSheet,
     stageAwake = Color(0xFF7C858D),
     stageRem = Color(0xFF6690DD),
     stageLight = Color(0xFF3F67C8),
@@ -105,11 +129,17 @@ private val NightSemantics = PawseSemantics(
     baselineOuter = PawseColors.BaselineOuterNight,
     glass = PawseColors.NightSurface.copy(alpha = 0.92f),
     glassLine = Color.White.copy(alpha = 0.06f),
-    highlight = Color.White.copy(alpha = 0.03f),
-    // Bedside stays flat: no sheen, no shadow, no glow in a dark room.
+    // Bedside stays flat: no sheen, no glow in a dark room.
     sheen = Color.Transparent,
-    cardShadow = Color.Transparent,
     aura = Color.Transparent,
+    faint = PawseColors.NightOnSurfaceFaint,
+    mark = PawseColors.NightMark,
+    selection = PawseColors.NightSelection,
+    onSelection = PawseColors.NightBackground,
+    segmentThumb = PawseColors.NightSegmentThumb,
+    toast = PawseColors.NightToast,
+    onToast = PawseColors.NightOnSurface,
+    sheet = PawseColors.NightSheet,
     stageAwake = Color(0xFFBFC4C9),
     stageRem = Color(0xFF8AA6D9),
     stageLight = Color(0xFF5579C4),
@@ -178,6 +208,8 @@ private val LightScheme = lightColorScheme(
 fun PawseTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     bedside: Boolean = false,
+    /** Pawse's own reduce-motion switch, on top of the system's. */
+    reduceMotion: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     CompositionLocalProvider(
@@ -186,6 +218,7 @@ fun PawseTheme(
             darkTheme -> DarkSemantics
             else -> LightSemantics
         },
+        LocalReduceMotion provides (reduceMotion || systemReduceMotion()),
     ) {
         MaterialTheme(
             colorScheme = when {

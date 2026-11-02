@@ -10,6 +10,7 @@ import app.pawse.scoring.energy.EnergyForecastModel
 import app.pawse.scoring.guidance.GuidanceRules
 import app.pawse.scoring.learning.CheckInCalibration
 import app.pawse.scoring.learning.DoseResponse
+import app.pawse.scoring.load.LoadPoints
 import app.pawse.scoring.load.TrainingLoad
 import app.pawse.scoring.math.Stats
 import app.pawse.scoring.model.BodyBand
@@ -146,6 +147,16 @@ class PawseEngine(private val config: ScoringConfig = ScoringConfig.DEFAULT) {
             Stats.median(((i - config.load.typicalWindowDays).coerceAtLeast(0) until i).map { dayLoads[it] }.filter { it > 0.0 })
         }
         val forms = fitFat.map { (fit, fat) -> TrainingLoad.form(fit, fat) }
+        // v2.5 points: each day's TRIMP against the median active day in the 60 before it.
+        // ponytail: walking by cadence (LoadPoints.cadenceTrimp) is not added yet; it
+        // needs per-minute steps from the data layer.
+        val activeDays = sessions.map { list -> list.any { it.load > 0.0 && it.durationMinutes >= config.points.activeSessionMinutes } }
+        val references = days.indices.map { i ->
+            LoadPoints.reference(
+                ((i - config.points.referenceDays).coerceAtLeast(0) until i).filter { activeDays[it] }.map { dayLoads[it] },
+                config.points,
+            )
+        }
 
         // --- Intake per night --------------------------------------------------------
         val intakes = input.intakes.sortedBy { it.epochMs }
@@ -295,7 +306,11 @@ class PawseEngine(private val config: ScoringConfig = ScoringConfig.DEFAULT) {
             val typical = typicalLoads[i]
             val range = typical?.let { TrainingLoad.range(it, score?.score, config.load) }
             val rest = illness.level == IllnessLevel.ALERT
+            val strainedToday = if (score?.band == BodyBand.STRAINED) strainedRun + 1 else 0
             val load = LoadReading(
+                points = LoadPoints.points(dayLoads[i], references[i], config.points),
+                pointsReference = references[i],
+                pointsRange = LoadPoints.range(score?.score, rest, strainedToday, config.points),
                 todayLoad = dayLoads[i],
                 sessions = sessions[i],
                 fitness = fitFat.getOrNull(i)?.first,

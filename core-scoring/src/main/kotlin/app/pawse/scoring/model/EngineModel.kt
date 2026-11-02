@@ -209,6 +209,9 @@ data class SessionLoad(
 
 enum class FormBand { FRESH, PRODUCTIVE, HEAVY }
 
+/** The ring's "12 of 9–14". [rest] is the illness or two-Strained override, 0 to 5. */
+data class PointsRange(val low: Int, val high: Int, val rest: Boolean)
+
 data class LoadReading(
     val todayLoad: Double,
     val sessions: List<SessionLoad>,
@@ -223,6 +226,11 @@ data class LoadReading(
     val rangeHigh: Double?,
     /** An illness alert turns today's range into rest. */
     val rest: Boolean,
+    /** v2.5: today's TRIMP as points, your typical active day being 10. What the ring shows. */
+    val points: Double = 0.0,
+    /** Your median active-day TRIMP over 60 days: what 10 points means. */
+    val pointsReference: Double = 0.0,
+    val pointsRange: PointsRange? = null,
 )
 
 enum class IllnessLevel { NONE, WATCH, ALERT }
