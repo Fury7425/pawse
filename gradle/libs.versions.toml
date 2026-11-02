@@ -31,6 +31,10 @@ retrofitSerialization = "1.0.0"
 # Step 6 (charts) — declared now, wired later
 vico = "2.0.0-beta.2"
 
+# On-device model. beta2 is the newest Prompt API built on a Kotlin stdlib this
+# toolchain (Kotlin 2.1) can read; beta3 and later pull in kotlin-stdlib 2.3+.
+mlkitGenaiPrompt = "1.0.0-beta2"
+
 # Security
 sqlcipher = "4.6.1"
 sqliteKtx = "2.4.0"
@@ -95,6 +99,7 @@ androidx-camera-lifecycle = { module = "androidx.camera:camera-lifecycle", versi
 androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "camerax" }
 mlkit-barcode-scanning = { module = "com.google.mlkit:barcode-scanning", version.ref = "mlkitBarcode" }
 mlkit-text-recognition-korean = { module = "com.google.mlkit:text-recognition-korean", version.ref = "mlkitTextKorean" }
+mlkit-genai-prompt = { module = "com.google.mlkit:genai-prompt", version.ref = "mlkitGenaiPrompt" }
 
 # Network (step 5)
 retrofit = { module = "com.squareup.retrofit2:retrofit", version.ref = "retrofit" }

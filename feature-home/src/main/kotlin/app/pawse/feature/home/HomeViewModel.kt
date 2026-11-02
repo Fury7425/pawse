@@ -12,6 +12,10 @@ import app.pawse.core.data.scoring.ScoringState
 import app.pawse.core.data.sync.SyncCoordinator
 import app.pawse.core.data.sync.SyncFailure
 import app.pawse.core.data.sync.SyncStatus
+import app.pawse.core.model.ModelState
+import app.pawse.core.model.PawseModel
+import app.pawse.core.model.Summary
+import app.pawse.core.model.Turn
 import app.pawse.scoring.model.BiologicalSex
 import app.pawse.scoring.model.DayTag
 import app.pawse.scoring.tr
@@ -21,6 +25,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -39,12 +50,23 @@ sealed interface HomeUiState {
     data class Failed(val message: String) : HomeUiState
 }
 
+/** The on-device model's part of Scores: this morning's summary, and Ask Pawse. */
+data class AssistantUi(val ready: Boolean, val summary: Summary?, val rises: Boolean, val turns: List<Turn>) {
+    companion object {
+        val NONE = AssistantUi(ready = false, summary = null, rises = false, turns = emptyList())
+    }
+}
+
+/** The switch in settings and what sits under it. [unsupported]: the last turn-on was refused. */
+data class ModelSettings(val state: ModelState, val dropped: Int, val unsupported: Boolean, val room: Boolean)
+
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val scoring: ScoringRepository,
     private val coordinator: SyncCoordinator,
     private val profilePreferences: UserProfilePreferences,
     private val nights: NightRepository,
+    private val model: PawseModel,
 ) : ViewModel() {
 
     private val dismissedAt = MutableStateFlow(0L)
@@ -94,6 +116,66 @@ class HomeViewModel @Inject constructor(
 
     init {
         viewModelScope.launch { coordinator.runIfStale() }
+        // The morning summary, once per morning: after the read has finished, when
+        // there is a night behind it and the model is ready. Written while Pawse is
+        // open, never in the background, and never announced by a notification.
+        viewModelScope.launch {
+            combine(scoring.state, coordinator.status, model.state) { s, sync, m ->
+                (s as? ScoringState.Ready)?.snapshot?.takeIf { sync !is SyncStatus.Running && m is ModelState.Ready }
+            }
+                .filterNotNull()
+                .filter { it.today.sleep.lastNightMinutes != null || it.today.body != null }
+                .distinctUntilChangedBy { it.date }
+                .collect { snapshot ->
+                    model.writeSummary(snapshot.date, snapshot.factSheet())
+                    model.release()
+                }
+        }
+    }
+
+    private val day = state.map { (it as? HomeUiState.Ready)?.snapshot?.date }.distinctUntilChanged()
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val assistant: StateFlow<AssistantUi> = combine(model.state, day) { s, d -> d.takeIf { s is ModelState.Ready } }
+        .distinctUntilChanged()
+        .flatMapLatest { d ->
+            if (d == null) {
+                flowOf(AssistantUi.NONE)
+            } else {
+                combine(model.summary(d), model.rises(d), model.conversation(d)) { summary, rises, turns ->
+                    AssistantUi(ready = true, summary = summary, rises = rises, turns = turns)
+                }
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AssistantUi.NONE)
+
+    private val modelRefused = MutableStateFlow(false)
+
+    val modelSettings: StateFlow<ModelSettings> = combine(model.state, model.dropped, modelRefused) { s, dropped, refused ->
+        ModelSettings(s, dropped, refused, model.hasRoom())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), ModelSettings(ModelState.Off, 0, false, true))
+
+    fun setModel(on: Boolean) {
+        viewModelScope.launch {
+            if (on) modelRefused.value = !model.turnOn() else model.turnOff()
+        }
+    }
+
+    fun downloadModel(mobileData: Boolean) = model.download(mobileData)
+
+    fun ask(question: String) {
+        val snapshot = (state.value as? HomeUiState.Ready)?.snapshot ?: return
+        viewModelScope.launch { model.ask(snapshot.date, question, snapshot.factSheet()) }
+    }
+
+    /** The sheet closed: the model's memory goes back to the phone. */
+    fun closeAsk() {
+        viewModelScope.launch { model.release() }
+    }
+
+    fun summaryRose() {
+        val date = assistant.value.summary?.date ?: return
+        viewModelScope.launch { model.markRisen(date) }
     }
 
     private fun initialState(): HomeUiState = when (val current = scoring.state.value) {

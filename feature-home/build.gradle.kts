@@ -23,6 +23,7 @@ kotlin { jvmToolchain(17) }
 dependencies {
     implementation(project(":core-ui"))
     implementation(project(":core-data"))
+    implementation(project(":core-model"))
     implementation(project(":core-scoring"))
 
     implementation(platform(libs.androidx.compose.bom))

@@ -109,7 +109,10 @@ fun HomeScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val appearance by viewModel.appearance.collectAsStateWithLifecycle()
+    val assistant by viewModel.assistant.collectAsStateWithLifecycle()
+    val modelSettings by viewModel.modelSettings.collectAsStateWithLifecycle()
     var editingProfile by remember { mutableStateOf(false) }
+    var asking by remember { mutableStateOf(false) }
 
     Scaffold(modifier = modifier, containerColor = MaterialTheme.colorScheme.background) { padding ->
         when (val current = state) {
@@ -129,20 +132,41 @@ fun HomeScreen(
                 PrimaryButton(tr("Try again", "다시 시도"), onClick = viewModel::refresh)
             }
 
-            is HomeUiState.Ready -> TodayContent(
-                snapshot = current.snapshot,
-                sync = current.sync,
-                accessOff = current.accessOff,
-                syncError = error,
-                contentPadding = padding,
-                onOpenExplain = onOpenExplain,
-                onSyncNow = viewModel::syncNow,
-                onSettings = { editingProfile = true },
-                onDismissError = viewModel::dismissError,
-                onCheckIn = viewModel::checkIn,
-                onTag = viewModel::toggleTag,
-            )
+            is HomeUiState.Ready -> Box(Modifier.fillMaxSize()) {
+                TodayContent(
+                    snapshot = current.snapshot,
+                    sync = current.sync,
+                    accessOff = current.accessOff,
+                    syncError = error,
+                    contentPadding = padding,
+                    assistant = assistant,
+                    onOpenExplain = onOpenExplain,
+                    onSyncNow = viewModel::syncNow,
+                    onSettings = { editingProfile = true },
+                    onDismissError = viewModel::dismissError,
+                    onCheckIn = viewModel::checkIn,
+                    onTag = viewModel::toggleTag,
+                    onAsk = { asking = true },
+                )
+                RisingSummary(
+                    summary = assistant.summary,
+                    rises = assistant.rises,
+                    onShown = viewModel::summaryRose,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
+            }
         }
+    }
+
+    if (asking) {
+        AskSheet(
+            turns = assistant.turns,
+            onAsk = viewModel::ask,
+            onDismiss = {
+                asking = false
+                viewModel.closeAsk()
+            },
+        )
     }
 
     if (editingProfile) {
@@ -152,6 +176,9 @@ fun HomeScreen(
             initialShowNumbers = snapshot?.showNumbers ?: true,
             initialAppearance = appearance,
             calibration = snapshot?.calibration,
+            model = modelSettings,
+            onModelSwitch = viewModel::setModel,
+            onModelDownload = viewModel::downloadModel,
             onResetModel = viewModel::resetModel,
             onDismiss = { editingProfile = false },
             onSave = { age, sex, maxHr, showNumbers, chosenAppearance ->
@@ -187,12 +214,14 @@ private fun TodayContent(
     accessOff: Boolean,
     syncError: String?,
     contentPadding: PaddingValues,
+    assistant: AssistantUi,
     onOpenExplain: (ScoreType) -> Unit,
     onSyncNow: () -> Unit,
     onSettings: () -> Unit,
     onDismissError: () -> Unit,
     onCheckIn: (Int) -> Unit,
     onTag: (DayTag) -> Unit,
+    onAsk: () -> Unit,
 ) {
     val context = LocalContext.current
     val today = snapshot.today
@@ -329,6 +358,19 @@ private fun TodayContent(
                     onAction = onSettings,
                     modifier = pad.padding(top = 20.dp),
                 )
+            }
+        }
+
+        // The on-device model waits down here: its summary, then one row to ask it.
+        if (assistant.ready) {
+            item {
+                Column(pad.padding(top = 24.dp)) {
+                    assistant.summary?.let {
+                        SummaryCard(it)
+                        Spacer(Modifier.height(10.dp))
+                    }
+                    AskRow(onClick = onAsk)
+                }
             }
         }
 
