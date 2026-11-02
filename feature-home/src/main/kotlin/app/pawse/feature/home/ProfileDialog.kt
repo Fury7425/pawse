@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -66,6 +67,9 @@ class ProfileState(
     val shapes: Boolean,
     val notifications: Map<NotifyKind, Boolean>,
     val calibration: Calibration?,
+    /** Null is Automatic. */
+    val cardOrder: List<ScoresCard>?,
+    val hiddenCards: Set<ScoresCard>,
 )
 
 class ProfileActions(
@@ -76,9 +80,11 @@ class ProfileActions(
     val onNotify: (NotifyKind, Boolean) -> Unit,
     val onSaveProfile: (Int?, BiologicalSex, Double?) -> Unit,
     val onResetModel: () -> Unit,
+    val onCardOrder: (List<ScoresCard>?) -> Unit,
+    val onHidden: (ScoresCard, Boolean) -> Unit,
 )
 
-private enum class ProfilePage { MAIN, NOTIFICATIONS, CALCULATES }
+private enum class ProfilePage { MAIN, NOTIFICATIONS, CARDS, CALCULATES }
 
 /**
  * Profile: customising lives here, not on the page. Display switches that apply
@@ -93,6 +99,7 @@ fun ProfileDialog(state: ProfileState, actions: ProfileActions, onDismiss: () ->
             when (page) {
                 ProfilePage.MAIN -> Main(state, actions, onDismiss, onOpen = { page = it })
                 ProfilePage.NOTIFICATIONS -> Notifications(state.notifications, actions.onNotify, onBack = { page = ProfilePage.MAIN })
+                ProfilePage.CARDS -> CardOrder(state.cardOrder, state.hiddenCards, actions, onBack = { page = ProfilePage.MAIN })
                 ProfilePage.CALCULATES -> Calculates(onBack = { page = ProfilePage.MAIN })
             }
         }
@@ -143,6 +150,11 @@ private fun Main(state: ProfileState, actions: ProfileActions, onDismiss: () -> 
     val on = state.notifications.count { it.value }
     LinkRow(tr("Notifications", "알림"), tr("$on on · one note a week by default", "${on}개 켜짐 · 기본은 일주일에 한 번")) { onOpen(ProfilePage.NOTIFICATIONS) }
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+    LinkRow(
+        tr("Card order", "카드 순서"),
+        if (state.cardOrder == null) tr("Automatic · follows the time of day", "자동 · 시간대에 따라") else tr("My order", "내 순서"),
+    ) { onOpen(ProfilePage.CARDS) }
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
     LinkRow(tr("How Pawse calculates", "Pawse 계산 방법"), tr("Every equation, in plain words", "모든 계산식을 쉬운 말로")) { onOpen(ProfilePage.CALCULATES) }
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
@@ -190,17 +202,20 @@ private fun SwitchRow(title: String, sub: String, checked: Boolean, enabled: Boo
             checked = checked,
             onCheckedChange = null,
             enabled = enabled,
-            colors = SwitchDefaults.colors(
-                checkedTrackColor = s.selection,
-                checkedThumbColor = s.onSelection,
-                checkedBorderColor = Color.Transparent,
-                uncheckedTrackColor = s.baselineBand,
-                uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                uncheckedBorderColor = Color.Transparent,
-            ),
+            colors = switchColors(),
         )
     }
 }
+
+@Composable
+private fun switchColors() = SwitchDefaults.colors(
+    checkedTrackColor = PawseTheme.semantics.selection,
+    checkedThumbColor = PawseTheme.semantics.onSelection,
+    checkedBorderColor = Color.Transparent,
+    uncheckedTrackColor = PawseTheme.semantics.baselineBand,
+    uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    uncheckedBorderColor = Color.Transparent,
+)
 
 @Composable
 private fun LinkRow(title: String, sub: String, onClick: () -> Unit) {
@@ -290,6 +305,56 @@ private fun Notifications(state: Map<NotifyKind, Boolean>, onNotify: (NotifyKind
             style = PawseType.Micro,
             color = PawseTheme.semantics.faint,
         )
+    }
+}
+
+/**
+ * The cards under Scores' rings. Automatic follows the time of day; My order keeps
+ * the user's order at every hour, with any card hidden.
+ */
+@Composable
+private fun CardOrder(order: List<ScoresCard>?, hidden: Set<ScoresCard>, actions: ProfileActions, onBack: () -> Unit) {
+    PageHead(tr("Card order", "카드 순서"), tr("What sits under the rings on Scores", "점수 화면의 링 아래 카드"), onBack)
+    Segmented(
+        options = listOf(false, true),
+        selected = order != null,
+        onSelect = { mine -> actions.onCardOrder(if (mine) ScoresCard.complete(ScoresCard.automatic(evening = false)) else null) },
+        label = { if (it) tr("My order", "내 순서") else tr("Automatic", "자동") },
+        height = 32.dp,
+        modifier = Modifier.padding(top = 16.dp),
+    )
+    if (order == null) {
+        Text(
+            tr(
+                "Mornings lead with what's worth knowing and your day. From 6 pm, tonight and today's load.",
+                "아침에는 알아둘 점과 오늘의 흐름이 먼저 나와요. 저녁 6시부터는 오늘 밤과 오늘의 부하가 나와요.",
+            ),
+            style = PawseType.Micro,
+            color = PawseTheme.semantics.faint,
+            modifier = Modifier.padding(top = 12.dp),
+        )
+        return
+    }
+    Column(Modifier.padding(top = 8.dp)) {
+        order.forEachIndexed { i, card ->
+            fun move(by: Int) = actions.onCardOrder(order.toMutableList().apply { add(i + by, removeAt(i)) })
+            Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (i > 0) GlyphButton(Glyphs.ChevronUp, tr("Move ${card.label} up", "${card.label} 위로"), onClick = { move(-1) }) else Spacer(Modifier.width(48.dp))
+                if (i < order.lastIndex) GlyphButton(Glyphs.ChevronDown, tr("Move ${card.label} down", "${card.label} 아래로"), onClick = { move(1) }) else Spacer(Modifier.width(48.dp))
+                Text(
+                    card.label,
+                    style = PawseType.BodyStrong,
+                    color = if (card in hidden) PawseTheme.semantics.faint else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f).padding(start = 8.dp),
+                )
+                Switch(
+                    checked = card !in hidden,
+                    onCheckedChange = { actions.onHidden(card, !it) },
+                    colors = switchColors(),
+                    modifier = Modifier.semantics { contentDescription = tr("Show ${card.label}", "${card.label} 표시") },
+                )
+            }
+        }
     }
 }
 

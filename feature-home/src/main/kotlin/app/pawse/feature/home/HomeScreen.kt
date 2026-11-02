@@ -140,6 +140,8 @@ fun HomeScreen(
     val error by viewModel.error.collectAsStateWithLifecycle()
     val moving by viewModel.moving.collectAsStateWithLifecycle()
     val appearance by viewModel.appearance.collectAsStateWithLifecycle()
+    val cardOrder by viewModel.cardOrder.collectAsStateWithLifecycle()
+    val hiddenCards by viewModel.hiddenCards.collectAsStateWithLifecycle()
     var editingProfile by remember { mutableStateOf(false) }
 
     Scaffold(modifier = modifier, containerColor = MaterialTheme.colorScheme.background) { padding ->
@@ -166,6 +168,7 @@ fun HomeScreen(
                 accessOff = current.accessOff,
                 syncError = error,
                 moving = moving,
+                cards = cardOrder?.filter { it !in hiddenCards },
                 contentPadding = padding,
                 onOpenExplain = onOpenExplain,
                 onSyncNow = viewModel::syncNow,
@@ -191,6 +194,8 @@ fun HomeScreen(
                 shapes = shapes,
                 notifications = notifications,
                 calibration = snapshot?.calibration,
+                cardOrder = cardOrder,
+                hiddenCards = hiddenCards,
             ),
             actions = ProfileActions(
                 onShowNumbers = viewModel::setShowNumbers,
@@ -203,6 +208,8 @@ fun HomeScreen(
                     editingProfile = false
                 },
                 onResetModel = viewModel::resetModel,
+                onCardOrder = viewModel::setCardOrder,
+                onHidden = viewModel::setHidden,
             ),
             onDismiss = { editingProfile = false },
         )
@@ -233,6 +240,8 @@ private fun Scores(
     accessOff: Boolean,
     syncError: String?,
     moving: MovingSnapshot?,
+    /** The user's cards in order, or null for Automatic. */
+    cards: List<ScoresCard>?,
     contentPadding: PaddingValues,
     onOpenExplain: (ScoreType, Int) -> Unit,
     onSyncNow: () -> Unit,
@@ -350,23 +359,20 @@ private fun Scores(
                     if (day.bodyStatus == BodyStatus.WARMING_UP) {
                         item { Learning(day.validNights, ScoringConfig.DEFAULT.body.minValidNights, pad.padding(top = 32.dp)) }
                     }
-                    if (moving != null) item { MovingToday(moving, pad.padding(top = 32.dp)) }
-                    if (evening) {
-                        item {
-                            Column(pad.padding(top = 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                                tonightPlan(snapshot)?.let { TonightCard(it, snapshot) }
-                                TodaysLoad(day)
-                            }
-                        }
-                    } else {
-                        item {
-                            Column(pad.padding(top = 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                                if (day.bodyStatus != BodyStatus.WARMING_UP) WorthKnowingCard(snapshot)
-                                snapshot.energy?.let { YourDay(it) }
-                            }
+                    val tonight = tonightPlan(snapshot)
+                    val energy = snapshot.energy
+                    (cards ?: ScoresCard.automatic(evening)).forEach { card ->
+                        // Check-in and Moving today stand apart; the cards between sit closer.
+                        val top = if (card == ScoresCard.MOVING || card == ScoresCard.CHECK_IN) 32.dp else 16.dp
+                        when (card) {
+                            ScoresCard.MOVING -> if (moving != null) item { MovingToday(moving, pad.padding(top = top)) }
+                            ScoresCard.WORTH -> if (day.bodyStatus != BodyStatus.WARMING_UP) item { Box(pad.padding(top = top)) { WorthKnowingCard(snapshot) } }
+                            ScoresCard.YOUR_DAY -> if (energy != null) item { Box(pad.padding(top = top)) { YourDay(energy) } }
+                            ScoresCard.TONIGHT -> if (tonight != null) item { Box(pad.padding(top = top)) { TonightCard(tonight, snapshot) } }
+                            ScoresCard.TODAYS_LOAD -> item { Box(pad.padding(top = top)) { TodaysLoad(day) } }
+                            ScoresCard.CHECK_IN -> item { CheckIn(snapshot, onCheckIn, onTag, pad.padding(top = top)) }
                         }
                     }
-                    item { CheckIn(snapshot, onCheckIn, onTag, pad.padding(top = 32.dp)) }
                     if (snapshot.today.sleep.suggestDoctor) {
                         item { Banner(title = tr("Worth a word with a doctor", "의사와 상담해 보세요"), body = ScoreCopy.DOCTOR, modifier = pad.padding(top = 24.dp)) }
                     }
@@ -595,11 +601,17 @@ private fun Rings(day: DayReport?, showNumbers: Boolean, onOpen: (ScoreType) -> 
 private fun RingTile(type: ScoreType, face: RingFace, big: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val shown = face.value?.let { " $it${face.unit}" } ?: ""
     val description = "${ScoreCopy.name(type)}$shown, ${face.word}. " + tr("Opens details.", "자세히 보기.")
+    // Where this ring sits, for the flight into the detail. Not state: nothing redraws from it.
+    val bounds = remember { arrayOfNulls<androidx.compose.ui.geometry.Rect>(1) }
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Column(
             Modifier
                 .clip(RoundedCornerShape(20.dp))
-                .pressable(onClick = onClick)
+                .pressable {
+                    RingFlight.origin = bounds[0]
+                    RingFlight.type = type
+                    onClick()
+                }
                 .clearAndSetSemantics {
                     contentDescription = description
                     role = Role.Button
@@ -616,6 +628,7 @@ private fun RingTile(type: ScoreType, face: RingFace, big: Boolean, onClick: () 
                 target = face.target,
                 range = face.range,
                 stroke = 7.2f,
+                modifier = Modifier.flightSource { bounds[0] = it },
             ) {
                 if (face.value == null) {
                     Glyph(scoreGlyph(type), size = 28.dp, color = PawseTheme.semantics.mark)

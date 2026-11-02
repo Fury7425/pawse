@@ -124,6 +124,7 @@ object Glyphs {
     const val ChevronRight = "M9 6l6 6-6 6"
     const val ChevronLeft = "M15 6l-6 6 6 6"
     const val ChevronDown = "M6 9l6 6 6-6"
+    const val ChevronUp = "M6 15l6-6 6 6"
     const val Arrow = "M5 12h14M13 6l6 6-6 6"
     const val Sliders = "M4 7h9M17 7h3M4 17h3M11 17h9M13 7a2 2 0 1 0 4 0a2 2 0 1 0-4 0M7 17a2 2 0 1 0 4 0a2 2 0 1 0-4 0"
     const val Plus = "M12 5v14M5 12h14"

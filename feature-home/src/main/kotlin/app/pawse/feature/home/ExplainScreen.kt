@@ -436,7 +436,7 @@ private fun DetailHero(
             range = face.range,
             stroke = 6f,
             ghost = pinDate?.let { heroFace(type, pinned, showNumbers).fraction },
-            modifier = Modifier.padding(top = 4.dp),
+            modifier = Modifier.padding(top = 4.dp).flightTarget(type),
         ) {
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(face.value, style = PawseType.RingXL)

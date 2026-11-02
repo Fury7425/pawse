@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import app.pawse.scoring.model.BiologicalSex
 import app.pawse.scoring.model.UserProfile
@@ -91,6 +92,23 @@ class UserProfilePreferences @Inject constructor(
 
     suspend fun setShapes(on: Boolean) {
         store.edit { it[shapesKey] = on }
+    }
+
+    private val cardOrderKey = stringPreferencesKey("card_order")
+    private val hiddenCardsKey = stringSetPreferencesKey("hidden_cards")
+
+    /** Scores' cards in the user's order, or null for Automatic (they follow the time of day). */
+    val cardOrder: Flow<List<String>?> = store.data.map { prefs -> prefs[cardOrderKey]?.split(',')?.filter { it.isNotBlank() } }
+
+    suspend fun setCardOrder(order: List<String>?) {
+        store.edit { if (order == null) it.remove(cardOrderKey) else it[cardOrderKey] = order.joinToString(",") }
+    }
+
+    /** Cards hidden from Scores in My order. */
+    val hiddenCards: Flow<Set<String>> = store.data.map { it[hiddenCardsKey].orEmpty() }
+
+    suspend fun setHidden(card: String, hidden: Boolean) {
+        store.edit { it[hiddenCardsKey] = if (hidden) it[hiddenCardsKey].orEmpty() + card else it[hiddenCardsKey].orEmpty() - card }
     }
 
     private val goalKey = doublePreferencesKey("goal_kg")
