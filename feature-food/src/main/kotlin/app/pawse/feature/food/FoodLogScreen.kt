@@ -118,6 +118,8 @@ fun FoodLogScreen(
     val networkEnabled by viewModel.networkEnabled.collectAsStateWithLifecycle()
     val mirroring by viewModel.mirroring.collectAsStateWithLifecycle()
     val writeBlocked by viewModel.writeBlocked.collectAsStateWithLifecycle()
+    val incomplete by viewModel.incomplete.collectAsStateWithLifecycle()
+    val partly = date.toString() in incomplete
     // Health Connect stops showing its sheet after repeated denials, so a second
     // tap goes to its settings instead of to a sheet that never appears.
     var askedForWrite by remember { mutableStateOf(false) }
@@ -168,7 +170,7 @@ fun FoodLogScreen(
                 if (!has) {
                     item { EmptyDay(isToday, date, onManualEntry, pad.padding(top = 12.dp)) }
                 } else {
-                    item { Hero(day!!, if (isToday) burned else null, pad.padding(top = 4.dp)) }
+                    item { Hero(day!!, if (isToday) burned else null, partly, pad.padding(top = 4.dp)) }
                     if (isToday && burned != null) item { EatenBurned(totals!!.totals.kcal ?: 0.0, burned!!, pad.padding(top = 24.dp)) }
                     item { Macros(totals!!.totals, week, date, pad.padding(top = 16.dp)) }
                 }
@@ -214,7 +216,14 @@ fun FoodLogScreen(
                                 Text(tr("Day", "하루"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                                 Text("${totals?.kcalRounded?.let { "%,d".format(it) } ?: "—"} kcal", style = PawseType.MetricValue)
                             }
-                            GhostButton(tr("Add manually", "직접 추가"), onClick = onManualEntry, glyph = Glyphs.Plus, modifier = Modifier.padding(top = 16.dp))
+                            // A day not fully logged says so, and the weekly weight check leaves it out.
+                            SelectChip(
+                                tr("Partly logged", "일부만 기록함"),
+                                selected = partly,
+                                onClick = { viewModel.setIncomplete(date, !partly) },
+                                modifier = Modifier.padding(top = 12.dp),
+                            )
+                            GhostButton(tr("Add manually", "직접 추가"), onClick = onManualEntry, glyph = Glyphs.Plus, modifier = Modifier.padding(top = 4.dp))
                         }
                     }
                 }
@@ -290,7 +299,7 @@ private fun tens(kcal: Double): String = "%,d".format((kcal / 10).roundToInt() *
 
 /** The day's kcal at 64, the comparison right under it, and where the figures came from. */
 @Composable
-private fun Hero(day: FoodDay, burned: Burned?, modifier: Modifier = Modifier) {
+private fun Hero(day: FoodDay, burned: Burned?, partly: Boolean, modifier: Modifier = Modifier) {
     val totals = day.totals
     val eaten = totals.totals.kcal ?: 0.0
     Column(modifier) {
@@ -298,7 +307,8 @@ private fun Hero(day: FoodDay, burned: Burned?, modifier: Modifier = Modifier) {
             Text(totals.kcalRounded?.let { "%,d".format(it) } ?: "—", style = PawseType.Hero)
             Text("kcal", style = PawseType.Heading.copy(fontWeight = PawseType.Body.fontWeight), color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp, bottom = 10.dp))
         }
-        burned?.let {
+        if (partly) Text(tr("Partly logged", "일부만 기록함"), style = PawseType.BodyStrong)
+        burned?.takeIf { !partly }?.let {
             val gap = it.soFar - eaten
             Text(
                 if (gap >= 0) {

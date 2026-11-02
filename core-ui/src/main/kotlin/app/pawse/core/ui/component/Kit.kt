@@ -507,10 +507,13 @@ fun ScoreRing(
     glow: Boolean = true,
     stroke: Float = 7f,
     range: ClosedFloatingPointRange<Float>? = null,
+    /** A pinned day's value: a grey tick just outside the ring, the one ghost style. */
+    ghost: Float? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val track = PawseTheme.semantics.baselineOuter
     val band = PawseTheme.semantics.baselineBand
+    val ghostColor = MaterialTheme.colorScheme.onSurfaceVariant
     val targetColor = MaterialTheme.colorScheme.onSurface
     val reduce = LocalReduceMotion.current
     val sweep = remember { Animatable(0f) }
@@ -557,6 +560,7 @@ fun ScoreRing(
                 )
             }
             target?.let { tick(it.coerceIn(0f, 1f), 47f, 35f, 2.5f, targetColor) }
+            ghost?.let { tick(it.coerceIn(0f, 1f), 50f, 46.5f, 1.5f, ghostColor) }
         }
         content()
     }

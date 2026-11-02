@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextAlign
@@ -120,6 +121,10 @@ fun ExplainScreen(
     var range by rememberSaveable { mutableIntStateOf(30) }
     // The ⓘ opens how the open page's number is worked out, as a sheet.
     var mathFor by remember { mutableStateOf<ScoreType?>(null) }
+    // One pinned day to compare against, as days before the newest; your usual is always on.
+    var pin by rememberSaveable { mutableStateOf<Int?>(null) }
+    // The day sheet: true picks a day to pin, false moves the window day (the calendar).
+    var daySheet by remember { mutableStateOf<Boolean?>(null) }
     val date = snapshot?.date?.minusDays(back.toLong())
 
     // The night is read whichever page is open, so swiping to Sleep finds it ready.
@@ -166,9 +171,28 @@ fun ExplainScreen(
                     night = night?.takeIf { it.date == date },
                     onBody = { show(ScoreType.BODY) },
                     bottom = padding.calculateBottomPadding(),
+                    pin = pin,
+                    onCompare = { daySheet = true },
+                    onUnpin = { pin = null },
+                    onCalendar = { daySheet = false },
                 )
             }
         }
+    }
+
+    val sheet = daySheet
+    if (sheet != null && snapshot != null) {
+        DaySheet(
+            snapshot = snapshot,
+            type = shown,
+            back = back,
+            pinning = sheet,
+            onPick = { d ->
+                if (sheet) pin = d else back = d
+                daySheet = null
+            },
+            onDismiss = { daySheet = null },
+        )
     }
 
     mathFor?.let { type ->
@@ -205,6 +229,10 @@ private fun ScorePage(
     night: NightDetail?,
     onBody: () -> Unit,
     bottom: Dp,
+    pin: Int?,
+    onCompare: () -> Unit,
+    onUnpin: () -> Unit,
+    onCalendar: () -> Unit,
 ) {
     var open by rememberSaveable { mutableIntStateOf(0) }
     var mathOpen by rememberSaveable { mutableStateOf(false) }
@@ -223,6 +251,8 @@ private fun ScorePage(
         }
 
         val day = if (back == 0) snapshot.today else snapshot.history.lastOrNull { it.date == date }
+        val pinDate = pin?.let { snapshot.date.minusDays(it.toLong()) }
+        val pinned = pinDate?.let { d -> if (pin == 0) snapshot.today else snapshot.history.lastOrNull { it.date == d } }
         item {
             DetailHero(
                 type = type,
@@ -232,8 +262,16 @@ private fun ScorePage(
                 oldest = (snapshot.history.size - 1).coerceAtLeast(0),
                 showNumbers = snapshot.showNumbers,
                 onPick = onPick,
+                pinned = pinned,
+                pinDate = pinDate,
+                onCompare = onCompare,
+                onUnpin = onUnpin,
+                onCalendar = onCalendar,
                 modifier = pad,
             )
+        }
+        if (pinDate != null) {
+            item { SideBySide(sideRows(type, snapshot, day, pinned), date, pinDate, pad.padding(top = 24.dp)) }
         }
 
         if (type == ScoreType.SLEEP) {
@@ -343,6 +381,11 @@ private fun DetailHero(
     oldest: Int,
     showNumbers: Boolean,
     onPick: (Int) -> Unit,
+    pinned: DayReport?,
+    pinDate: LocalDate?,
+    onCompare: () -> Unit,
+    onUnpin: () -> Unit,
+    onCalendar: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val s = PawseTheme.semantics
@@ -356,7 +399,18 @@ private fun DetailHero(
     Column(modifier.fillMaxWidth().padding(top = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             GlyphButton(Glyphs.ChevronLeft, tr("Day before", "전날"), onClick = { if (back < oldest) onPick(back + 1) })
-            Text(title, style = PawseType.Heading, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+            // The title opens the calendar: every route to a day stays visible.
+            Text(
+                title,
+                style = PawseType.Heading,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 48.dp)
+                    .pressable(onClick = onCalendar)
+                    .semantics { contentDescription = "$title, " + tr("choose a date", "날짜 선택") }
+                    .padding(top = 12.dp),
+            )
             GlyphButton(Glyphs.ChevronRight, tr("Day after", "다음 날"), onClick = { if (back > 0) onPick(back - 1) })
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -370,6 +424,7 @@ private fun DetailHero(
                 )
             }
         }
+        CompareChip(pinDate, onOpen = onCompare, onUnpin = onUnpin)
 
         val face = heroFace(type, day, showNumbers)
         ScoreRing(
@@ -380,7 +435,8 @@ private fun DetailHero(
             target = face.target,
             range = face.range,
             stroke = 6f,
-            modifier = Modifier.padding(top = 12.dp),
+            ghost = pinDate?.let { heroFace(type, pinned, showNumbers).fraction },
+            modifier = Modifier.padding(top = 4.dp),
         ) {
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(face.value, style = PawseType.RingXL)

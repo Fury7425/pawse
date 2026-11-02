@@ -191,6 +191,15 @@ class FoodRepository @Inject constructor(
         saved.copy(healthConnectId = mirrored)
     }
 
+    /** Every day from [from] to [to], oldest first, empty days included. */
+    suspend fun days(from: LocalDate, to: LocalDate): List<FoodDay> = withContext(Dispatchers.IO) {
+        val byDate = logDao.between(from.toString(), to.toString()).map(FoodLogMapper::toEntry).groupBy { it.localDate }
+        generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(to) }.map { date ->
+            val entries = byDate[date.toString()].orEmpty()
+            FoodDay(date = date, entries = entries, totals = FoodLogMapper.totals(date.toString(), entries))
+        }.toList()
+    }
+
     /** Seven days ending on [end], oldest first, empty days included: a gap is a record too. */
     fun observeWeek(end: LocalDate): Flow<List<FoodDay>> {
         val start = end.minusDays(WEEK_DAYS - 1L)

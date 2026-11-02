@@ -2,7 +2,9 @@ package app.pawse.feature.food
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
 import app.pawse.core.data.activity.MovingRepository
+import app.pawse.core.data.body.BodyReading
 import app.pawse.core.data.body.BodyRepository
 import app.pawse.core.data.body.EnergyToday
 import app.pawse.core.data.food.FoodDay
@@ -15,8 +17,12 @@ import app.pawse.core.data.health.HealthConnectGateway
 import app.pawse.core.data.health.HealthPermissions
 import app.pawse.core.data.scoring.ScoringRepository
 import app.pawse.core.data.scoring.ScoringState
+import app.pawse.scoring.body.WeighInPoint
+import app.pawse.scoring.body.Weight
 import app.pawse.scoring.config.ScoringConfig
 import app.pawse.scoring.energy.EnergyBalance
+import app.pawse.scoring.energy.LoggedDay
+import app.pawse.scoring.model.Metric
 import app.pawse.scoring.tr
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -26,9 +32,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.time.Duration
 import java.time.LocalDate
 import java.time.ZonedDateTime
 import javax.inject.Inject
@@ -54,12 +62,21 @@ class FoodLogViewModel @Inject constructor(
     /**
      * Burned so far and by bedtime, from the Energy engine: resting burn spread
      * over the clock, the watch's active energy and digestion; bedtime adds resting
-     * burn to bed and your usual activity for the rest of the day.
-     *
-     * ponytail: k is 1. The weekly weight check needs incomplete-day marks in the
-     * food log first; EnergyBalance.weightCheck is ready for it.
+     * burn to bed and your usual activity for the rest of the day. Both are scaled
+     * by k, the weekly check of what you ate against how your trend weight moved.
      */
     val burned: StateFlow<Burned?> = _burned.asStateFlow()
+
+    /** Days marked as not fully logged. */
+    val incomplete: StateFlow<Set<String>> = preferences.incompleteDays
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptySet())
+
+    fun setIncomplete(date: LocalDate, incomplete: Boolean) {
+        viewModelScope.launch {
+            preferences.setIncomplete(date.toString(), incomplete)
+            reloadSideFacts()
+        }
+    }
 
     private val _date = MutableStateFlow(LocalDate.now())
     val date: StateFlow<LocalDate> = _date.asStateFlow()
@@ -222,8 +239,43 @@ class FoodLogViewModel @Inject constructor(
         val usualRest = bed?.let { runCatching { moving.read(now, wakes, it) }.getOrNull()?.usualActiveUntilBed }
         val minute = now.hour * 60.0 + now.minute + now.second / 60.0
         val config = ScoringConfig.DEFAULT.balance
-        val soFar = EnergyBalance.burnedSoFar(bmr, minute, snapshot.energy.activeKcal ?: 0.0, snapshot.energy.eatenKcal, 1.0, config)
-        _burned.value = Burned(soFar, bed?.let { EnergyBalance.byBedtime(soFar, bmr, minute, it, usualRest ?: 0.0, 1.0) })
+        val k = runCatching { weightCheck(now, bmr, snapshot.series[Metric.BODY_WEIGHT].orEmpty()) }.getOrDefault(1.0)
+        val soFar = EnergyBalance.burnedSoFar(bmr, minute, snapshot.energy.activeKcal ?: 0.0, snapshot.energy.eatenKcal, k, config)
+        _burned.value = Burned(soFar, bed?.let { EnergyBalance.byBedtime(soFar, bmr, minute, it, usualRest ?: 0.0, k) })
+    }
+
+    /**
+     * k over the last 28 days: fully logged days (two meals or more, not marked
+     * partly logged) against the trend weight's change. Stays 1 until there are 14
+     * such days and 8 weigh-ins.
+     */
+    private suspend fun weightCheck(now: ZonedDateTime, bmr: Double, weights: List<BodyReading>): Double {
+        val config = ScoringConfig.DEFAULT.balance
+        val today = now.toLocalDate()
+        val from = today.minusDays(config.checkWindowDays.toLong())
+        val to = today.minusDays(1)
+        val active = gateway.slices(
+            setOf(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL),
+            from.atStartOfDay(now.zone).toInstant(),
+            today.atStartOfDay(now.zone).toInstant(),
+            Duration.ofDays(1),
+        ).associate { it.startTime.atZone(now.zone).toLocalDate() to (it.result[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories ?: 0.0) }
+        val marked = preferences.incompleteDays.first()
+        val days = repository.days(from, to).map { d ->
+            LoggedDay(
+                eatenKcal = d.totals.totals.kcal ?: 0.0,
+                meals = d.entries.map { it.meal }.distinct().size,
+                incomplete = d.date.toString() in marked,
+                burnedKcal = bmr + (active[d.date] ?: 0.0),
+            )
+        }
+        val trend = Weight.trend(weights.map { WeighInPoint(it.date.toEpochDay(), it.value) }, ScoringConfig.DEFAULT.weight)
+        fun at(day: LocalDate) = trend.lastOrNull { it.day <= day.toEpochDay() }?.trend
+        val start = at(from)
+        val end = at(to)
+        val change = if (start != null && end != null) end - start else null
+        val weighIns = weights.count { !it.date.isBefore(from) && !it.date.isAfter(to) }
+        return EnergyBalance.weightCheck(days, change, config.checkWindowDays, weighIns, config)
     }
 
     override fun onCleared() {
