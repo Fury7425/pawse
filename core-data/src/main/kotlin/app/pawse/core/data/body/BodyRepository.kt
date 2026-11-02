@@ -1,5 +1,6 @@
 package app.pawse.core.data.body
 
+import androidx.health.connect.client.records.Vo2MaxRecord
 import app.pawse.core.data.db.FoodLogDao
 import app.pawse.core.data.db.MetricSampleDao
 import app.pawse.core.data.db.MetricSampleEntity
@@ -10,11 +11,13 @@ import app.pawse.scoring.baseline.BaselineEngine
 import app.pawse.scoring.body.Bmr
 import app.pawse.scoring.body.BmrResult
 import app.pawse.scoring.config.BaselineConfig
+import app.pawse.scoring.fitness.Vo2Reading
 import app.pawse.scoring.model.Baseline
 import app.pawse.scoring.model.BiologicalSex
 import app.pawse.scoring.model.Metric
 import app.pawse.scoring.model.MetricHistory
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.ZonedDateTime
@@ -89,6 +92,13 @@ data class BodySnapshot(
     val rows: List<BodyRow>,
     val bmr: BmrResult?,
     val energy: EnergyToday,
+    /** Every metric's daily readings, oldest first: usual ranges and slow trends come from these. */
+    val series: Map<Metric, List<BodyReading>> = emptyMap(),
+    /** VO2max as the watch wrote it, for fitness age. */
+    val vo2: List<Vo2Reading> = emptyList(),
+    val sex: BiologicalSex = BiologicalSex.UNSPECIFIED,
+    val ageYears: Int? = null,
+    val goalKg: Double? = null,
 ) {
     val weighedToday: Boolean get() = weight?.date == today
     val daysSinceWeighIn: Long? get() = weight?.let { ChronoUnit.DAYS.between(it.date, today) }
@@ -120,8 +130,13 @@ class BodyRepository @Inject constructor(
         val startOfDay = today.atStartOfDay(now.zone)
         val active = gateway.activeKcal(startOfDay.toInstant(), now.toInstant())
         val profile = profilePreferences.current()
+        val vo2 = gateway.readOrEmpty(Vo2MaxRecord::class, now.minusDays(VO2_DAYS).toInstant(), now.toInstant()).map {
+            Vo2Reading(it.time.atZone(now.zone).toLocalDate().toEpochDay(), it.vo2MillilitersPerMinuteKilogram, it.metadata.dataOrigin.packageName)
+        }
 
         BodyAssembler.assemble(
+            vo2 = vo2,
+            goalKg = profilePreferences.goalKg.first(),
             samples = samples,
             today = today,
             ageYears = profile.ageYears,
@@ -137,6 +152,9 @@ class BodyRepository @Inject constructor(
     private companion object {
         /** A year for the chart, plus the slack the year-ago comparison looks into. */
         const val HISTORY_DAYS = 400L
+
+        /** Fitness age reads a year of VO2max; the filter drifts about 1 mL/kg/min a month. */
+        const val VO2_DAYS = 365L
     }
 }
 
@@ -179,6 +197,8 @@ object BodyAssembler {
         activeKcal: Double?,
         fractionOfDay: Double,
         nowEpochMs: Long,
+        vo2: List<Vo2Reading> = emptyList(),
+        goalKg: Double? = null,
     ): BodySnapshot {
         val daily = samples.mapValues { (_, rows) -> dailyReadings(rows) }
         val weights = daily[Metric.BODY_WEIGHT].orEmpty()
@@ -240,6 +260,11 @@ object BodyAssembler {
                 activeKcal = activeKcal,
                 asOfEpochMs = nowEpochMs,
             ),
+            series = daily,
+            vo2 = vo2,
+            sex = sex,
+            ageYears = ageYears,
+            goalKg = goalKg,
         )
     }
 

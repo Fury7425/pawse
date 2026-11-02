@@ -15,7 +15,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.platform.LocalDensity
+import app.pawse.core.ui.component.LocalReduceMotion
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -360,13 +363,16 @@ private fun Dock(
             ) {
                 val segment = maxWidth / TABS.size
                 val index = TABS.indexOfFirst { it.first == current }.coerceAtLeast(0)
-                val offset by animateDpAsState(segment * index, tween(280, easing = EaseInOut), label = "dock")
+                val reduce = LocalReduceMotion.current
+                val offset by animateDpAsState(segment * index, if (reduce) snap() else tween(280, easing = EaseInOut), label = "dock")
+                // At very large text the labels drop and the icons carry the tabs.
+                val iconsOnly = LocalDensity.current.fontScale >= 1.6f
                 Box(
                     Modifier
                         .offset(x = offset)
                         .width(segment)
                         .fillMaxHeight()
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(26.dp)),
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f), RoundedCornerShape(26.dp)),
                 )
                 Row(Modifier.fillMaxSize()) {
                     TABS.forEach { (route, label, glyph) ->
@@ -382,8 +388,10 @@ private fun Dock(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Glyph(glyph, color = color)
-                            Spacer(Modifier.width(6.dp))
-                            Text(label, style = PawseType.BodyStrong, color = color)
+                            if (!iconsOnly) {
+                                Spacer(Modifier.width(5.dp))
+                                Text(label, style = PawseType.BodyStrong, color = color, maxLines = 1)
+                            }
                         }
                     }
                 }

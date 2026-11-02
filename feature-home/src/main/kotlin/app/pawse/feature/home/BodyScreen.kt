@@ -2,9 +2,7 @@ package app.pawse.feature.home
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -17,64 +15,73 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import app.pawse.core.data.body.BodyComposition
-import app.pawse.core.data.body.BodyRow
+import app.pawse.core.data.body.BodyReading
 import app.pawse.core.data.body.BodySnapshot
-import app.pawse.core.data.body.EnergyToday
-import app.pawse.core.ui.component.BaselineBandRow
-import app.pawse.core.ui.component.BaselineRowState
 import app.pawse.core.ui.component.Chip
-import app.pawse.core.ui.component.DeviationDirection
 import app.pawse.core.ui.component.GhostButton
 import app.pawse.core.ui.component.Glyph
 import app.pawse.core.ui.component.Glyphs
-import app.pawse.core.ui.component.KeySwatch
 import app.pawse.core.ui.component.PawseCard
+import app.pawse.core.ui.component.PawseField
+import app.pawse.core.ui.component.PawseSheet
+import app.pawse.core.ui.component.PrimaryButton
+import app.pawse.core.ui.component.RangeTrack
 import app.pawse.core.ui.component.Segmented
-import app.pawse.core.ui.component.SplitBar
-import app.pawse.core.ui.component.UsualRangeKey
+import app.pawse.core.ui.component.SplitRow
 import app.pawse.core.ui.component.aura
-import app.pawse.core.ui.component.cardSurface
 import app.pawse.core.ui.component.pressable
 import app.pawse.core.ui.theme.PawseTheme
 import app.pawse.core.ui.theme.PawseType
-import app.pawse.scoring.body.BmrResult
-import app.pawse.scoring.body.BmrSource
+import app.pawse.scoring.body.BodyUsual
+import app.pawse.scoring.body.GoalEstimate
+import app.pawse.scoring.body.TrendPoint
+import app.pawse.scoring.body.WeighInPoint
+import app.pawse.scoring.body.Weight
+import app.pawse.scoring.config.ScoringConfig
+import app.pawse.scoring.fitness.CardioFitness
 import app.pawse.scoring.model.Metric
 import app.pawse.scoring.tr
+import java.time.LocalDate
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.abs
-import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * Body: what the scale wrote, against your own usual range, and today's energy.
+ * Body: the trend weight as the headline, with the number, the sentence, the
+ * chart and the goal drawn from one array so they cannot disagree. Then
+ * composition, each figure against your usual, and fitness age.
  *
  * Every change stays grey. Up or down is not good or bad on its own, so the screen
  * says which way and by how much, and leaves the verdict to the person.
@@ -87,8 +94,7 @@ fun BodyScreen(
 ) {
     val snapshot by viewModel.snapshot.collectAsStateWithLifecycle()
     val range by viewModel.range.collectAsStateWithLifecycle()
-    val ownPackage = LocalContext.current.packageName
-    val typedIn = snapshot?.weight?.sourceApp == ownPackage
+    var editingGoal by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { viewModel.reload() }
 
@@ -98,561 +104,428 @@ fun BodyScreen(
             contentPadding = PaddingValues(
                 start = 24.dp,
                 end = 24.dp,
-                top = padding.calculateTopPadding() + 12.dp,
+                top = padding.calculateTopPadding() + 8.dp,
                 bottom = padding.calculateBottomPadding() + 140.dp,
             ),
         ) {
             item {
-                Row(Modifier.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(tr("Body", "신체"), style = PawseType.Title, modifier = Modifier.weight(1f))
                     Row(
                         Modifier
-                            .height(44.dp)
+                            .height(48.dp)
                             .pressable(onClick = onAddWeighIn)
-                            .cardSurface(RoundedCornerShape(22.dp))
-                            .padding(start = 10.dp, end = 14.dp),
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(24.dp))
+                            .clearAndSetSemantics {
+                                contentDescription = tr("Weigh-in", "체중 기록")
+                                role = Role.Button
+                            }
+                            .padding(start = 14.dp, end = 18.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Glyph(Glyphs.Plus, size = 18.dp, strokeWidth = 2f, color = MaterialTheme.colorScheme.onSurface)
                         Spacer(Modifier.width(6.dp))
-                        Text(tr("Weigh-in", "체중 입력"), style = PawseType.BodyStrong)
+                        Text(tr("Weigh-in", "체중 기록"), style = PawseType.BodyStrong)
                     }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Glyph(
-                        if (snapshot?.weighedToday == true) Glyphs.Check else Glyphs.Clock,
-                        size = 14.dp,
-                        strokeWidth = 2f,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = snapshot?.let { statusLine(it, typedIn) } ?: tr("Reading your scale", "체중계 기록을 읽는 중"),
-                        style = PawseType.Label,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Spacer(Modifier.height(24.dp))
+                Text(
+                    snapshot?.let { statusLine(it) } ?: tr("Reading your scale", "체중계 기록을 읽는 중"),
+                    style = PawseType.Micro,
+                    color = PawseTheme.semantics.faint,
+                )
             }
 
             val s = snapshot ?: return@LazyColumn
             if (!s.hasAnyData) {
                 item {
-                    PawseCard {
+                    PawseCard(modifier = Modifier.padding(top = 24.dp)) {
                         Text(tr("No scale readings yet", "아직 체중계 기록이 없어요"), style = PawseType.Heading)
-                        Spacer(Modifier.height(4.dp))
                         Text(
                             tr(
-                                "When a scale writes weight to Health Connect, it shows here on its own. " +
-                                    "No scale that does? Type a weigh-in in.",
-                                "체중계가 헬스 커넥트에 체중을 기록하면 여기에 저절로 나타나요. " +
-                                    "그런 체중계가 없다면 직접 입력하세요.",
+                                "When a scale writes weight to Health Connect, it shows here on its own. No scale that does? Add a weigh-in.",
+                                "체중계가 헬스 커넥트에 체중을 기록하면 여기에 저절로 나타나요. 그런 체중계가 없다면 직접 기록하세요.",
                             ),
                             style = PawseType.Label,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp),
                         )
-                        Spacer(Modifier.height(4.dp))
-                        GhostButton(tr("Add a weigh-in", "체중 입력하기"), onClick = onAddWeighIn, glyph = Glyphs.Plus)
-                    }
-                    Spacer(Modifier.height(24.dp))
-                }
-            }
-
-            s.weight?.let {
-                item {
-                    WeightSection(s, range, viewModel::setRange, typedIn)
-                    Spacer(Modifier.height(28.dp))
-                }
-            }
-
-            s.composition?.let { composition ->
-                item {
-                    CompositionCard(composition, typedIn)
-                    Spacer(Modifier.height(28.dp))
-                }
-            }
-
-            if (s.rows.isNotEmpty()) {
-                item {
-                    Row(Modifier.padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            tr("Against your usual · ${s.weighInsLast30Days} weigh-ins", "평소와 비교 · 체중 기록 ${s.weighInsLast30Days}회"),
-                            style = PawseType.Label,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f),
-                        )
-                        UsualRangeKey(tr("Usual range", "평소 범위"))
                     }
                 }
-                s.rows.forEach { row ->
-                    item {
-                        BaselineBandRow(state = row.toRowState())
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    }
-                }
-                item {
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        tr(
-                            "Body changes stay grey. Up or down isn't good or bad on its own, so Pawse says " +
-                                "which way and by how much, and leaves the verdict to you.",
-                            "신체 변화는 회색으로 표시해요. 오르내림 자체는 좋고 나쁨이 아니라서, Pawse는 어느 쪽으로 " +
-                                "얼마나 변했는지만 알려 주고 판단은 맡겨요.",
-                        ),
-                        style = PawseType.Label,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(28.dp))
-                }
             }
 
-            item {
-                EnergyCard(s.energy)
-                Spacer(Modifier.height(16.dp))
+            val points = weighIns(s)
+            val trend = Weight.trend(points, ScoringConfig.DEFAULT.weight)
+            if (trend.isNotEmpty()) {
+                item { TrendSection(s, trend, points, range, viewModel::setRange, onGoal = { editingGoal = true }) }
             }
-
-            s.bmr?.let { bmr ->
-                item {
-                    BmrCard(bmr, s.composition?.leanKg)
-                    Spacer(Modifier.height(24.dp))
-                }
-            }
-
-            item {
-                Text(
-                    tr(
-                        "Scales estimate composition from a small electric current, so water and a meal " +
-                            "can move it by a percent or two. Weigh at the same time each day for the " +
-                            "steadiest numbers. Not a medical device.",
-                        "체중계는 약한 전류로 체성분을 추정해서, 물이나 식사만으로도 1~2% 달라질 수 있어요. " +
-                            "매일 같은 시간에 재면 가장 안정적인 값을 얻을 수 있어요. 의료기기가 아니에요.",
-                    ),
-                    style = PawseType.Label,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            item { Composition(s, range.days) }
+            item { AgainstUsual(s) }
+            item { FitnessAgeCard(s) }
         }
     }
-}
 
-private fun statusLine(s: BodySnapshot, typedIn: Boolean): String {
-    val weight = s.weight ?: return tr("No weigh-ins yet", "아직 체중 기록이 없어요")
-    val days = s.daysSinceWeighIn ?: 0L
-    return if (days == 0L) {
-        val clock = ScoreCopy.clock(weight.atEpochMs)
-        tr("Weighed today at $clock, ", "오늘 ${clock}에 측정, ") +
-            if (typedIn) tr("typed in", "직접 입력") else tr("from your scale", "체중계에서")
-    } else {
-        val date = weight.date.format(DateTimeFormatter.ofPattern(tr("EEE d MMM", "M월 d일 (E)"), Locale.getDefault()))
-        tr(
-            "Last weighed $date, ${if (days == 1L) "yesterday" else "$days days ago"}",
-            "마지막 측정 $date, ${if (days == 1L) "어제" else "${days}일 전"}",
-        )
-    }
-}
-
-@Composable
-private fun WeightSection(s: BodySnapshot, range: BodyRange, onRange: (BodyRange) -> Unit, typedIn: Boolean) {
-    val weight = s.weight ?: return
-    Text(tr("Weight", "체중"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    Spacer(Modifier.height(4.dp))
-    Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.alpha(if (s.weighedToday) 1f else 0.6f)) {
-        Text(oneDecimal(weight.value), style = PawseType.Hero)
-        Spacer(Modifier.width(6.dp))
-        Text(
-            "kg",
-            style = PawseType.Heading.copy(fontWeight = PawseType.Body.fontWeight),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 12.dp),
-        )
-    }
-    Spacer(Modifier.height(8.dp))
-    Text(weightLine(s), style = PawseType.Body, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    Spacer(Modifier.height(10.dp))
-    val days = s.daysSinceWeighIn ?: 0L
-    Chip(
-        when {
-            days == 0L -> if (typedIn) tr("Typed in", "직접 입력") else tr("Measured", "측정값")
-            days == 1L -> tr("A day old", "하루 전 값")
-            else -> tr("$days days old", "${days}일 전 값")
-        },
-    )
-    Spacer(Modifier.height(20.dp))
-
-    Segmented(
-        options = BodyRange.entries,
-        selected = range,
-        onSelect = onRange,
-        label = { it.label },
-        height = 36.dp,
-    )
-    Spacer(Modifier.height(16.dp))
-    WeightChart(s, range)
-}
-
-private fun weightLine(s: BodySnapshot): String {
-    val weight = s.weight ?: return ""
-    if (!s.weighedToday) {
-        return tr(
-            "Step on the scale and it updates here on its own, or add a weigh-in.",
-            "체중계에 올라가면 여기에 저절로 반영돼요. 직접 입력해도 돼요.",
-        )
-    }
-    val parts = buildList {
-        s.weightUsual?.let { add(kgDelta(weight.value - it.mean, tr("your 30-day usual", "30일 평소"))) }
-        s.weightYearAgo?.let { add(kgDelta(weight.value - it, tr("a year ago", "1년 전"))) }
-    }
-    return if (parts.isEmpty()) {
-        tr("Pawse needs a few more weigh-ins to know your usual.", "평소 체중을 알려면 체중 기록이 몇 번 더 필요해요.")
-    } else {
-        parts.joinToString(tr(", and ", ", ")) + "."
-    }
-}
-
-private fun kgDelta(delta: Double, against: String): String = when {
-    abs(delta) < 0.05 -> tr("About the same as $against", "$against 대비 거의 같음")
-    delta > 0 -> tr("${oneDecimal(delta)} kg over $against", "$against 대비 ${oneDecimal(delta)} kg 많음")
-    else -> tr("${oneDecimal(-delta)} kg under $against", "$against 대비 ${oneDecimal(-delta)} kg 적음")
-}.replaceFirstChar { it.uppercase() }
-
-@Composable
-private fun WeightChart(s: BodySnapshot, range: BodyRange) {
-    val weight = s.weight ?: return
-    val points = s.weightSeries.filter { !it.date.isBefore(s.today.minusDays(range.days)) }
-    val band = PawseTheme.semantics.baselineBand
-    val line = MaterialTheme.colorScheme.onSurfaceVariant
-    val last = MaterialTheme.colorScheme.onSurface
-    val ring = MaterialTheme.colorScheme.background
-    val usual = s.weightUsual
-    val values = points.map { it.value } + listOfNotNull(usual?.let { it.mean - it.sigma }, usual?.let { it.mean + it.sigma })
-    val lo = (values.minOrNull() ?: weight.value) - 0.3
-    val hi = (values.maxOrNull() ?: weight.value) + 0.3
-    val description = tr(
-        "Weight over the last ${range.label}, ending at ${oneDecimal(weight.value)} kg.",
-        "최근 ${range.label} 체중, 마지막 값 ${oneDecimal(weight.value)} kg.",
-    )
-
-    Canvas(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(120.dp)
-            .semantics { contentDescription = description },
-    ) {
-        val pad = 6.dp.toPx()
-        fun y(v: Double) = ((size.height - pad) - (v - lo) / (hi - lo) * (size.height - 2 * pad)).toFloat()
-        val first = s.today.minusDays(range.days)
-        fun x(date: java.time.LocalDate) =
-            (java.time.temporal.ChronoUnit.DAYS.between(first, date).toFloat() / range.days) * size.width
-
-        usual?.let {
-            val top = y(it.mean + it.sigma)
-            drawRoundRect(band, Offset(0f, top), Size(size.width, y(it.mean - it.sigma) - top), CornerRadius(4.dp.toPx()))
-        }
-        if (points.size > 1) {
-            val path = Path()
-            points.forEachIndexed { i, p -> if (i == 0) path.moveTo(x(p.date), y(p.value)) else path.lineTo(x(p.date), y(p.value)) }
-            drawPath(path, color = line, style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-        }
-        points.dropLast(1).forEach { drawCircle(color = line, radius = 2.5.dp.toPx(), center = Offset(x(it.date), y(it.value))) }
-        points.lastOrNull()?.let {
-            val c = Offset(x(it.date), y(it.value))
-            drawCircle(color = ring, radius = 8.dp.toPx(), center = c)
-            drawCircle(color = last, radius = 5.dp.toPx(), center = c)
-        }
-    }
-    Spacer(Modifier.height(8.dp))
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            when (range) {
-                BodyRange.DAYS_30 -> tr("30 days ago", "30일 전")
-                BodyRange.DAYS_90 -> tr("90 days ago", "90일 전")
-                BodyRange.YEAR -> tr("A year ago", "1년 전")
+    if (editingGoal) {
+        GoalSheet(
+            current = snapshot?.goalKg,
+            onDismiss = { editingGoal = false },
+            onSave = {
+                editingGoal = false
+                viewModel.setGoal(it)
             },
-            style = PawseType.Label,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(Modifier.weight(1f))
-        if (usual != null) {
-            UsualRangeKey()
-            Spacer(Modifier.weight(1f))
-        }
-        Text(tr("Today", "오늘"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** The scale reading appears once, here; the headline is the trend. */
+private fun statusLine(s: BodySnapshot): String {
+    val weight = s.weight ?: return tr("No weigh-ins yet", "아직 체중 기록이 없어요")
+    val kg = oneDecimal(weight.value)
+    val days = s.daysSinceWeighIn ?: 0L
+    return when (days) {
+        0L -> tr("Weighed today ${ScoreCopy.clock(weight.atEpochMs)} · $kg kg on the scale", "오늘 ${ScoreCopy.clock(weight.atEpochMs)} 측정 · 체중계 $kg kg")
+        1L -> tr("Weighed yesterday · $kg kg on the scale", "어제 측정 · 체중계 $kg kg")
+        else -> tr("Last weighed $days days ago · $kg kg on the scale", "${days}일 전 측정 · 체중계 $kg kg")
+    }
+}
+
+private fun weighIns(s: BodySnapshot): List<WeighInPoint> {
+    val zone = ZoneId.systemDefault()
+    return s.series[Metric.BODY_WEIGHT].orEmpty().map {
+        val t = java.time.Instant.ofEpochMilli(it.atEpochMs).atZone(zone)
+        WeighInPoint(it.date.toEpochDay(), it.value, t.hour * 60.0 + t.minute)
     }
 }
 
 @Composable
-private fun CompositionCard(c: BodyComposition, typedIn: Boolean) {
-    val parts = listOfNotNull(
-        c.waterKg?.let { tr("Water", "수분") to it },
-        c.otherLeanKg?.let {
-            (if (c.waterKg == null && c.boneKg == null) tr("Lean", "제지방") else tr("Other lean", "기타 제지방")) to it
-        },
-        c.boneKg?.let { tr("Bone", "뼈") to it },
-        c.fatKg?.let { tr("Fat", "지방") to it },
-    )
-    val fills = listOf(
-        MaterialTheme.colorScheme.onSurface,
-        MaterialTheme.colorScheme.onSurfaceVariant,
-        MaterialTheme.colorScheme.outline,
-        PawseTheme.semantics.baselineBand,
-    )
-    PawseCard {
-        Row {
+private fun TrendSection(
+    s: BodySnapshot,
+    trend: List<TrendPoint>,
+    points: List<WeighInPoint>,
+    range: BodyRange,
+    onRange: (BodyRange) -> Unit,
+    onGoal: () -> Unit,
+) {
+    val config = ScoringConfig.DEFAULT.weight
+    val today = s.today.toEpochDay()
+    val latest = trend.last()
+    val before = trend.lastOrNull { it.day <= today - 28 }
+    Column(Modifier.padding(top = 24.dp)) {
+        Text(tr("Trend weight", "추세 체중"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(oneDecimal(latest.trend), style = PawseType.Hero)
+            Text("kg", style = PawseType.Heading.copy(fontWeight = PawseType.Body.fontWeight), color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp, bottom = 10.dp))
+        }
+        Text(
+            when {
+                before == null -> tr("Pawse needs a few weeks of weigh-ins for a trend.", "추세를 보려면 몇 주의 기록이 필요해요.")
+                Weight.aboutSame(latest.trend - before.trend, points) -> tr("About the same as 4 weeks ago", "4주 전과 거의 같아요")
+                latest.trend > before.trend -> tr("Up ${oneDecimal(latest.trend - before.trend)} kg in 4 weeks", "4주 동안 ${oneDecimal(latest.trend - before.trend)} kg 늘었어요")
+                else -> tr("Down ${oneDecimal(before.trend - latest.trend)} kg in 4 weeks", "4주 동안 ${oneDecimal(before.trend - latest.trend)} kg 줄었어요")
+            },
+            style = PawseType.BodyStrong,
+        )
+        Segmented(
+            options = BodyRange.entries,
+            selected = range,
+            onSelect = onRange,
+            label = { it.label },
+            height = 32.dp,
+            modifier = Modifier.padding(top = 16.dp),
+        )
+        WeightChart(trend, s.today, range, s.goalKg, Modifier.padding(top = 16.dp))
+        Text(
+            tr("Dots are scale readings, the line is the trend. It lags a little behind the scale.", "점은 체중계 측정값, 선은 추세예요. 추세는 측정값보다 조금 늦게 따라가요."),
+            style = PawseType.Micro,
+            color = PawseTheme.semantics.faint,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+        if (latest.likelyWater) {
+            Text(tr("The last reading looks like water and counts at half weight.", "마지막 측정값은 수분 변화로 보여 절반만 반영했어요."), style = PawseType.Micro, color = PawseTheme.semantics.faint)
+        }
+        val goal = s.goalKg
+        Row(
+            Modifier
+                .padding(top = 8.dp)
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .pressable(onClick = onGoal)
+                .semantics(mergeDescendants = true) { role = Role.Button },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(
-                tr("What the ${oneDecimal(c.weightKg)} kg is made of", "${oneDecimal(c.weightKg)} kg의 구성"),
+                if (goal == null) tr("Set a goal weight", "목표 체중 정하기") else goalLine(goal, Weight.goal(trend, goal, today, config)),
                 style = PawseType.Label,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
-            Text(if (typedIn) tr("Typed in", "직접 입력") else tr("From your scale", "체중계 측정"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Glyph(Glyphs.ChevronRight, size = 16.dp, color = PawseTheme.semantics.faint)
         }
-        Spacer(Modifier.height(12.dp))
-        SplitBar(parts.mapIndexed { i, (_, kg) -> kg.toFloat() to fills[i] }, height = 10.dp)
-        Spacer(Modifier.height(14.dp))
-        parts.chunked(2).forEachIndexed { row, pair ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                pair.forEachIndexed { col, (name, kg) ->
-                    Column(Modifier.weight(1f).padding(bottom = 12.dp)) {
-                        KeySwatch(fills[row * 2 + col], name)
-                        Spacer(Modifier.height(2.dp))
-                        Row(verticalAlignment = Alignment.Bottom) {
-                            Text("${oneDecimal(kg)} kg", style = PawseType.MetricValue)
-                            Spacer(Modifier.width(4.dp))
-                            Text("${(kg / c.weightKg * 100).roundToInt()}%", style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-                if (pair.size == 1) Spacer(Modifier.weight(1f))
+    }
+}
+
+private fun goalLine(goal: Double, e: GoalEstimate): String {
+    val g = tr("Goal ${oneDecimal(goal)} kg", "목표 ${oneDecimal(goal)} kg")
+    return g + " · " + when (e) {
+        is GoalEstimate.Months -> when {
+            e.high == null -> tr("at least ${e.low} months at this pace", "이 속도면 최소 ${e.low}개월")
+            e.low == e.high -> tr("about ${e.months} months", "약 ${e.months}개월")
+            else -> tr("about ${e.low}–${e.high} months", "약 ${e.low}–${e.high}개월")
+        }
+        GoalEstimate.TooEarly -> tr("an estimate comes after 3 weeks and 8 weigh-ins", "3주와 8번의 기록 뒤에 예상이 나와요")
+        GoalEstimate.NoClearTrend -> tr("No clear trend toward your goal yet.", "아직 목표 쪽으로 뚜렷한 추세가 없어요.")
+        GoalEstimate.TooFast -> tr(
+            "This is faster than common guidance; a doctor or dietitian can help set a pace.",
+            "일반적인 권장보다 빠른 속도예요. 의사나 영양사와 속도를 정해 보세요.",
+        )
+    }
+}
+
+/** Raw weigh-ins as pale dots, the trend as the line, the goal dashed. One array draws all three. */
+@Composable
+private fun WeightChart(trend: List<TrendPoint>, today: LocalDate, range: BodyRange, goal: Double?, modifier: Modifier = Modifier) {
+    val first = today.minusDays(range.days).toEpochDay()
+    val shown = trend.filter { it.day >= first }
+    if (shown.isEmpty()) return
+    val s = PawseTheme.semantics
+    val on = MaterialTheme.colorScheme.onSurface
+    val bg = MaterialTheme.colorScheme.background
+    val hair = MaterialTheme.colorScheme.outlineVariant
+    val grey = MaterialTheme.colorScheme.onSurfaceVariant
+    val measurer = rememberTextMeasurer()
+    val label = TextStyle(fontSize = 12.sp, color = s.faint)
+    val values = shown.flatMap { listOf(it.kg, it.trend) } + listOfNotNull(goal?.takeIf { g -> abs(g - shown.last().trend) < 6.0 })
+    val lo = values.min() - 0.4
+    val hi = values.max() + 0.4
+    val start = LocalDate.ofEpochDay(first).format(DateTimeFormatter.ofPattern(tr("d MMM", "M월 d일"), Locale.getDefault()))
+    Canvas(
+        modifier
+            .fillMaxWidth()
+            .height(168.dp)
+            .semantics {
+                contentDescription = tr(
+                    "Trend weight over ${range.label}, ending at ${oneDecimal(shown.last().trend)} kg.",
+                    "최근 ${range.label} 추세 체중, 마지막 ${oneDecimal(shown.last().trend)} kg.",
+                )
+            },
+    ) {
+        val chartH = 140.dp.toPx()
+        fun x(day: Long) = (day - first).toFloat() / range.days * size.width
+        fun y(v: Double) = (chartH - 4.dp.toPx() - (v - lo) / (hi - lo) * (chartH - 8.dp.toPx())).toFloat()
+        // Three hairlines with their kg, then the goal, the dots and the line.
+        (0..2).forEach { i ->
+            val v = lo + (hi - lo) * (0.2 + 0.3 * i)
+            val yy = y(v)
+            drawLine(hair, Offset(0f, yy), Offset(size.width, yy), 1.dp.toPx())
+            drawText(measurer.measure(oneDecimal(v), label), topLeft = Offset(0f, yy - 16.dp.toPx()))
+        }
+        goal?.takeIf { it in lo..hi }?.let {
+            drawLine(grey.copy(alpha = 0.7f), Offset(0f, y(it)), Offset(size.width, y(it)), 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 5.dp.toPx())))
+        }
+        shown.forEach { drawCircle(s.mark, 2.5.dp.toPx(), Offset(x(it.day), y(it.kg))) }
+        if (shown.size > 1) {
+            val path = Path()
+            shown.forEachIndexed { i, p -> if (i == 0) path.moveTo(x(p.day), y(p.trend)) else path.lineTo(x(p.day), y(p.trend)) }
+            drawPath(path, on, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+        }
+        val end = Offset(x(shown.last().day), y(shown.last().trend))
+        drawCircle(bg, 7.dp.toPx(), end)
+        drawCircle(on, 5.dp.toPx(), end)
+        drawText(measurer.measure(start, label), topLeft = Offset(0f, chartH + 8.dp.toPx()))
+        val t = measurer.measure(tr("today", "오늘"), label)
+        drawText(t, topLeft = Offset(size.width - t.size.width, chartH + 8.dp.toPx()))
+    }
+}
+
+/** Fat and lean share the chart's weeks, as % or kg, each with its slow trend. */
+@Composable
+private fun Composition(s: BodySnapshot, days: Long) {
+    val fat = s.series[Metric.BODY_FAT].orEmpty()
+    val lean = s.series[Metric.LEAN_MASS].orEmpty()
+    if (fat.isEmpty() && lean.isEmpty()) return
+    var inKg by rememberSaveable { mutableStateOf(false) }
+    val weights = s.series[Metric.BODY_WEIGHT].orEmpty().associateBy { it.date }
+    // Fat is written as a percent and lean as kilograms; the other unit needs that day's weight.
+    fun fatShown(r: BodyReading): Double? = if (inKg) weights[r.date]?.let { r.value / 100.0 * it.value } else r.value
+    fun leanShown(r: BodyReading): Double? = if (inKg) r.value else weights[r.date]?.let { r.value / it.value * 100.0 }
+    val first = s.today.minusDays(days)
+    PawseCard(modifier = Modifier.padding(top = 32.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(tr("Composition", "체성분"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            Segmented(listOf(false, true), inKg, onSelect = { inKg = it }, label = { if (it) "kg" else "%" }, height = 28.dp, modifier = Modifier.width(112.dp))
+        }
+        CompositionRow(tr("Body fat", "체지방"), fat.filter { !it.date.isBefore(first) }.mapNotNull { r -> fatShown(r)?.let { r.date to it } }, inKg)
+        CompositionRow(tr("Lean mass", "제지방량"), lean.filter { !it.date.isBefore(first) }.mapNotNull { r -> leanShown(r)?.let { r.date to it } }, inKg)
+        val source = (fat.lastOrNull() ?: lean.lastOrNull())?.sourceApp?.let(::writer).orEmpty()
+        Text(
+            listOf(tr("Same ${days / 7} weeks as the weight chart", "체중 차트와 같은 ${days / 7}주"), source).filter { it.isNotEmpty() }.joinToString(" · "),
+            style = PawseType.Micro,
+            color = PawseTheme.semantics.faint,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+    }
+}
+
+@Composable
+private fun CompositionRow(name: String, values: List<Pair<LocalDate, Double>>, inKg: Boolean) {
+    if (values.isEmpty()) return
+    val config = ScoringConfig.DEFAULT.weight
+    val points = values.map { WeighInPoint(it.first.toEpochDay(), it.second) }
+    val slow = Weight.slowTrend(points, config)
+    val change = slow.last().trend - slow.first().trend
+    val since = values.first().first.format(DateTimeFormatter.ofPattern(tr("d MMM", "M월 d일"), Locale.getDefault()))
+    SplitRow(Modifier.padding(top = 16.dp)) {
+        Text(name, style = PawseType.Body, modifier = Modifier.weight(1f))
+        Text(oneDecimal(values.last().second) + if (inKg) " kg" else "%", style = PawseType.MetricValue)
+        Text(
+            if (slow.size < 2 || Weight.aboutSame(change, points)) tr("about the same", "거의 같음") else "${if (change > 0) "+" else "−"}${oneDecimal(abs(change))} " + tr("since $since", "$since 이후"),
+            style = PawseType.Micro,
+            color = PawseTheme.semantics.faint,
+        )
+    }
+    if (slow.size > 1) {
+        val grey = MaterialTheme.colorScheme.onSurfaceVariant
+        Canvas(Modifier.padding(top = 4.dp).fillMaxWidth().height(28.dp)) {
+            val lo = slow.minOf { it.trend }
+            val span = (slow.maxOf { it.trend } - lo).takeIf { it > 1e-9 } ?: 1.0
+            val d0 = slow.first().day
+            val dn = (slow.last().day - d0).coerceAtLeast(1)
+            val path = Path()
+            slow.forEachIndexed { i, p ->
+                val x = (p.day - d0).toFloat() / dn * size.width
+                val y = (size.height - 4.dp.toPx() - (p.trend - lo) / span * (size.height - 8.dp.toPx())).toFloat()
+                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
+            drawPath(path, grey, style = Stroke(1.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
         }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        Spacer(Modifier.height(12.dp))
+    }
+}
+
+private val USUAL_METRICS = listOf(Metric.BODY_FAT, Metric.LEAN_MASS, Metric.BODY_WATER, Metric.BONE_MASS, Metric.BASAL_METABOLIC_RATE)
+
+/**
+ * Each figure against your usual: median ± 1.4826 × MAD over the last 60 days from
+ * the device that wrote the latest reading, at least 4 readings. Grey throughout.
+ */
+@Composable
+private fun AgainstUsual(s: BodySnapshot) {
+    val config = ScoringConfig.DEFAULT.weight
+    val today = s.today.toEpochDay()
+    val rows = USUAL_METRICS.mapNotNull { metric ->
+        val readings = s.series[metric].orEmpty()
+        val latest = readings.lastOrNull() ?: return@mapNotNull null
+        // InBody and a smart scale never share a usual: one device's readings only.
+        val own = readings.filter { it.sourceApp == latest.sourceApp }.map { WeighInPoint(it.date.toEpochDay(), it.value) }
+        val usual = Weight.usual(own.dropLast(1), today, config) ?: return@mapNotNull null
+        Triple(metric, latest, usual)
+    }
+    if (rows.isEmpty()) return
+    Column(Modifier.padding(top = 32.dp)) {
+        Text(
+            tr("Against your usual · ${rows.maxOf { it.third.readings }} readings", "평소와 비교 · ${rows.maxOf { it.third.readings }}회 측정"),
+            style = PawseType.Label,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        rows.forEach { (metric, latest, usual) -> UsualRow(metric, latest, usual) }
+        Text(
+            tr("Body changes stay grey. Up or down isn’t good or bad on its own.", "신체 변화는 회색으로 보여줘요. 오르내림 자체는 좋고 나쁨이 아니에요."),
+            style = PawseType.Micro,
+            color = PawseTheme.semantics.faint,
+            modifier = Modifier.padding(top = 12.dp),
+        )
+    }
+}
+
+@Composable
+private fun UsualRow(metric: Metric, latest: BodyReading, usual: BodyUsual) {
+    val spread = usual.spread.takeIf { it > 1e-9 } ?: 1e-9
+    val z = ((latest.value - usual.median) / spread).coerceIn(-3.0, 3.0)
+    Column(Modifier.padding(vertical = 8.dp)) {
+        SplitRow {
+            Text(ScoreCopy.metricLabel(metric), style = PawseType.BodyStrong, modifier = Modifier.weight(1f))
+            Text(ScoreCopy.formatRaw(metric, latest.value), style = PawseType.MetricValue)
+        }
+        RangeTrack(
+            band = (1f / 3f)..(2f / 3f),
+            marker = ((z + 3.0) / 6.0).toFloat(),
+            markerColor = PawseTheme.semantics.neutral,
+            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+        )
+        Text(
+            tr("Usually", "평소") + " ${ScoreCopy.formatRaw(metric, usual.median)} ± ${ScoreCopy.formatRaw(metric, usual.spread).substringBefore(' ').removeSuffix("%")}",
+            style = PawseType.Micro,
+            color = PawseTheme.semantics.faint,
+        )
+    }
+}
+
+/**
+ * Fitness age, marked temporary: the age at which a typical person of your sex has
+ * your VO₂max, from FRIEND's reference curve, as a range. Body only, never Scores.
+ */
+@Composable
+private fun FitnessAgeCard(s: BodySnapshot) {
+    val config = ScoringConfig.DEFAULT.fitness
+    val age = CardioFitness.age(s.vo2, s.sex, config)
+    PawseCard(modifier = Modifier.padding(top = 32.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(tr("Fitness age", "체력 나이"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            Chip(tr("Temporary", "임시"))
+        }
+        if (age == null) {
+            Text(
+                tr(
+                    "Needs two VO₂max readings from your watch, at least 14 days apart.",
+                    "워치의 VO₂max 기록이 14일 이상 간격으로 두 번 필요해요.",
+                ),
+                style = PawseType.Label,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        } else {
+            Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("${age.age}", style = PawseType.Numeral)
+                Text(tr("years", "세"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
+            }
+            val date = LocalDate.ofEpochDay(age.vo2max.lastDay).format(DateTimeFormatter.ofPattern(tr("d MMM", "M월 d일"), Locale.getDefault()))
+            Text(
+                listOfNotNull(
+                    s.ageYears?.let { tr("You’re $it", "실제 나이 $it") },
+                    tr("likely ${age.low}–${age.high}", "범위 ${age.low}–${age.high}"),
+                    tr("from VO₂max ${age.vo2max.value.roundToInt()}, ${writer(age.vo2max.source)}, $date", "VO₂max ${age.vo2max.value.roundToInt()} 기준, ${writer(age.vo2max.source)}, $date"),
+                ).joinToString(" · "),
+                style = PawseType.Micro,
+                color = PawseTheme.semantics.faint,
+            )
+        }
         Text(
             tr(
-                "Health Connect has no skeletal-muscle record, so a scale's muscle figure can't reach Pawse. " +
-                    "Lean mass — muscle, water and bone together — is the closest honest number.",
-                "헬스 커넥트에는 골격근량 기록 항목이 없어서 체중계의 근육량 값은 Pawse로 들어올 수 없어요. " +
-                    "근육·수분·뼈를 합친 제지방량이 가장 정직한 근사치예요.",
+                "A placeholder while its own model is built. Only VO₂max feeds it, and it never reaches Scores.",
+                "자체 모델을 만드는 동안 쓰는 임시 값이에요. VO₂max만 반영하고 점수 화면에는 나오지 않아요.",
             ),
             style = PawseType.Label,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 12.dp),
         )
     }
 }
 
+/** Sets or clears the goal weight. Optional; nothing on Body depends on it. */
 @Composable
-private fun EnergyCard(e: EnergyToday) {
-    val scaleTo = max(e.eatenKcal, e.burnedKcal ?: 0.0).takeIf { it > 0.0 } ?: 1.0
-    val on = MaterialTheme.colorScheme.onSurface
-    val onv = MaterialTheme.colorScheme.onSurfaceVariant
-    PawseCard {
-        Row {
-            Text(tr("Energy today", "오늘의 에너지"), style = PawseType.Label, color = onv, modifier = Modifier.weight(1f))
-            Text(tr("So far, ${ScoreCopy.clock(e.asOfEpochMs)}", "${ScoreCopy.clock(e.asOfEpochMs)} 기준"), style = PawseType.Label, color = onv)
-        }
-        Spacer(Modifier.height(14.dp))
-        LabelledValue(tr("Eaten", "섭취"), "${kcal(e.eatenKcal)} kcal")
-        Spacer(Modifier.height(6.dp))
-        Bars(listOf((e.eatenKcal / scaleTo).toFloat() to on))
-        if (e.itemsWithoutEnergy > 0) {
-            Spacer(Modifier.height(4.dp))
-            Text(
-                tr(
-                    "${e.itemsWithoutEnergy} ${if (e.itemsWithoutEnergy == 1) "item has" else "items have"} no energy figure, so this is short.",
-                    "${e.itemsWithoutEnergy}개 항목에 열량 값이 없어서 실제보다 적게 잡혔어요.",
-                ),
-                style = PawseType.Label,
-                color = onv,
-            )
-        }
-        Spacer(Modifier.height(14.dp))
-        LabelledValue(tr("Burned", "소모"), e.burnedKcal?.let { "${kcal(it)} kcal" } ?: "—")
-        Spacer(Modifier.height(6.dp))
-        Bars(
-            listOf(
-                ((e.restingKcal ?: 0.0) / scaleTo).toFloat() to onv,
-                ((e.activeKcal ?: 0.0) / scaleTo).toFloat() to on,
-            ),
-        )
-        Spacer(Modifier.height(6.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            e.restingKcal?.let { KeySwatch(onv, tr("Resting", "기초") + " ${kcal(it)}") }
-            e.activeKcal?.let { KeySwatch(on, tr("Active", "활동") + " ${kcal(it)}") }
-            if (e.restingKcal == null && e.activeKcal == null) {
-                Text(tr("Needs a BMR or active energy from your watch", "시계의 기초대사량이나 활동 에너지 값이 필요해요"), style = PawseType.Label, color = onv)
-            }
-        }
-        e.differenceKcal?.let { diff ->
-            Spacer(Modifier.height(16.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(tr("Difference", "차이"), style = PawseType.Label, color = onv, modifier = Modifier.weight(1f))
-                Text(
-                    when {
-                        diff >= 0.5 -> tr("${kcal(diff)} kcal more burned than eaten", "섭취보다 ${kcal(diff)} kcal 더 소모")
-                        diff <= -0.5 -> tr("${kcal(-diff)} kcal more eaten than burned", "소모보다 ${kcal(-diff)} kcal 더 섭취")
-                        else -> tr("Even", "같음")
-                    },
-                    style = PawseType.BodyStrong,
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                tr(
-                    "A plain number, not a target. Pawse doesn't know what your day should look like, so it never says.",
-                    "목표가 아니라 그냥 숫자예요. Pawse는 내 하루가 어때야 하는지 모르기 때문에 그런 말을 하지 않아요.",
-                ),
-                style = PawseType.Label,
-                color = onv,
-            )
-        }
-    }
-}
-
-/** Segments laid end to end from the left, each a fraction of the full width. */
-@Composable
-private fun Bars(segments: List<Pair<Float, Color>>) {
-    Canvas(
-        Modifier
-            .fillMaxWidth()
-            .height(10.dp),
-    ) {
-        var x = 0f
-        val gap = 2.dp.toPx()
-        val shown = segments.filter { it.first > 0f }
-        shown.forEachIndexed { i, (fraction, color) ->
-            val w = (fraction.coerceIn(0f, 1f) * size.width - if (i < shown.lastIndex) gap else 0f).coerceAtLeast(0f)
-            roundedSegment(color, x, w, first = i == 0, last = i == shown.lastIndex)
-            x += w + gap
-        }
-    }
-}
-
-private fun DrawScope.roundedSegment(color: Color, x: Float, w: Float, first: Boolean, last: Boolean) {
-    val r = size.height / 2f
-    when {
-        first && last -> drawRoundRect(color, Offset(x, 0f), Size(w, size.height), CornerRadius(r))
-        first -> {
-            drawRoundRect(color, Offset(x, 0f), Size(w, size.height), CornerRadius(r))
-            drawRect(color, Offset(x + w - r, 0f), Size(r.coerceAtMost(w), size.height))
-        }
-        last -> {
-            drawRoundRect(color, Offset(x, 0f), Size(w, size.height), CornerRadius(r))
-            drawRect(color, Offset(x, 0f), Size(r.coerceAtMost(w), size.height))
-        }
-        else -> drawRect(color, Offset(x, 0f), Size(w, size.height))
-    }
-}
-
-@Composable
-private fun BmrCard(bmr: BmrResult, leanKg: Double?) {
-    PawseCard {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(tr("Basal metabolic rate", "기초대사량"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-            Text(
-                if (bmr.source == BmrSource.MEASURED) tr("Measured", "측정값") else tr("Estimated", "추정값"),
-                style = PawseType.Label,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .background(MaterialTheme.colorScheme.background, RoundedCornerShape(6.dp))
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(6.dp))
-                    .padding(horizontal = 8.dp),
-            )
-        }
-        Spacer(Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(kcal(bmr.kcalPerDay), style = PawseType.Numeral)
-            Spacer(Modifier.width(6.dp))
-            Text(
-                tr("kcal a day", "kcal/일"),
-                style = PawseType.Heading.copy(fontWeight = PawseType.Body.fontWeight),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 6.dp),
-            )
-        }
-        Spacer(Modifier.height(6.dp))
+private fun GoalSheet(current: Double?, onDismiss: () -> Unit, onSave: (Double?) -> Unit) {
+    var text by remember { mutableStateOf(current?.let(::oneDecimal).orEmpty()) }
+    val kg = text.replace(',', '.').toDoubleOrNull()?.takeIf { it in 30.0..250.0 }
+    PawseSheet(onDismiss = onDismiss) {
+        Text(tr("Goal weight", "목표 체중"), style = PawseType.Heading)
         Text(
-            when (bmr.source) {
-                BmrSource.MEASURED -> tr("Written to Health Connect by your scale this morning.", "오늘 아침 체중계가 헬스 커넥트에 기록한 값이에요.")
-                BmrSource.KATCH_MCARDLE -> {
-                    val lean = leanKg?.let(::oneDecimal)
-                    tr(
-                        "370 + 21.6 × ${lean ?: "lean"} kg lean mass = ${kcal(bmr.kcalPerDay)}",
-                        "370 + 21.6 × 제지방량 ${lean ?: "?"} kg = ${kcal(bmr.kcalPerDay)}",
-                    )
-                }
-                BmrSource.MIFFLIN_ST_JEOR -> tr(
-                    "Mifflin–St Jeor, from your age, height and weight.",
-                    "Mifflin–St Jeor 공식으로 나이·키·체중에서 계산했어요.",
-                )
-            },
-            style = PawseType.Body,
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            when (bmr.source) {
-                BmrSource.MEASURED -> tr(
-                    "Pawse uses the scale's figure as it is. If the scale stops writing it, Pawse works it " +
-                        "out from your lean mass instead and says so.",
-                    "Pawse는 체중계 값을 그대로 써요. 체중계가 기록을 멈추면 제지방량으로 계산하고 그렇다고 알려 드려요.",
-                )
-                BmrSource.KATCH_MCARDLE -> tr(
-                    "Katch–McArdle, a published formula that only needs lean mass. Without a scale, Pawse " +
-                        "falls back to Mifflin–St Jeor from age, height and weight, and labels it that way.",
-                    "Katch–McArdle은 제지방량만 있으면 되는 공개 공식이에요. 체중계가 없으면 나이·키·체중으로 " +
-                        "계산하는 Mifflin–St Jeor로 대신하고, 그렇게 표시해요.",
-                )
-                BmrSource.MIFFLIN_ST_JEOR -> tr(
-                    "A published estimate. A scale that writes lean mass would make it more personal.",
-                    "공개된 추정 공식이에요. 제지방량을 기록하는 체중계가 있으면 더 나에게 맞게 계산할 수 있어요.",
-                )
-            },
+            tr("Shown as a dashed line and an estimate in whole months. Pawse never turns it into a streak.", "점선과 개월 단위 예상으로만 보여요. 연속 기록으로 바꾸지 않아요."),
             style = PawseType.Label,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp, bottom = 16.dp),
         )
+        PawseField(value = text, onValueChange = { text = it }, suffix = "kg", numeric = true, placeholder = "70.0")
+        PrimaryButton(tr("Save goal", "목표 저장"), onClick = { onSave(kg) }, enabled = kg != null, modifier = Modifier.padding(top = 24.dp))
+        if (current != null) GhostButton(tr("Remove goal", "목표 지우기"), onClick = { onSave(null) }, modifier = Modifier.padding(top = 8.dp))
     }
 }
-
-@Composable
-private fun LabelledValue(label: String, value: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.weight(1f))
-        Text(value, style = PawseType.Label.copy(fontWeight = PawseType.BodyStrong.fontWeight))
-    }
-}
-
-/** A body row: grey marker always, words for direction, the scale's own units. */
-private fun BodyRow.toRowState(): BaselineRowState {
-    val b = baseline
-    val zScore = this.z
-    val delta = b?.let { latest.value - it.mean }
-    return BaselineRowState(
-        label = ScoreCopy.metricLabel(metric),
-        valueText = ScoreCopy.formatRaw(metric, latest.value),
-        baselineText = b?.let {
-            tr("Usually", "평소") + " ${ScoreCopy.formatRaw(metric, it.mean)} ± ${ScoreCopy.formatRaw(metric, it.sigma).trimUnitSign()}"
-        } ?: tr("Needs a few more weigh-ins", "체중 기록이 몇 번 더 필요해요"),
-        deltaText = when {
-            delta == null || zScore == null -> tr("No usual range yet", "아직 평소 범위가 없어요")
-            abs(zScore) < ScoreCopy.NEUTRAL_Z -> tr("About your usual", "평소와 비슷함")
-            else -> {
-                val amount = ScoreCopy.formatRaw(metric, abs(delta))
-                    .replace("%", if (metric == Metric.BODY_FAT) tr(" points", "%p") else "%")
-                tr(
-                    "$amount " + (if (delta > 0) "above" else "below") + " your usual",
-                    "평소보다 $amount " + if (delta > 0) "높음" else "낮음",
-                )
-            }
-        },
-        z = zScore?.toFloat(),
-        direction = if (zScore == null) DeviationDirection.UNKNOWN else DeviationDirection.NEUTRAL,
-    )
-}
-
-private fun String.trimUnitSign() = replace("+", "")
 
 private fun oneDecimal(value: Double) = String.format(Locale.getDefault(), "%.1f", value)
-
-private fun kcal(value: Double) = String.format(Locale.getDefault(), "%,d", value.roundToInt())

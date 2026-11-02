@@ -76,6 +76,15 @@ class UserProfilePreferences @Inject constructor(
         store.edit { it[calibrationSinceKey] = today.toString() }
     }
 
+    private val goalKey = doublePreferencesKey("goal_kg")
+
+    /** An optional goal weight: a dashed line on the chart and an estimate in whole months. */
+    val goalKg: Flow<Double?> = store.data.map { it[goalKey] }
+
+    suspend fun setGoalKg(kg: Double?) {
+        store.edit { if (kg == null) it.remove(goalKey) else it[goalKey] = kg }
+    }
+
     private val appearanceKey = stringPreferencesKey("appearance")
 
     /** Follows the phone unless the user picks; bedside is the near-black night palette. */

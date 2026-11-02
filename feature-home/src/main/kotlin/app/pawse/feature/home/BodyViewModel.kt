@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.pawse.core.data.body.BodyRepository
 import app.pawse.core.data.body.BodySnapshot
+import app.pawse.core.data.profile.UserProfilePreferences
 import app.pawse.core.data.sync.SyncCoordinator
 import app.pawse.core.data.sync.SyncStatus
 import app.pawse.scoring.tr
@@ -29,8 +30,17 @@ enum class BodyRange(val days: Long, private val en: String, private val ko: Str
 @HiltViewModel
 class BodyViewModel @Inject constructor(
     private val body: BodyRepository,
+    private val profile: UserProfilePreferences,
     coordinator: SyncCoordinator,
 ) : ViewModel() {
+
+    /** Sets or clears the goal weight, then redraws with it. */
+    fun setGoal(kg: Double?) {
+        viewModelScope.launch {
+            profile.setGoalKg(kg)
+            reload()
+        }
+    }
 
     private val _snapshot = MutableStateFlow<BodySnapshot?>(null)
     val snapshot: StateFlow<BodySnapshot?> = _snapshot.asStateFlow()
