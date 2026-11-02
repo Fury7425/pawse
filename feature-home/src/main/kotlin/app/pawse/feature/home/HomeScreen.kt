@@ -179,19 +179,32 @@ fun HomeScreen(
 
     if (editingProfile) {
         val snapshot = (state as? HomeUiState.Ready)?.snapshot
+        val reduceMotion by viewModel.reduceMotion.collectAsStateWithLifecycle()
+        val shapes by viewModel.shapes.collectAsStateWithLifecycle()
+        val notifications by viewModel.notifications.collectAsStateWithLifecycle()
         ProfileDialog(
-            initialProfile = snapshot?.profile,
-            initialShowNumbers = snapshot?.showNumbers ?: true,
-            initialAppearance = appearance,
-            calibration = snapshot?.calibration,
-            onResetModel = viewModel::resetModel,
+            state = ProfileState(
+                profile = snapshot?.profile,
+                showNumbers = snapshot?.showNumbers ?: true,
+                appearance = appearance,
+                reduceMotion = reduceMotion,
+                shapes = shapes,
+                notifications = notifications,
+                calibration = snapshot?.calibration,
+            ),
+            actions = ProfileActions(
+                onShowNumbers = viewModel::setShowNumbers,
+                onAppearance = viewModel::setAppearance,
+                onReduceMotion = viewModel::setReduceMotion,
+                onShapes = viewModel::setShapes,
+                onNotify = viewModel::setNotify,
+                onSaveProfile = { age, sex, maxHr ->
+                    viewModel.saveProfile(age, sex, maxHr)
+                    editingProfile = false
+                },
+                onResetModel = viewModel::resetModel,
+            ),
             onDismiss = { editingProfile = false },
-            onSave = { age, sex, maxHr, showNumbers, chosenAppearance ->
-                viewModel.saveProfile(age, sex, maxHr)
-                viewModel.setShowNumbers(showNumbers)
-                viewModel.setAppearance(chosenAppearance)
-                editingProfile = false
-            },
         )
     }
 }

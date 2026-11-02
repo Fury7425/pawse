@@ -76,6 +76,23 @@ class UserProfilePreferences @Inject constructor(
         store.edit { it[calibrationSinceKey] = today.toString() }
     }
 
+    private val reduceMotionKey = booleanPreferencesKey("reduce_motion")
+    private val shapesKey = booleanPreferencesKey("shapes_with_colour")
+
+    /** Pawse's own reduce-motion switch, beside the system's all-or-nothing one. */
+    val reduceMotion: Flow<Boolean> = store.data.map { it[reduceMotionKey] ?: false }
+
+    suspend fun setReduceMotion(on: Boolean) {
+        store.edit { it[reduceMotionKey] = on }
+    }
+
+    /** Shapes as well as colour on every band dot, since Android has no Differentiate Without Colour. */
+    val shapes: Flow<Boolean> = store.data.map { it[shapesKey] ?: false }
+
+    suspend fun setShapes(on: Boolean) {
+        store.edit { it[shapesKey] = on }
+    }
+
     private val goalKey = doublePreferencesKey("goal_kg")
 
     /** An optional goal weight: a dashed line on the chart and an estimate in whole months. */

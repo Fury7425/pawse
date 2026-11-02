@@ -31,6 +31,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -49,10 +50,28 @@ import app.pawse.core.ui.theme.PawseType
 @Composable
 fun Mark(color: Color?, modifier: Modifier = Modifier, hollow: Boolean = false, diameter: Dp = 8.dp) {
     val ring = MaterialTheme.colorScheme.onSurfaceVariant
+    val s = PawseTheme.semantics
+    // With shapes on, the band colours also carry a shape; every other colour stays a dot.
+    val shape = if (LocalShapes.current) {
+        when (color) {
+            s.bandHigh -> 1
+            s.bandModerate -> -1
+            s.bandLow -> 2
+            else -> 0
+        }
+    } else {
+        0
+    }
     Canvas(modifier.size(diameter)) {
+        val w = this.size.width
+        val h = this.size.height
         when {
             hollow -> drawCircle(ring, radius = this.size.minDimension / 2f - 0.75.dp.toPx(), style = Stroke(1.5.dp.toPx()))
-            color != null -> drawCircle(color)
+            color == null -> Unit
+            shape == 1 -> drawPath(Path().apply { moveTo(w / 2f, 0f); lineTo(w, h); lineTo(0f, h); close() }, color)
+            shape == -1 -> drawPath(Path().apply { moveTo(0f, 0f); lineTo(w, 0f); lineTo(w / 2f, h); close() }, color)
+            shape == 2 -> drawRoundRect(color, cornerRadius = CornerRadius(1.dp.toPx()))
+            else -> drawCircle(color)
         }
     }
 }

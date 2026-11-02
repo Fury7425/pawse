@@ -132,7 +132,9 @@ class MainActivity : ComponentActivity() {
                 enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
                 onDispose {}
             }
-            PawseTheme(darkTheme = dark, bedside = appearance == Appearance.BEDSIDE) {
+            val reduceMotion by profilePreferences.reduceMotion.collectAsState(initial = false)
+            val shapes by profilePreferences.shapes.collectAsState(initial = false)
+            PawseTheme(darkTheme = dark, bedside = appearance == Appearance.BEDSIDE, reduceMotion = reduceMotion, shapes = shapes) {
                 PawseRoot(syncPreferences, route)
             }
         }
@@ -146,30 +148,10 @@ private fun PawseRoot(preferences: SyncPreferences, route: String?) {
 
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         if (onboarded || forceHome) {
-            AskForNotificationsOnce()
+            // The notification grant is asked when a notification is first switched on, never at launch.
             PawseNavGraph(route)
         } else {
             OnboardingScreen(onFinished = { forceHome = true })
-        }
-    }
-}
-
-/**
- * The morning note needs the notification grant on Android 13 and up. Asked once,
- * after onboarding, and never again: declining is a fine answer.
- */
-@Composable
-private fun AskForNotificationsOnce() {
-    if (Build.VERSION.SDK_INT < 33) return
-    val context = LocalContext.current
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
-    LaunchedEffect(Unit) {
-        val prefs = context.getSharedPreferences("pawse_notify", Context.MODE_PRIVATE)
-        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
-            PackageManager.PERMISSION_GRANTED
-        if (!granted && !prefs.getBoolean("asked", false)) {
-            prefs.edit { putBoolean("asked", true) }
-            launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 }

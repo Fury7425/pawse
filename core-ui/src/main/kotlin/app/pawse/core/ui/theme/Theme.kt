@@ -11,6 +11,7 @@ import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import app.pawse.core.ui.component.LocalReduceMotion
+import app.pawse.core.ui.component.LocalShapes
 import app.pawse.core.ui.component.systemReduceMotion
 
 /**
@@ -210,6 +211,8 @@ fun PawseTheme(
     bedside: Boolean = false,
     /** Pawse's own reduce-motion switch, on top of the system's. */
     reduceMotion: Boolean = false,
+    /** Shapes as well as colour on band dots. */
+    shapes: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     CompositionLocalProvider(
@@ -219,6 +222,7 @@ fun PawseTheme(
             else -> LightSemantics
         },
         LocalReduceMotion provides (reduceMotion || systemReduceMotion()),
+        LocalShapes provides shapes,
     ) {
         MaterialTheme(
             colorScheme = when {

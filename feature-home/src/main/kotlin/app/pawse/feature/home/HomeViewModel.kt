@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import app.pawse.core.data.activity.MovingRepository
 import app.pawse.core.data.activity.MovingSnapshot
 import app.pawse.core.data.profile.Appearance
+import app.pawse.core.data.profile.NotificationSettings
+import app.pawse.core.data.profile.NotifyKind
 import app.pawse.core.data.profile.UserProfilePreferences
 import app.pawse.core.data.scoring.NightDetail
 import app.pawse.core.data.scoring.NightRepository
@@ -49,7 +51,24 @@ class HomeViewModel @Inject constructor(
     private val profilePreferences: UserProfilePreferences,
     private val nights: NightRepository,
     private val movingRepository: MovingRepository,
+    private val notificationSettings: NotificationSettings,
 ) : ViewModel() {
+
+    val reduceMotion: StateFlow<Boolean> = profilePreferences.reduceMotion
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), false)
+    val shapes: StateFlow<Boolean> = profilePreferences.shapes
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), false)
+    val notifications: StateFlow<Map<NotifyKind, Boolean>> = notificationSettings.state
+
+    fun setReduceMotion(on: Boolean) {
+        viewModelScope.launch { profilePreferences.setReduceMotion(on) }
+    }
+
+    fun setShapes(on: Boolean) {
+        viewModelScope.launch { profilePreferences.setShapes(on) }
+    }
+
+    fun setNotify(kind: NotifyKind, on: Boolean) = notificationSettings.set(kind, on)
 
     /**
      * Moving today, read from Health Connect whenever a fresh snapshot lands and
