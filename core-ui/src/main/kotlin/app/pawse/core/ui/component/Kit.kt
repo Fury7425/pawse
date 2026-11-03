@@ -118,6 +118,8 @@ object Glyphs {
     const val Food = "M3 11h18a9 9 0 0 1-18 0zM8 7.5c0-1.4 1-1.8 1-3.2M12 7.5c0-1.4 1-1.8 1-3.2M16 7.5c0-1.4 1-1.8 1-3.2"
     const val Body = "M6 3h12a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3zM8.5 10a3.5 3.5 0 0 1 7 0M12 10l1.6-1.6"
     const val Scan = "M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M10 8v8M13.5 8v8M17 8v8"
+    const val Camera = "M4 8h3l2-3h6l2 3h3v11H4zM12 10a3.5 3.5 0 1 0 0 7a3.5 3.5 0 1 0 0-7z"
+    const val Sheet = "M7 3h10l2 2v16H5V5zM9 9h6M9 13h6M9 17h3"
     const val Check = "M5 12.5l4.5 4.5L19 7"
     const val Refresh = "M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"
     const val Person = "M8 8a4 4 0 1 0 8 0a4 4 0 1 0-8 0M4 21c0-4 3.6-7 8-7s8 3 8 7"
@@ -638,6 +640,8 @@ fun BoxScope.BottomAction(
     text: String,
     onClick: () -> Unit,
     enabled: Boolean = true,
+    height: Dp = 64.dp,
+    // Last, so a trailing lambda still lands here.
     above: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     val background = MaterialTheme.colorScheme.background
@@ -650,7 +654,7 @@ fun BoxScope.BottomAction(
             .padding(start = 16.dp, end = 16.dp, top = 48.dp, bottom = 20.dp),
     ) {
         above?.invoke(this)
-        PrimaryButton(text = text, onClick = onClick, enabled = enabled, height = 64.dp, elevated = true)
+        PrimaryButton(text = text, onClick = onClick, enabled = enabled, height = height, elevated = true)
     }
 }
 

@@ -122,6 +122,13 @@ class BodyWriter @Inject constructor(
         )
     }
 
+    /** The latest body fat percent from any source in the last year, and its day: InBody's starting point. */
+    suspend fun lastFatPercent(today: LocalDate = LocalDate.now()): Pair<LocalDate, Double>? = withContext(Dispatchers.IO) {
+        metricDao.range(Metric.BODY_FAT.key, today.minusDays(365).toString(), today.toString())
+            .maxByOrNull { it.startEpochMs }
+            ?.let { Instant.ofEpochMilli(it.startEpochMs).atZone(ZoneId.systemDefault()).toLocalDate() to it.value }
+    }
+
     /** The latest weigh-ins from any source, newest first. */
     suspend fun recent(limit: Int = 3, today: LocalDate = LocalDate.now()): List<RecentWeighIn> = withContext(Dispatchers.IO) {
         metricDao.range(Metric.BODY_WEIGHT.key, today.minusDays(RECENT_DAYS).toString(), today.toString())

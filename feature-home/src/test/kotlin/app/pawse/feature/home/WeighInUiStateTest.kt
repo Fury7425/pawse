@@ -1,41 +1,41 @@
 package app.pawse.feature.home
 
+import io.kotest.matchers.doubles.plusOrMinus
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.shouldNotBe
-import io.kotest.matchers.string.shouldEndWith
 import org.junit.Test
-import java.time.LocalDateTime
 
-/** What the weigh-in screen lets through, since it is written to Health Connect as typed. */
+/** What the weigh-in screen writes, since it goes to Health Connect as typed. */
 class WeighInUiStateTest {
 
+    private val sheet = WeighInUiState(
+        inBody = true,
+        rows = mapOf(InBodyRow.WEIGHT to 72.4, InBodyRow.MUSCLE to 33.0, InBodyRow.FAT to 9.6, InBodyRow.VISCERAL to 6.0),
+    )
+
     @Test
-    fun `a weight outside 20 to 300 kg can't be saved`() {
-        WeighInUiState(weightText = "15").canSave shouldBe false
-        WeighInUiState(weightText = "15").weightBad shouldBe true
-        WeighInUiState(weightText = "72,4").weightKg shouldBe 72.4
-        WeighInUiState(weightText = "72.4").canSave shouldBe true
+    fun `fat percent, lean mass and BMR follow from weight and fat mass`() {
+        sheet.fatPercent!! shouldBe (13.26 plusOrMinus 0.01)
+        sheet.leanKg!! shouldBe (62.8 plusOrMinus 1e-9)
+        sheet.bmr!! shouldBe (370.0 + 21.6 * 62.8 plusOrMinus 1e-9)
+        sheet.toWeighIn().fatPercent!! shouldBe (13.26 plusOrMinus 0.01)
     }
 
     @Test
-    fun `a blank figure stays blank and a bad one blocks the save`() {
-        val ok = WeighInUiState(weightText = "72.4", figures = mapOf(BodyFigure.FAT to "21", BodyFigure.LEAN to ""))
-        ok.filledFigures shouldBe 1
-        ok.toWeighIn().leanKg shouldBe null
-        ok.saveLabel shouldEndWith "kg and 1 more"
-
-        val bad = ok.copy(figures = mapOf(BodyFigure.FAT to "80"))
-        bad.figureError(BodyFigure.FAT) shouldNotBe null
-        bad.canSave shouldBe false
+    fun `a Don't know row is left out and so is anything worked out from it`() {
+        val noFat = sheet.copy(unknown = setOf(InBodyRow.FAT, InBodyRow.VISCERAL))
+        noFat.toWeighIn().fatPercent shouldBe null
+        noFat.toWeighIn().leanKg shouldBe null
+        noFat.bmr shouldBe null
+        noFat.extra()!!.visceralFat shouldBe null
+        noFat.extra()!!.skeletalMuscleKg shouldBe 33.0
     }
 
     @Test
-    fun `lean mass can't outweigh the person`() {
-        WeighInUiState(weightText = "60", figures = mapOf(BodyFigure.LEAN to "65")).figureError(BodyFigure.LEAN) shouldNotBe null
-    }
-
-    @Test
-    fun `a weigh-in in the future is refused`() {
-        WeighInUiState(weightText = "72.4", earlier = true, earlierAt = LocalDateTime.now().plusHours(2)).canSave shouldBe false
+    fun `fat can't reach the weight and a scale reading carries weight alone`() {
+        sheet.max(InBodyRow.FAT) shouldBe (71.4 plusOrMinus 1e-9)
+        val scale = WeighInUiState(kg = 70.2)
+        scale.toWeighIn().weightKg shouldBe 70.2
+        scale.toWeighIn().fatPercent shouldBe null
+        scale.extra() shouldBe null
     }
 }

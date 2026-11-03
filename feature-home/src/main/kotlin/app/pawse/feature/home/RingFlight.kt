@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -13,9 +14,13 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.dp
 import app.pawse.core.ui.component.EaseInOut
+import app.pawse.core.ui.component.EaseOut
 import app.pawse.core.ui.component.LocalReduceMotion
 import app.pawse.scoring.model.ScoreType
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 
 /**
  * The tapped ring flies into the detail ring over 360 ms on EaseInOut. The Scores
@@ -67,3 +72,31 @@ internal fun Modifier.flightTarget(type: ScoreType): Modifier {
 }
 
 private const val FLIGHT_MS = 360
+
+/**
+ * The rest of the look-in, around the flight: the header fades in from 100 ms, then
+ * four groups rise 8 dp at 220, 260, 300 and 340 ms, each over 160 ms. One set for
+ * every page, so a group composed later (scrolled or swiped to) is simply there.
+ */
+@Stable
+internal class LookIn(val flying: Boolean) {
+    private val parts = List(DELAYS.size) { Animatable(if (flying) 0f else 1f) }
+
+    fun progress(part: Int): Float = parts[part].value
+
+    suspend fun run() = coroutineScope {
+        parts.forEachIndexed { i, a -> launch { a.animateTo(1f, tween(PART_MS, delayMillis = DELAYS[i], easing = EaseOut)) } }
+    }
+
+    private companion object {
+        val DELAYS = listOf(100, 220, 260, 300, 340)
+        const val PART_MS = 160
+    }
+}
+
+/** Part 0 is the header and only fades; the others also rise into place. */
+internal fun Modifier.lookIn(look: LookIn, part: Int): Modifier = graphicsLayer {
+    val p = look.progress(part)
+    alpha = p
+    if (part > 0) translationY = (1f - p) * 8.dp.toPx()
+}

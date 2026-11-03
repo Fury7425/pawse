@@ -59,6 +59,7 @@ import app.pawse.core.data.scoring.ScoringSnapshot
 import app.pawse.core.ui.component.BandDot
 import app.pawse.core.ui.component.EaseOut
 import app.pawse.core.ui.component.Glyph
+import app.pawse.core.ui.component.LocalReduceMotion
 import app.pawse.core.ui.component.GlyphButton
 import app.pawse.core.ui.component.Glyphs
 import app.pawse.core.ui.component.PawseCard
@@ -110,6 +111,15 @@ fun ExplainScreen(
     val night by viewModel.night.collectAsStateWithLifecycle()
     val snapshot = (state as? HomeUiState.Ready)?.snapshot
     val pager = rememberPagerState(initialPage = PAGES.indexOf(type).coerceAtLeast(0)) { PAGES.size }
+    // The look-in runs only after a ring was tapped, and never with reduced motion.
+    val reduce = LocalReduceMotion.current
+    val look = remember { LookIn(flying = !reduce && RingFlight.origin != null && RingFlight.type == type) }
+    // Neighbouring pages are composed once the look-in is over, so its first frames stay light.
+    var warm by remember { mutableStateOf(!look.flying) }
+    LaunchedEffect(Unit) {
+        look.run()
+        warm = true
+    }
     val scope = rememberCoroutineScope()
     val shown = PAGES[pager.currentPage]
     fun show(t: ScoreType) {
@@ -141,7 +151,7 @@ fun ExplainScreen(
                 .padding(top = padding.calculateTopPadding() + 12.dp),
         ) {
             // Pinned: back, the switch and the day rail stay while the pages swipe under them.
-            Row(Modifier.padding(horizontal = 12.dp).heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(horizontal = 12.dp).heightIn(min = 56.dp).lookIn(look, 0), verticalAlignment = Alignment.CenterVertically) {
                 GlyphButton(Glyphs.ChevronLeft, tr("Back to Scores", "점수로 돌아가기"), onClick = onBack)
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     Segmented(
@@ -156,10 +166,11 @@ fun ExplainScreen(
                 GlyphButton(Glyphs.Info, tr("How Pawse calculates ${ScoreCopy.name(shown)}", "${ScoreCopy.name(shown)} 계산 방법"), onClick = { mathFor = shown })
             }
             if (snapshot != null) {
-                DateStrip(snapshot, shown, back, onPick = { back = it }, modifier = Modifier.padding(start = 24.dp, top = 8.dp, end = 24.dp))
+                DateStrip(snapshot, shown, back, onPick = { back = it }, modifier = Modifier.padding(start = 24.dp, top = 8.dp, end = 24.dp).lookIn(look, 1))
             }
-            HorizontalPager(state = pager, modifier = Modifier.weight(1f), beyondViewportPageCount = 1) { page ->
+            HorizontalPager(state = pager, modifier = Modifier.weight(1f), beyondViewportPageCount = if (warm) 1 else 0) { page ->
                 ScorePage(
+                    look = look,
                     type = PAGES[page],
                     snapshot = snapshot,
                     date = date,
@@ -219,6 +230,7 @@ fun ExplainScreen(
 /** One page of the detail: the night in full for Sleep, the arithmetic for Body and Load. */
 @Composable
 private fun ScorePage(
+    look: LookIn,
     type: ScoreType,
     snapshot: ScoringSnapshot?,
     date: LocalDate?,
@@ -255,6 +267,7 @@ private fun ScorePage(
         val pinned = pinDate?.let { d -> if (pin == 0) snapshot.today else snapshot.history.lastOrNull { it.date == d } }
         item {
             DetailHero(
+                look = look,
                 type = type,
                 day = day,
                 date = date,
@@ -271,12 +284,12 @@ private fun ScorePage(
             )
         }
         if (pinDate != null) {
-            item { SideBySide(sideRows(type, snapshot, day, pinned), date, pinDate, pad.padding(top = 24.dp)) }
+            item { SideBySide(sideRows(type, snapshot, day, pinned), date, pinDate, pad.padding(top = 24.dp).lookIn(look, 3)) }
         }
 
         if (type == ScoreType.SLEEP) {
-            item { SleepTab(snapshot = snapshot, back = back, detail = night, onOpenNight = onPick, onBody = onBody, modifier = pad) }
-            item { Provenance(snapshot, pad.padding(top = 28.dp)) }
+            item { SleepTab(snapshot = snapshot, back = back, detail = night, onOpenNight = onPick, onBody = onBody, modifier = pad.lookIn(look, 3)) }
+            item { Provenance(snapshot, pad.padding(top = 28.dp).lookIn(look, 4)) }
             return@LazyColumn
         }
 
@@ -290,7 +303,7 @@ private fun ScorePage(
                 onRange = onRange,
                 open = open,
                 onOpen = { open = it },
-                modifier = pad,
+                modifier = pad.lookIn(look, 3),
             )
         }
         if (day != null) {
@@ -299,20 +312,20 @@ private fun ScorePage(
                     combiner = combinerOf(type, day),
                     mathOpen = mathOpen,
                     onToggleMath = { mathOpen = !mathOpen },
-                    modifier = pad.padding(top = 28.dp),
+                    modifier = pad.padding(top = 28.dp).lookIn(look, 4),
                 )
             }
         }
         // Body's reasons, week, overnight pattern and insights sit under the combiner, as on the board.
         if (type == ScoreType.BODY && day?.body != null) {
             item {
-                Column(pad.padding(top = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(pad.padding(top = 28.dp).lookIn(look, 4), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     BodyCards(day, snapshot.insights)
                 }
             }
         }
 
-        item { Provenance(snapshot, pad.padding(top = 28.dp)) }
+        item { Provenance(snapshot, pad.padding(top = 28.dp).lookIn(look, 4)) }
     }
 }
 
@@ -374,6 +387,7 @@ private fun DateStrip(snapshot: ScoringSnapshot, type: ScoreType, back: Int, onP
  */
 @Composable
 private fun DetailHero(
+    look: LookIn,
     type: ScoreType,
     day: DayReport?,
     date: LocalDate,
@@ -397,7 +411,7 @@ private fun DetailHero(
         else -> date.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, Locale.getDefault())
     }
     Column(modifier.fillMaxWidth().padding(top = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().lookIn(look, 1), verticalAlignment = Alignment.CenterVertically) {
             GlyphButton(Glyphs.ChevronLeft, tr("Day before", "전날"), onClick = { if (back < oldest) onPick(back + 1) })
             // The title opens the calendar: every route to a day stays visible.
             Text(
@@ -413,7 +427,7 @@ private fun DetailHero(
             )
             GlyphButton(Glyphs.ChevronRight, tr("Day after", "다음 날"), onClick = { if (back > 0) onPick(back - 1) })
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.lookIn(look, 1), verticalAlignment = Alignment.CenterVertically) {
             Text(shortDate(date), style = PawseType.Micro, color = s.faint)
             if (back > 0) {
                 Text(
@@ -443,8 +457,8 @@ private fun DetailHero(
                 if (face.unit.isNotEmpty()) Text(face.unit, style = PawseType.Heading.copy(fontWeight = PawseType.Body.fontWeight), color = grey, modifier = Modifier.padding(start = 2.dp, bottom = 8.dp))
             }
         }
-        BandDot(color = face.dot, label = face.word, hollow = face.hollow, modifier = Modifier.padding(top = 12.dp))
-        Text(face.sentence, style = PawseType.Body, color = grey, modifier = Modifier.fillMaxWidth().padding(top = 16.dp))
+        BandDot(color = face.dot, label = face.word, hollow = face.hollow, modifier = Modifier.padding(top = 12.dp).lookIn(look, 2))
+        Text(face.sentence, style = PawseType.Body, color = grey, modifier = Modifier.fillMaxWidth().padding(top = 16.dp).lookIn(look, 2))
     }
 }
 
