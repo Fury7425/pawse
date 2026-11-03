@@ -169,10 +169,6 @@ class HealthConnectGateway @Inject constructor(
         }.getOrDefault(emptyList())
     }
 
-    /** The apps that wrote [type] between [start] and [end], by how many records each wrote. */
-    suspend fun <T : Record> writers(type: KClass<T>, start: Instant, end: Instant): Map<String, Int> =
-        readOrEmpty(type, start, end).groupingBy { it.metadata.dataOrigin.packageName }.eachCount()
-
     companion object {
         const val HEALTH_CONNECT_PACKAGE = "com.google.android.apps.healthdata"
         private const val TAG = "PawseHealth"

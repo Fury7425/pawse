@@ -83,15 +83,17 @@ class MovingRepository @Inject constructor(private val gateway: HealthConnectGat
 
         suspend fun stepSlices(origins: Set<String> = emptySet()) = gateway.slices(setOf(StepsRecord.COUNT_TOTAL), start, end, slice, origins)
             .associate { it.startTime.toEpochMilli() to (it.result[StepsRecord.COUNT_TOTAL]?.toDouble() ?: 0.0) }
-        var steps = stepSlices()
-        // Health Connect totals only the apps in its priority list for steps. A phone
-        // whose list holds none of the apps actually writing (a watch app, the phone's
-        // own counter) answers zero for every hour while records sit there, so the app
-        // that wrote the most steps lately is asked for on its own.
-        if (steps.values.none { it > 0.0 }) {
-            gateway.writers(StepsRecord::class, end.minus(Duration.ofDays(2)), end).maxByOrNull { it.value }?.key
-                ?.let { steps = stepSlices(setOf(it)) }
-        }
+        // One writer for steps, the one that counted the most over the last two days.
+        // Health Connect's own total follows its priority list, which on a phone with a
+        // watch app, a fitness app and the phone's own counter can be the one that
+        // counted least, or none of them at all (every hour zero). Read alone, the
+        // fullest writer gives the day Samsung Health or the watch app shows.
+        val stepsWriter = gateway.readOrEmpty(StepsRecord::class, end.minus(Duration.ofDays(2)), end)
+            .groupBy { it.metadata.dataOrigin.packageName }
+            .mapValues { (_, records) -> records.sumOf { it.count } }
+            .maxByOrNull { it.value }?.key
+        var steps = stepSlices(setOfNotNull(stepsWriter))
+        if (stepsWriter != null && steps.values.none { it > 0.0 }) steps = stepSlices()
         val energy = gateway.slices(setOf(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL), start, end, slice)
             .associate { it.startTime.toEpochMilli() to (it.result[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories ?: 0.0) }
         if (steps.isEmpty() && energy.isEmpty()) return@withContext null
