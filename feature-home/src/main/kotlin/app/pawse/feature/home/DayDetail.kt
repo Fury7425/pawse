@@ -63,7 +63,6 @@ import app.pawse.scoring.model.BodyScore
 import app.pawse.scoring.model.DayReport
 import app.pawse.scoring.model.LoadReading
 import app.pawse.scoring.model.ScoreType
-import app.pawse.scoring.model.SessionLoad
 import app.pawse.scoring.model.SignalDetail
 import app.pawse.scoring.tr
 import java.time.LocalDate
@@ -602,16 +601,6 @@ private fun loadLines(rows: List<NightRow>, selI: Int): List<DayLine> {
         },
     )
 }
-
-/** "Run, 42 min · 35 · Published · Samsung Health", or why it wasn't counted. */
-private fun sessionText(s: SessionLoad): String =
-    listOfNotNull(
-        "${s.title ?: tr("Workout", "운동")}, ${minutesText(s.durationMinutes)}",
-        s.skippedReason ?: ScoreCopy.load(s.load),
-        // Every number carries where its coefficient came from (Provenance.kt).
-        ScoreCopy.provenanceLabel(s.provenance).takeIf { s.skippedReason == null },
-        s.source.takeIf { it.isNotBlank() }?.let(::writer),
-    ).joinToString(" · ")
 
 @Composable
 private fun SignalRow(line: DayLine, selI: Int, expanded: Boolean, onToggle: () -> Unit) {

@@ -148,14 +148,20 @@ class HealthConnectGateway @Inject constructor(
         origins: Set<String> = emptySet(),
     ): List<AggregationResultGroupedByDuration> = withContext(Dispatchers.IO) {
         runCatching {
-            requireClient().aggregateGroupByDuration(
-                AggregateGroupByDurationRequest(
-                    metrics,
-                    TimeRangeFilter.between(start, end),
-                    slice,
-                    dataOriginFilter = origins.mapTo(HashSet()) { DataOrigin(it) },
-                ),
-            )
+            // A month of 15-minute slices with several writers per slice is too big to
+            // cross the binder in one answer (TransactionTooLargeException), so the
+            // window is asked for a week at a time. A week is a whole number of slices.
+            val chunk = Duration.ofDays(CHUNK_DAYS).let { if (it < slice) slice else it }
+            generateSequence(start) { it.plus(chunk) }.takeWhile { it < end }.toList().flatMap { from ->
+                requireClient().aggregateGroupByDuration(
+                    AggregateGroupByDurationRequest(
+                        metrics,
+                        TimeRangeFilter.between(from, minOf(from.plus(chunk), end)),
+                        slice,
+                        dataOriginFilter = origins.mapTo(HashSet()) { DataOrigin(it) },
+                    ),
+                )
+            }
         }.onFailure {
             if (it is CancellationException) throw it
             // A silent empty answer is undebuggable: say why in logcat.
@@ -170,5 +176,6 @@ class HealthConnectGateway @Inject constructor(
     companion object {
         const val HEALTH_CONNECT_PACKAGE = "com.google.android.apps.healthdata"
         private const val TAG = "PawseHealth"
+        private const val CHUNK_DAYS = 7L
     }
 }

@@ -90,6 +90,7 @@ import app.pawse.core.ui.component.PawseMotion
 import app.pawse.core.ui.component.Segmented
 import app.pawse.core.ui.component.SelectChip
 import app.pawse.core.ui.component.SplitRow
+import app.pawse.core.ui.component.StatusBarScrim
 import app.pawse.core.ui.component.aura
 import app.pawse.core.ui.component.pressable
 import app.pawse.core.ui.component.rememberHaptic
@@ -205,6 +206,8 @@ fun WeighInScreen(
                     ScaleReading(state, viewModel)
                 }
             }
+
+            StatusBarScrim()
 
             BottomAction(
                 text = state.saveLabel,

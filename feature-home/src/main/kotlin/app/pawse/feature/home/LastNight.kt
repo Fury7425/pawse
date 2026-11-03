@@ -35,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -1557,10 +1558,21 @@ private fun hm(minutes: Double): String = ScoreCopy.formatMinutes(minutes)
 private fun dur(minutes: Double): String = if (minutes.roundToInt() >= 60) hm(minutes) else minutesText(max(0.0, minutes))
 
 // ponytail: one friendly name; other writers show their package until one needs its own.
-internal fun writer(pkg: String): String = when (pkg) {
-    CapabilityProbe.SAMSUNG_HEALTH -> "Samsung Health"
-    "" -> "—"
-    else -> pkg
+/**
+ * The app that wrote a record, by the name the phone shows for it, never a package
+ * name. Visible because the manifest queries Health Connect's rationale intent,
+ * which every app writing to Health Connect declares.
+ */
+@Composable
+internal fun writer(pkg: String): String {
+    val pm = LocalContext.current.packageManager
+    return remember(pkg) {
+        when (pkg) {
+            "" -> "—"
+            else -> runCatching { pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString() }
+                .getOrElse { if (pkg == CapabilityProbe.SAMSUNG_HEALTH) "Samsung Health" else pkg }
+        }
+    }
 }
 
 // --- Layout helpers ----------------------------------------------------------------

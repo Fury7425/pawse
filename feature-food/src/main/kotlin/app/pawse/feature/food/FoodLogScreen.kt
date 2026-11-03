@@ -78,6 +78,7 @@ import app.pawse.core.ui.component.PrimaryButton
 import app.pawse.core.ui.component.SecondaryButton
 import app.pawse.core.ui.component.SelectChip
 import app.pawse.core.ui.component.SplitRow
+import app.pawse.core.ui.component.StatusBarScrim
 import app.pawse.core.ui.component.UndoToast
 import app.pawse.core.ui.component.WeekDay
 import app.pawse.core.ui.component.WeekStrip
@@ -267,6 +268,7 @@ fun FoodLogScreen(
             ) {
                 undo?.let { UndoToast(text = it.text, onUndo = it.undo, onHold = viewModel::holdUndo) }
             }
+            StatusBarScrim()
         }
     }
 

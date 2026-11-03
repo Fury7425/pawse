@@ -223,7 +223,10 @@ private fun AmountPage(reading: MovingReading, day: ThroughDay?, asOf: Long, ene
 private fun HeartPage(m: MovingSnapshot, sleepingBpm: Double?) {
     val zone = ZoneId.systemDefault()
     val wakeHour = Instant.ofEpochMilli(m.wakeEpochMs).atZone(zone).hour
+    // Average and highest count from the waking hour, as the Scores card does; the
+    // lowest awake starts the hour after it, since the waking hour is mostly sleep.
     val awake = m.heart.filter { it.hour >= wakeHour }.ifEmpty { m.heart }
+    val upright = awake.filter { !m.wakeKnown || it.hour > wakeHour }.ifEmpty { awake }
     Text(
         if (m.wakeKnown) tr("Today · since you woke at ${ScoreCopy.clock(m.wakeEpochMs)}", "오늘 · ${ScoreCopy.clock(m.wakeEpochMs)} 기상 이후") else tr("Today · since midnight", "오늘 · 자정부터"),
         style = PawseType.Label,
@@ -240,7 +243,7 @@ private fun HeartPage(m: MovingSnapshot, sleepingBpm: Double?) {
     }
     val mean = awake.map { it.mean.toDouble() }.average().roundToInt()
     val high = awake.maxBy { it.high }
-    val low = awake.minBy { it.low }
+    val low = upright.minBy { it.low }
     Row(verticalAlignment = Alignment.Bottom) {
         Text("$mean", style = PawseType.Hero, modifier = Modifier.semantics { heading() })
         Text(tr("bpm average", "bpm 평균"), style = PawseType.Heading.copy(fontWeight = PawseType.Body.fontWeight), color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp, bottom = 10.dp))
@@ -254,7 +257,8 @@ private fun HeartPage(m: MovingSnapshot, sleepingBpm: Double?) {
 
     var picked by remember { mutableStateOf<Int?>(null) }
     SectionHead(tr("Hour by hour", "시간별"), tr("low to high · dot is the average", "최저–최고 · 점은 평균"))
-    val read = picked?.let { h -> m.heart.firstOrNull { it.hour == h } }?.let { b ->
+    // A finger past the last hour reads the last hour there is.
+    val read = picked?.let { h -> m.heart.lastOrNull { it.hour <= h } }?.let { b ->
         val asleep = b.hour < wakeHour && m.wakeKnown
         tr(
             "${hh(b.hour)}–${hh(b.hour + 1)}${if (asleep) " · asleep" else ""} · ${b.low}–${b.high} bpm · average ${b.mean}",
@@ -262,7 +266,7 @@ private fun HeartPage(m: MovingSnapshot, sleepingBpm: Double?) {
         )
     }
     ReadLine(read ?: tr("Drag across the chart to read any hour", "차트를 끌어 시간대별로 읽어요"), picked != null)
-    HeartHours(m.heart, if (m.wakeKnown) wakeHour else 0, picked, onPick = { picked = it })
+    HeartHours(m.heart, if (m.wakeKnown) wakeHour else 0, picked?.let { h -> m.heart.lastOrNull { it.hour <= h }?.hour }, onPick = { picked = it })
 
     Stats(
         listOfNotNull(

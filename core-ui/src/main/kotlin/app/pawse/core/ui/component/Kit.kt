@@ -97,6 +97,9 @@ import app.pawse.core.ui.theme.PawseType
 import app.pawse.scoring.tr
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -746,6 +749,19 @@ fun PawseSheet(onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Uni
         CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
             Column(Modifier.padding(start = 24.dp, end = 24.dp, bottom = 28.dp)) { content() }
         }
+    }
+}
+
+/**
+ * The page's colour behind the status bar, fading out just under it, so content
+ * scrolled up never runs under the clock. Drawn last in a full-screen Box.
+ */
+@Composable
+fun BoxScope.StatusBarScrim() {
+    val bg = MaterialTheme.colorScheme.background
+    Column(Modifier.align(Alignment.TopCenter).fillMaxWidth()) {
+        Box(Modifier.fillMaxWidth().windowInsetsTopHeight(WindowInsets.statusBars).background(bg))
+        Box(Modifier.fillMaxWidth().height(12.dp).background(Brush.verticalGradient(listOf(bg, bg.copy(alpha = 0f)))))
     }
 }
 

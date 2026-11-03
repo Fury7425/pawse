@@ -3,6 +3,7 @@ package app.pawse.feature.home
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -59,6 +60,7 @@ import app.pawse.core.ui.component.PrimaryButton
 import app.pawse.core.ui.component.RangeTrack
 import app.pawse.core.ui.component.Segmented
 import app.pawse.core.ui.component.SplitRow
+import app.pawse.core.ui.component.StatusBarScrim
 import app.pawse.core.ui.component.aura
 import app.pawse.core.ui.component.pressable
 import app.pawse.core.ui.theme.PawseTheme
@@ -101,6 +103,7 @@ fun BodyScreen(
     LaunchedEffect(Unit) { viewModel.reload() }
 
     Scaffold(modifier = modifier, containerColor = MaterialTheme.colorScheme.background) { padding ->
+        Box(Modifier.fillMaxSize()) {
         LazyColumn(
             modifier = Modifier.fillMaxSize().aura(),
             contentPadding = PaddingValues(
@@ -163,6 +166,8 @@ fun BodyScreen(
             item { Composition(s, range.days, inBody) }
             item { AgainstUsual(s) }
             item { FitnessAgeCard(s) }
+        }
+        StatusBarScrim()
         }
     }
 
@@ -362,7 +367,7 @@ private fun Composition(s: BodySnapshot, days: Long, inBody: List<InBodyExtra>) 
         CompositionRow(tr("Lean mass", "제지방량"), lean.filter { !it.date.isBefore(first) }.mapNotNull { r -> leanShown(r)?.let { r.date to it } }, unit)
         CompositionRow(tr("Skeletal muscle", "골격근량"), extras.mapNotNull { e -> e.skeletalMuscleKg?.let { e.date to it } }, " kg")
         CompositionRow(tr("Visceral fat level", "내장지방 레벨"), extras.mapNotNull { e -> e.visceralFat?.let { e.date to it.toDouble() } }, "")
-        val source = (fat.lastOrNull() ?: lean.lastOrNull())?.sourceApp?.let(::writer).orEmpty()
+        val source = (fat.lastOrNull() ?: lean.lastOrNull())?.sourceApp?.let { writer(it) }.orEmpty()
         Text(
             listOf(tr("Same ${days / 7} weeks as the weight chart", "체중 차트와 같은 ${days / 7}주"), source).filter { it.isNotEmpty() }.joinToString(" · "),
             style = PawseType.Micro,
