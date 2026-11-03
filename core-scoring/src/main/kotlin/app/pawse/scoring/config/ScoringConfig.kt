@@ -263,6 +263,8 @@ data class WeightConfig(
     /** A reading this far from the trend, or this far from your usual hour, counts at half weight. */
     val oddShare: Double = 0.025,
     val oddHours: Double = 4.0,
+    /** After a longer gap than this the trend is stale, so no reading is odd: it counts fully. */
+    val oddMaxGapDays: Int = 7,
     val goalWindowDays: Int = 28,
     val goalMinDays: Int = 21,
     val goalMinWeighIns: Int = 8,
