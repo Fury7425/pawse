@@ -115,8 +115,9 @@ class AssistantViewModel @Inject constructor(
 
     fun download(mobileData: Boolean) = model.download(mobileData)
 
+    /** Gemini Nano gives way to LFM3, whose download starts now. */
     fun useLlama() {
-        viewModelScope.launch { model.preferLlama() }
+        viewModelScope.launch { if (model.preferLlama()) model.download(mobileData = false) }
     }
 
     fun summaryRose() {
