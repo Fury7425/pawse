@@ -369,6 +369,7 @@ internal fun ModelSettingsSection(viewModel: AssistantViewModel = hiltViewModel(
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val state = settings.state
     var sheet by rememberSaveable { mutableStateOf(false) }
+    var lfmAsk by rememberSaveable { mutableStateOf(false) }
     val colors = MaterialTheme.colorScheme
     val grey = colors.onSurfaceVariant
 
@@ -435,6 +436,9 @@ internal fun ModelSettingsSection(viewModel: AssistantViewModel = hiltViewModel(
             if (state.since == LocalDate.now()) {
                 Text(tr("Ask Pawse works now. The first summary comes tomorrow morning.", "이제 Pawse에게 물어볼 수 있어요. 첫 요약은 내일 아침에 나와요."), style = PawseType.Label, color = grey)
             }
+            if (state.engine == Engine.NANO && settings.canRunLlama) {
+                TextAction(tr("Use LFM3-1.7B instead", "LFM3-1.7B로 바꾸기"), onClick = { lfmAsk = true })
+            }
         }
     }
     if (settings.dropped > 0 && state != ModelState.Off) {
@@ -457,6 +461,22 @@ internal fun ModelSettingsSection(viewModel: AssistantViewModel = hiltViewModel(
             } else {
                 BeforeDownload(failed = state == ModelState.Failed, room = settings.room, onDownload = { viewModel.download(false) }, onNotNow = cancel)
             }
+        }
+    }
+
+    // LFM3 in place of Gemini Nano: asked with its size like any download. Not now keeps Nano.
+    if (lfmAsk && state is ModelState.Ready) {
+        PawseSheet(onDismiss = { lfmAsk = false }) {
+            BeforeDownload(
+                failed = false,
+                room = settings.room,
+                onDownload = {
+                    viewModel.useLlama()
+                    lfmAsk = false
+                    sheet = true
+                },
+                onNotNow = { lfmAsk = false },
+            )
         }
     }
 }
