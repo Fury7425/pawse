@@ -171,6 +171,8 @@ fun HomeScreen(
     /** The tapped score and the picked day, as days before the newest. */
     onOpenExplain: (ScoreType, Int) -> Unit,
     modifier: Modifier = Modifier,
+    /** Moving today's cards: the Activity detail on the tapped figure. */
+    onOpenActivity: (ActivityFigure) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -211,6 +213,7 @@ fun HomeScreen(
                 cards = cardOrder?.filter { it !in hiddenCards },
                 contentPadding = padding,
                 onOpenExplain = onOpenExplain,
+                onOpenActivity = onOpenActivity,
                 onSyncNow = viewModel::syncNow,
                 onSettings = { editingProfile = true },
                 onDismissError = viewModel::dismissError,
@@ -319,6 +322,7 @@ private fun Scores(
     cards: List<ScoresCard>?,
     contentPadding: PaddingValues,
     onOpenExplain: (ScoreType, Int) -> Unit,
+    onOpenActivity: (ActivityFigure) -> Unit,
     onSyncNow: () -> Unit,
     onSettings: () -> Unit,
     onDismissError: () -> Unit,
@@ -533,7 +537,7 @@ private fun Scores(
                         // Check-in and Moving today stand apart; the cards between sit closer.
                         val top = if (card == ScoresCard.MOVING || card == ScoresCard.CHECK_IN) 32.dp else 16.dp
                         when (card) {
-                            ScoresCard.MOVING -> if (moving != null) item { MovingToday(moving, pad.padding(top = top)) }
+                            ScoresCard.MOVING -> if (moving != null) item { MovingToday(moving, onOpenActivity, pad.padding(top = top)) }
                             ScoresCard.WORTH -> if (day.bodyStatus != BodyStatus.WARMING_UP) item { Box(pad.padding(top = top)) { WorthKnowingCard(snapshot) } }
                             ScoresCard.YOUR_DAY -> if (energy != null) item { Box(pad.padding(top = top)) { YourDay(energy) } }
                             ScoresCard.TONIGHT -> if (tonight != null) item { Box(pad.padding(top = top)) { TonightCard(tonight, snapshot) } }
@@ -1102,7 +1106,7 @@ private fun pointsOf(day: DayReport): String {
  * keeps none of it. No goal, no score, grey only.
  */
 @Composable
-private fun MovingToday(m: MovingSnapshot, modifier: Modifier = Modifier) {
+private fun MovingToday(m: MovingSnapshot, onOpen: (ActivityFigure) -> Unit, modifier: Modifier = Modifier) {
     Column(modifier) {
         SplitRow {
             Text(tr("Moving today", "오늘의 움직임"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
@@ -1113,10 +1117,11 @@ private fun MovingToday(m: MovingSnapshot, modifier: Modifier = Modifier) {
             )
         }
         Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            MovingCard(tr("Steps", "걸음 수"), m.steps, unit = "", per = "", modifier = Modifier.weight(1f))
-            MovingCard(tr("Active energy", "활동 에너지"), m.energy, unit = "kcal", per = " kcal", modifier = Modifier.weight(1f))
+            // Each card opens the Activity detail on its own figure.
+            MovingCard(tr("Steps", "걸음 수"), m.steps, unit = "", per = "", onClick = { onOpen(ActivityFigure.STEPS) }, modifier = Modifier.weight(1f))
+            MovingCard(tr("Active energy", "활동 에너지"), m.energy, unit = "kcal", per = " kcal", onClick = { onOpen(ActivityFigure.ENERGY) }, modifier = Modifier.weight(1f))
         }
-        if (m.heart.isNotEmpty()) HeartToday(m, Modifier.padding(top = 12.dp))
+        if (m.heart.isNotEmpty()) HeartToday(m, onClick = { onOpen(ActivityFigure.HEART) }, modifier = Modifier.padding(top = 12.dp))
         Text(
             tr("Health Connect’s own totals, read when Scores opens. Pawse keeps none of it.", "헬스 커넥트의 합계를 점수 화면을 열 때 읽어요. Pawse는 저장하지 않아요."),
             style = PawseType.Micro,
@@ -1127,9 +1132,12 @@ private fun MovingToday(m: MovingSnapshot, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun MovingCard(label: String, r: MovingReading, unit: String, per: String, modifier: Modifier = Modifier) {
-    PawseCard(modifier = modifier, padding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)) {
-        Text(label, style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun MovingCard(label: String, r: MovingReading, unit: String, per: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    PawseCard(modifier = modifier, onClick = onClick, padding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(label, style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Glyph(Glyphs.ChevronRight, size = 14.dp, color = PawseTheme.semantics.faint)
+        }
         Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.Bottom) {
             Text(String.format(Locale.getDefault(), "%,d", r.today.roundToInt()), style = MovingNumber)
             if (unit.isNotEmpty()) Text(unit, style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 2.dp, bottom = 5.dp))
@@ -1159,7 +1167,7 @@ private fun MovingCard(label: String, r: MovingReading, unit: String, per: Strin
 
 private val MovingNumber = PawseType.Numeral.copy(fontSize = 28.sp, lineHeight = 34.sp, letterSpacing = (-0.7).sp)
 
-private fun movingWord(w: MovingWord): String = when (w) {
+internal fun movingWord(w: MovingWord): String = when (w) {
     MovingWord.BELOW -> tr("Below usual by now", "이 시간 평소보다 적음")
     MovingWord.ABOUT -> tr("About usual by now", "이 시간 평소 수준")
     MovingWord.ABOVE -> tr("Above usual by now", "이 시간 평소보다 많음")
@@ -1168,7 +1176,7 @@ private fun movingWord(w: MovingWord): String = when (w) {
 
 /** Heart rate since waking, hour by hour: lowest to highest as a bar, the mean as a dot. Shown, never scored. */
 @Composable
-private fun HeartToday(m: MovingSnapshot, modifier: Modifier = Modifier) {
+private fun HeartToday(m: MovingSnapshot, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val zone = java.time.ZoneId.systemDefault()
     val wake = java.time.Instant.ofEpochMilli(m.wakeEpochMs).atZone(zone).toLocalTime()
     val awake = m.heart.filter { it.hour >= wake.hour }
@@ -1177,9 +1185,12 @@ private fun HeartToday(m: MovingSnapshot, modifier: Modifier = Modifier) {
     val low = shown.minOf { it.low }
     val peak = shown.maxBy { it.high }
     val now = m.heart.last()
-    PawseCard(modifier = modifier) {
+    PawseCard(modifier = modifier, onClick = onClick) {
         SplitRow {
-            Text(tr("Heart rate today", "오늘의 심박수"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                Text(tr("Heart rate today", "오늘의 심박수"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Glyph(Glyphs.ChevronRight, size = 14.dp, color = PawseTheme.semantics.faint)
+            }
             if (m.wakeKnown) {
                 Text(tr("since you woke at ${ScoreCopy.clock(m.wakeEpochMs)}", "${ScoreCopy.clock(m.wakeEpochMs)} 기상 이후"), style = PawseType.Micro, color = PawseTheme.semantics.faint)
             }

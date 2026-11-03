@@ -190,7 +190,7 @@ private fun statusLine(s: BodySnapshot): String {
     }
 }
 
-private fun weighIns(s: BodySnapshot): List<WeighInPoint> {
+internal fun weighIns(s: BodySnapshot): List<WeighInPoint> {
     val zone = ZoneId.systemDefault()
     return s.series[Metric.BODY_WEIGHT].orEmpty().map {
         val t = java.time.Instant.ofEpochMilli(it.atEpochMs).atZone(zone)

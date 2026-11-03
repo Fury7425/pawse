@@ -4,7 +4,10 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.pawse.core.data.body.BodyRepository
 import app.pawse.core.data.body.BodyWriter
+import app.pawse.scoring.body.Weight
+import app.pawse.scoring.config.ScoringConfig
 import app.pawse.core.data.body.InBodyExtra
 import app.pawse.core.data.body.InBodyStore
 import app.pawse.core.data.body.RecentWeighIn
@@ -54,6 +57,8 @@ data class WeighInUiState(
     val kg: Double = InBodyRow.WEIGHT.park,
     val lastKg: Double? = null,
     val recent: List<RecentWeighIn> = emptyList(),
+    /** Body's weight trend, the same figure the Body tab leads with. */
+    val trendKg: Double? = null,
     /** Removed in this visit, keyed by time, kept so Undo can write them back. */
     val removed: Map<Long, WeighIn> = emptyMap(),
     val rows: Map<InBodyRow, Double> = InBodyRow.entries.associateWith { it.park },
@@ -119,6 +124,7 @@ class WeighInViewModel @Inject constructor(
     private val writer: BodyWriter,
     private val gateway: HealthConnectGateway,
     private val inBodyStore: InBodyStore,
+    private val body: BodyRepository,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
@@ -133,6 +139,10 @@ class WeighInViewModel @Inject constructor(
             val extra = inBodyStore.results.first().lastOrNull()
             val fat = writer.lastFatPercent()
             val weight = lastKg ?: InBodyRow.WEIGHT.park
+            // The trend over every weigh-in, not the three listed: three readings a month
+            // apart give a trend that matches nothing on the Body tab.
+            val trend = runCatching { body.snapshot() }.getOrNull()
+                ?.let { Weight.trend(weighIns(it), ScoringConfig.DEFAULT.weight).lastOrNull()?.trend }
             val last = buildMap {
                 lastKg?.let { put(InBodyRow.WEIGHT, it) }
                 extra?.skeletalMuscleKg?.let { put(InBodyRow.MUSCLE, it) }
@@ -142,6 +152,7 @@ class WeighInViewModel @Inject constructor(
             _state.update { s ->
                 s.copy(
                     recent = recent,
+                    trendKg = trend,
                     kg = weight,
                     lastKg = lastKg,
                     rows = InBodyRow.entries.associateWith { last[it] ?: it.park },

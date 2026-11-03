@@ -102,6 +102,7 @@ import app.pawse.feature.food.FoodDestinations
 import app.pawse.feature.food.FoodLogScreen
 import app.pawse.feature.food.ManualEntryScreen
 import app.pawse.feature.food.ScannerScreen
+import app.pawse.feature.home.ActivityScreen
 import app.pawse.feature.home.BodyScreen
 import app.pawse.feature.home.ExplainScreen
 import app.pawse.feature.home.HomeDestinations
@@ -186,6 +187,7 @@ private const val BODY = "body"
 /** Screens opened on top of a tab. They slide in; the tabs themselves never move. */
 private val PUSHED = setOf(
     HomeDestinations.EXPLAIN,
+    HomeDestinations.ACTIVITY,
     HomeDestinations.WEIGH_IN,
     FoodDestinations.SCAN,
     FoodDestinations.ADD,
@@ -286,7 +288,24 @@ private fun PawseNavGraph(initialRoute: String?) {
             popExitTransition = { ExitTransition.None },
         ) {
             composable(HomeDestinations.HOME) {
-                HomeScreen(onOpenExplain = { type, back -> navController.navigate(HomeDestinations.explain(type, back)) })
+                HomeScreen(
+                    onOpenExplain = { type, back -> navController.navigate(HomeDestinations.explain(type, back)) },
+                    onOpenActivity = { navController.navigate(HomeDestinations.activity(it)) },
+                )
+            }
+
+            composable(
+                route = HomeDestinations.ACTIVITY,
+                arguments = listOf(navArgument(HomeDestinations.ACTIVITY_ARG) { type = NavType.StringType }),
+                enterTransition = { push },
+            ) { backStackEntry ->
+                val pop = popOnce(navController)
+                PredictiveBack(pop) {
+                    ActivityScreen(
+                        initial = HomeDestinations.activityFigureOf(backStackEntry.arguments?.getString(HomeDestinations.ACTIVITY_ARG)),
+                        onBack = pop,
+                    )
+                }
             }
 
             composable(

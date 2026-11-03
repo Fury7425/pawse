@@ -1,7 +1,10 @@
 package app.pawse.core.data.health
 
 import android.content.Context
+import android.util.Log
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.records.metadata.DataOrigin
+import kotlinx.coroutines.CancellationException
 import androidx.health.connect.client.aggregate.AggregateMetric
 import androidx.health.connect.client.aggregate.AggregationResultGroupedByDuration
 import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
@@ -141,15 +144,31 @@ class HealthConnectGateway @Inject constructor(
         start: Instant,
         end: Instant,
         slice: Duration,
+        /** Only these writers. Empty: Health Connect's own priority order decides. */
+        origins: Set<String> = emptySet(),
     ): List<AggregationResultGroupedByDuration> = withContext(Dispatchers.IO) {
         runCatching {
             requireClient().aggregateGroupByDuration(
-                AggregateGroupByDurationRequest(metrics, TimeRangeFilter.between(start, end), slice),
+                AggregateGroupByDurationRequest(
+                    metrics,
+                    TimeRangeFilter.between(start, end),
+                    slice,
+                    dataOriginFilter = origins.mapTo(HashSet()) { DataOrigin(it) },
+                ),
             )
+        }.onFailure {
+            if (it is CancellationException) throw it
+            // A silent empty answer is undebuggable: say why in logcat.
+            Log.w(TAG, "Aggregate of ${metrics.joinToString()} failed", it)
         }.getOrDefault(emptyList())
     }
 
+    /** The apps that wrote [type] between [start] and [end], by how many records each wrote. */
+    suspend fun <T : Record> writers(type: KClass<T>, start: Instant, end: Instant): Map<String, Int> =
+        readOrEmpty(type, start, end).groupingBy { it.metadata.dataOrigin.packageName }.eachCount()
+
     companion object {
         const val HEALTH_CONNECT_PACKAGE = "com.google.android.apps.healthdata"
+        private const val TAG = "PawseHealth"
     }
 }

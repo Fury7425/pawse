@@ -25,4 +25,15 @@ object HomeDestinations {
 
     fun scoreTypeOf(raw: String?): ScoreType =
         raw?.let { runCatching { ScoreType.valueOf(it) }.getOrNull() } ?: ScoreType.BODY
+
+    /** Moving today's detail: steps, energy and heart rate in one push, opened on the tapped figure. */
+    const val ACTIVITY_ARG = "figure"
+    const val ACTIVITY = "activity/{$ACTIVITY_ARG}"
+
+    fun activity(figure: ActivityFigure): String = "activity/${figure.name}"
+
+    fun activityFigureOf(raw: String?): ActivityFigure =
+        raw?.let { runCatching { ActivityFigure.valueOf(it) }.getOrNull() } ?: ActivityFigure.STEPS
 }
+
+enum class ActivityFigure { STEPS, ENERGY, HEART }

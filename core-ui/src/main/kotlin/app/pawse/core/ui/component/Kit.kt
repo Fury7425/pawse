@@ -96,6 +96,7 @@ import app.pawse.core.ui.theme.PawseTheme
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.scoring.tr
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.platform.LocalDensity
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -706,11 +707,14 @@ fun BoxScope.BottomAction(
     above: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     val background = MaterialTheme.colorScheme.background
+    // The fade lives in the top padding only: whatever sits in the panel (the InBody
+    // ruler and its label) is on solid page, never over rows scrolling behind it.
+    val fade = with(LocalDensity.current) { 48.dp.toPx() }
     Column(
         Modifier
             .align(Alignment.BottomCenter)
             .fillMaxWidth()
-            .background(Brush.verticalGradient(0f to background.copy(alpha = 0f), 0.45f to background, 1f to background))
+            .background(Brush.verticalGradient(listOf(background.copy(alpha = 0f), background), startY = 0f, endY = fade))
             .navigationBarsPadding()
             .padding(start = 16.dp, end = 16.dp, top = 48.dp, bottom = 20.dp),
     ) {

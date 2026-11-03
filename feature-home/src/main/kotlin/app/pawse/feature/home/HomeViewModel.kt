@@ -146,7 +146,7 @@ class HomeViewModel @Inject constructor(
             val wakes = snapshot.nights.mapNotNull { (d, n) -> n.signals.sleep?.endEpochMs?.let { d to it } }.toMap()
             runCatching { movingRepository.read(ZonedDateTime.now(), wakes) }.getOrNull()
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), null)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), movingRepository.last)
 
     private val dismissedAt = MutableStateFlow(0L)
 
