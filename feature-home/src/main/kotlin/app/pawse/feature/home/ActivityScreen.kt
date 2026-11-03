@@ -151,7 +151,7 @@ private fun AmountPage(reading: MovingReading, day: ThroughDay?, asOf: Long, ene
     val unit = if (energy) "kcal" else tr("steps", "걸음")
     val per = if (energy) " kcal" else ""
     val now = ScoreCopy.clock(asOf)
-    Text(tr("Today · midnight to $now", "오늘 · 자정부터 $now까지"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text(tr("Today · midnight to $now", "오늘 · 자정부터 ${now}까지"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Row(verticalAlignment = Alignment.Bottom) {
         Text(count(reading.today), style = PawseType.Hero, modifier = Modifier.semantics { heading() })
         Text(unit, style = PawseType.Heading.copy(fontWeight = PawseType.Body.fontWeight), color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp, bottom = 10.dp))
@@ -183,7 +183,7 @@ private fun AmountPage(reading: MovingReading, day: ThroughDay?, asOf: Long, ene
         }
         // The hour still running reads "by now", not by its end.
         val until = if (h == nowHour) now else hh(h + 1)
-        tr("By $until · ${count(by)}$per$usual · ${count(day.perHour[h])} in that hour", "$until까지 ${count(by)}$per$usual · 그 시간 ${count(day.perHour[h])}")
+        tr("By $until · ${count(by)}$per$usual · ${count(day.perHour[h])} in that hour", "${until}까지 ${count(by)}$per$usual · 그 시간 ${count(day.perHour[h])}")
     }
     ReadLine(read ?: tr("Drag across the chart to read any hour", "차트를 끌어 시간대별로 읽어요"), picked != null)
     val at = Instant.ofEpochMilli(asOf).atZone(ZoneId.systemDefault())
