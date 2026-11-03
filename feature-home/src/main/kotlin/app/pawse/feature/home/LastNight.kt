@@ -36,6 +36,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import android.content.pm.PackageManager
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -1566,13 +1567,14 @@ private fun dur(minutes: Double): String = if (minutes.roundToInt() >= 60) hm(mi
 @Composable
 internal fun writer(pkg: String): String {
     val pm = LocalContext.current.packageManager
-    return remember(pkg) {
-        when (pkg) {
-            "" -> "—"
-            else -> runCatching { pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString() }
-                .getOrElse { if (pkg == CapabilityProbe.SAMSUNG_HEALTH) "Samsung Health" else pkg }
-        }
-    }
+    return remember(pkg) { appName(pm, pkg) }
+}
+
+/** [writer] outside composition, for text built in plain functions. */
+internal fun appName(pm: PackageManager, pkg: String): String = when (pkg) {
+    "" -> "—"
+    else -> runCatching { pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString() }
+        .getOrElse { if (pkg == CapabilityProbe.SAMSUNG_HEALTH) "Samsung Health" else pkg }
 }
 
 // --- Layout helpers ----------------------------------------------------------------
