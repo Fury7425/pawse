@@ -435,6 +435,12 @@ internal fun ModelSettingsSection(viewModel: AssistantViewModel = hiltViewModel(
             if (state.since == LocalDate.now()) {
                 Text(tr("Ask Pawse works now. The first summary comes tomorrow morning.", "이제 Pawse에게 물어볼 수 있어요. 첫 요약은 내일 아침에 나와요."), style = PawseType.Label, color = grey)
             }
+            if (state.engine == Engine.NANO && settings.canRunLlama) {
+                TextAction(tr("Use LFM3-1.7B instead", "LFM3-1.7B로 바꾸기"), onClick = {
+                    viewModel.useLlama()
+                    sheet = true
+                })
+            }
         }
     }
     if (settings.dropped > 0 && state != ModelState.Off) {
