@@ -107,6 +107,23 @@ object NightAssembler {
      */
     const val STAGE_COVERAGE_FLOOR: Double = 0.5
 
+    /**
+     * One writer per night. Two apps mirroring the same watch (Samsung Health and a
+     * fitness app, say) each write the night, and summing both would report double
+     * the sleep. As for every metric, the first app in the user's priority list wins
+     * the day, otherwise the one that wrote the most night; only apps that wrote a
+     * night compete, so a phone's nap never displaces the watch's night.
+     */
+    fun oneWriter(sessions: List<SleepSessionEntity>, priority: List<String>): List<SleepSessionEntity> =
+        sessions.groupBy { it.localDate }.values.flatMap { day ->
+            val bySource = day.groupBy { it.sourceApp }
+            if (bySource.size <= 1) return@flatMap day
+            val candidates = bySource.filterValues { s -> s.any { !it.isNap } }.ifEmpty { bySource }
+            val winner = priority.firstOrNull { it in candidates }
+                ?: candidates.maxBy { (_, s) -> s.filter { !it.isNap }.sumOf { it.endEpochMs - it.startEpochMs } }.key
+            candidates.getValue(winner)
+        }
+
     fun summarise(
         date: String,
         sessions: List<SleepSessionEntity>,
