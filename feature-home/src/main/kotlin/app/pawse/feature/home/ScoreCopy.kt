@@ -46,6 +46,10 @@ object ScoreCopy {
         Guidance.SETTLING -> tr("Still learning your normal. Here is what last night says.", "아직 평소 상태를 알아가는 중이에요. 지난밤 기록은 이래요.")
     }
 
+    /** The morning the seventh night lands. */
+    val NORMAL_SET: String
+        get() = tr("Your normal is set. Body starts today.", "평소 상태를 다 배웠어요. 오늘부터 컨디션 점수가 나와요.")
+
     fun bandWord(band: BodyBand): String = when (band) {
         BodyBand.ABOVE_NORMAL -> tr("Above normal", "평소보다 높음")
         BodyBand.TYPICAL -> tr("Typical", "평소 수준")

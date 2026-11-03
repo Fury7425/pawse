@@ -69,8 +69,18 @@ interface SleepDao {
     @Query("SELECT * FROM sleep_stage WHERE sessionId = :sessionId ORDER BY startEpochMs")
     suspend fun stagesFor(sessionId: Long): List<SleepStageEntity>
 
+    @Query("DELETE FROM sleep_stage WHERE sessionId IN (SELECT id FROM sleep_session WHERE originId IN (:originIds))")
+    suspend fun deleteStagesByOriginIds(originIds: List<String>)
+
     @Query("DELETE FROM sleep_session WHERE originId IN (:originIds)")
-    suspend fun deleteByOriginIds(originIds: List<String>)
+    suspend fun deleteSessionsByOriginIds(originIds: List<String>)
+
+    /** A session and its stages together: the stage table has no foreign key to cascade. */
+    @Transaction
+    suspend fun deleteByOriginIds(originIds: List<String>) {
+        deleteStagesByOriginIds(originIds)
+        deleteSessionsByOriginIds(originIds)
+    }
 
     @Query("SELECT COUNT(*) FROM sleep_session WHERE isNap = 0")
     suspend fun nightCount(): Int
@@ -100,6 +110,9 @@ interface ExerciseDao {
         """,
     )
     suspend fun withoutHeartRate(from: String, to: String): List<ExerciseSessionEntity>
+
+    @Query("SELECT * FROM exercise_session WHERE originId IN (:originIds)")
+    suspend fun byOriginIds(originIds: List<String>): List<ExerciseSessionEntity>
 
     @Query("UPDATE exercise_session SET meanHeartRate = :mean, maxHeartRate = :max WHERE id = :id")
     suspend fun setHeartRate(id: Long, mean: Double?, max: Double?)

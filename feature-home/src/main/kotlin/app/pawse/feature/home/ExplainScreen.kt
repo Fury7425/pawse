@@ -2,7 +2,22 @@ package app.pawse.feature.home
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.platform.LocalDensity
+import app.pawse.core.ui.component.EaseInOut
+import app.pawse.core.ui.component.PawseHaptic
+import app.pawse.core.ui.component.REDUCED_FADE
+import app.pawse.core.ui.component.rememberHaptic
+import app.pawse.core.ui.component.rememberSwap
+import app.pawse.core.ui.component.swapIn
+import kotlinx.coroutines.flow.drop
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -122,8 +137,16 @@ fun ExplainScreen(
     }
     val scope = rememberCoroutineScope()
     val shown = PAGES[pager.currentPage]
+    // Tapping a segment moves the page on the segmented curve.
     fun show(t: ScoreType) {
-        scope.launch { pager.animateScrollToPage(PAGES.indexOf(t)) }
+        scope.launch {
+            pager.animateScrollToPage(PAGES.indexOf(t), animationSpec = if (reduce) snap() else tween(240, easing = EaseInOut))
+        }
+    }
+    // A page landing is a discrete step, so it ticks.
+    val haptic = rememberHaptic()
+    LaunchedEffect(pager) {
+        snapshotFlow { pager.settledPage }.drop(1).collect { haptic(PawseHaptic.Tick) }
     }
     // One window day drives every page; it stays put as the pages swipe.
     var back by rememberSaveable { mutableIntStateOf(initialBack) }
@@ -161,6 +184,7 @@ fun ExplainScreen(
                         label = ScoreCopy::name,
                         height = 32.dp,
                         modifier = Modifier.width(240.dp),
+                        position = { pager.currentPage + pager.currentPageOffsetFraction },
                     )
                 }
                 GlyphButton(Glyphs.Info, tr("How Pawse calculates ${ScoreCopy.name(shown)}", "${ScoreCopy.name(shown)} 계산 방법"), onClick = { mathFor = shown })
@@ -404,28 +428,53 @@ private fun DetailHero(
 ) {
     val s = PawseTheme.semantics
     val grey = MaterialTheme.colorScheme.onSurfaceVariant
-    val now = LocalDate.now()
-    val title = when (date) {
-        now -> tr("Today", "오늘")
-        now.minusDays(1) -> tr("Yesterday", "어제")
-        else -> date.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, Locale.getDefault())
-    }
+    val haptic = rememberHaptic()
+    val reduce = LocalReduceMotion.current
+    val step = with(LocalDensity.current) { 12.dp.roundToPx() }
     Column(modifier.fillMaxWidth().padding(top = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Row(Modifier.fillMaxWidth().lookIn(look, 1), verticalAlignment = Alignment.CenterVertically) {
-            GlyphButton(Glyphs.ChevronLeft, tr("Day before", "전날"), onClick = { if (back < oldest) onPick(back + 1) })
-            // The title opens the calendar: every route to a day stays visible.
-            Text(
-                title,
-                style = PawseType.Heading,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = 48.dp)
-                    .pressable(onClick = onCalendar)
-                    .semantics { contentDescription = "$title, " + tr("choose a date", "날짜 선택") }
-                    .padding(top = 12.dp),
-            )
-            GlyphButton(Glyphs.ChevronRight, tr("Day after", "다음 날"), onClick = { if (back > 0) onPick(back - 1) })
+            GlyphButton(Glyphs.ChevronLeft, tr("Day before", "전날"), onClick = {
+                if (back < oldest) {
+                    haptic(PawseHaptic.Step)
+                    onPick(back + 1)
+                }
+            })
+            // The title opens the calendar: every route to a day stays visible. A step
+            // slides it 12 dp in from the side it travelled, the old one out fast.
+            AnimatedContent(
+                targetState = date,
+                modifier = Modifier.weight(1f),
+                transitionSpec = {
+                    // An earlier day comes in from the left, a later one from the right.
+                    val from = if (targetState < initialState) -step else step
+                    if (reduce) {
+                        fadeIn(tween(REDUCED_FADE)) togetherWith fadeOut(tween(90))
+                    } else {
+                        (slideInHorizontally(tween(180, easing = EaseOut)) { from } + fadeIn(tween(180, easing = EaseOut))) togetherWith
+                            fadeOut(tween(90, easing = EaseOut))
+                    }
+                },
+                label = "dayHead",
+            ) { shownDate ->
+                val shownTitle = dayTitle(shownDate)
+                Text(
+                    shownTitle,
+                    style = PawseType.Heading,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .pressable(onClick = onCalendar)
+                        .semantics { contentDescription = "$shownTitle, " + tr("choose a date", "날짜 선택") }
+                        .padding(top = 12.dp),
+                )
+            }
+            GlyphButton(Glyphs.ChevronRight, tr("Day after", "다음 날"), onClick = {
+                if (back > 0) {
+                    haptic(PawseHaptic.Step)
+                    onPick(back - 1)
+                }
+            })
         }
         Row(Modifier.lookIn(look, 1), verticalAlignment = Alignment.CenterVertically) {
             Text(shortDate(date), style = PawseType.Micro, color = s.faint)
@@ -452,13 +501,23 @@ private fun DetailHero(
             ghost = pinDate?.let { heroFace(type, pinned, showNumbers).fraction },
             modifier = Modifier.padding(top = 4.dp).flightTarget(type),
         ) {
-            Row(verticalAlignment = Alignment.Bottom) {
+            // Another day keeps everything in place: the arc sweeps, the numeral swaps.
+            Row(Modifier.swapIn(rememberSwap(face.value)), verticalAlignment = Alignment.Bottom) {
                 Text(face.value, style = PawseType.RingXL)
                 if (face.unit.isNotEmpty()) Text(face.unit, style = PawseType.Heading.copy(fontWeight = PawseType.Body.fontWeight), color = grey, modifier = Modifier.padding(start = 2.dp, bottom = 8.dp))
             }
         }
         BandDot(color = face.dot, label = face.word, hollow = face.hollow, modifier = Modifier.padding(top = 12.dp).lookIn(look, 2))
         Text(face.sentence, style = PawseType.Body, color = grey, modifier = Modifier.fillMaxWidth().padding(top = 16.dp).lookIn(look, 2))
+    }
+}
+
+private fun dayTitle(date: LocalDate): String {
+    val now = LocalDate.now()
+    return when (date) {
+        now -> tr("Today", "오늘")
+        now.minusDays(1) -> tr("Yesterday", "어제")
+        else -> date.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, Locale.getDefault())
     }
 }
 

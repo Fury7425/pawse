@@ -330,7 +330,7 @@ private fun LoadChart(rows: List<NightRow>, selI: Int, onPick: (Int) -> Unit) {
             Modifier
                 .width(plot)
                 .fillMaxHeight()
-                .scrub { f -> if (f != null) onPick((f * n).toInt().coerceIn(0, n - 1)) }
+                .scrub(n) { f -> if (f != null) onPick((f * n).toInt().coerceIn(0, n - 1)) }
                 .semantics { contentDescription = description },
         ) {
             val h = size.height

@@ -70,10 +70,12 @@ import app.pawse.core.ui.component.Glyph
 import app.pawse.core.ui.component.Glyphs
 import app.pawse.core.ui.component.KeySwatch
 import app.pawse.core.ui.component.PawseCard
+import app.pawse.core.ui.component.PawseHaptic
 import app.pawse.core.ui.component.Segmented
 import app.pawse.core.ui.component.UsualRangeKey
 import app.pawse.core.ui.component.cardSurface
 import app.pawse.core.ui.component.pressable
+import app.pawse.core.ui.component.rememberHaptic
 import app.pawse.core.ui.component.rememberSwap
 import app.pawse.core.ui.component.swapIn
 import app.pawse.core.ui.theme.PawseTheme
@@ -440,7 +442,7 @@ private fun Hypnogram(
             Modifier
                 .weight(1f)
                 .height(height)
-                .scrub(onCursor)
+                .scrub(onAt = onCursor)
                 .semantics { contentDescription = description },
         ) {
             val laneH = LANE_HEIGHT.dp.toPx()
@@ -708,7 +710,7 @@ private fun VitalRow(v: Vital, axis: NightAxis, cursor: Float?, onCursor: (Float
                     Modifier
                         .weight(1f)
                         .height(v.height)
-                        .scrub(onCursor)
+                        .scrub(onAt = onCursor)
                         .semantics { contentDescription = "${v.name}, ${v.sub}: $shown" },
                 ) {
                     val pad = 3.dp.toPx()
@@ -987,7 +989,7 @@ internal fun TrendChart(
             Modifier
                 .width(plot)
                 .fillMaxHeight()
-                .scrub { f -> if (f != null) onPick((f * n).toInt().coerceIn(0, n - 1)) }
+                .scrub(n) { f -> if (f != null) onPick((f * n).toInt().coerceIn(0, n - 1)) }
                 .semantics {
                     contentDescription = tr(
                         "${figure.title()}, last $n nights. Touch the chart to pick a night.",
@@ -1577,15 +1579,26 @@ private class NightAxis(val start: Long, val end: Long, val bedMinute: Double) {
 
 /**
  * Touch or drag across a chart to read it: [onAt] gets the share of the width
- * under the finger. Horizontal only, so the page still scrolls.
+ * under the finger. Horizontal only, so the page still scrolls. With [points], a
+ * tap ticks once and a drag ticks finely at each point it crosses.
  */
 @Composable
-internal fun Modifier.scrub(onAt: (Float?) -> Unit): Modifier {
+internal fun Modifier.scrub(points: Int = 0, onAt: (Float?) -> Unit): Modifier {
     val latest by rememberUpdatedState(onAt)
-    return pointerInput(Unit) {
-        fun at(x: Float) = latest((x / size.width).coerceIn(0f, 0.999f))
+    val haptic = rememberHaptic()
+    return pointerInput(points) {
+        var last = -1
+        fun at(x: Float, tap: Boolean = false) {
+            val f = (x / size.width).coerceIn(0f, 0.999f)
+            if (points > 0) {
+                val i = (f * points).toInt()
+                if (i != last || tap) haptic(if (tap) PawseHaptic.Step else PawseHaptic.FineTick)
+                last = i
+            }
+            latest(f)
+        }
         coroutineScope {
-            launch { detectTapGestures { at(it.x) } }
+            launch { detectTapGestures { at(it.x, tap = true) } }
             launch {
                 detectHorizontalDragGestures(onDragStart = { at(it.x) }) { change, _ ->
                     change.consume()

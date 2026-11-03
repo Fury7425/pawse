@@ -83,6 +83,12 @@ import app.pawse.core.ui.component.WeekDay
 import app.pawse.core.ui.component.WeekStrip
 import app.pawse.core.ui.component.aura
 import app.pawse.core.ui.component.pressable
+import app.pawse.core.ui.component.LocalReduceMotion
+import app.pawse.core.ui.component.PawseHaptic
+import app.pawse.core.ui.component.REDUCED_FADE
+import app.pawse.core.ui.component.rememberHaptic
+import app.pawse.core.ui.component.rememberSwap
+import app.pawse.core.ui.component.swapIn
 import app.pawse.core.ui.theme.PawseTheme
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.scoring.tr
@@ -138,6 +144,7 @@ fun FoodLogScreen(
     }
     var showSettings by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<FoodLogEntry?>(null) }
+    val haptic = rememberHaptic()
     val isToday = date == LocalDate.now()
     val pad = Modifier.padding(horizontal = 24.dp)
     val totals = day?.totals
@@ -191,7 +198,12 @@ fun FoodLogScreen(
                             Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 24.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            again.forEach { entry -> AgainChip(entry, onClick = { viewModel.logAgain(entry) }) }
+                            again.forEach { entry ->
+                                AgainChip(entry, onClick = {
+                                    haptic(PawseHaptic.Confirm)
+                                    viewModel.logAgain(entry)
+                                })
+                            }
                         }
                     }
                 }
@@ -204,7 +216,12 @@ fun FoodLogScreen(
                         }
                     }
                     items(entries, key = { it.id }) { entry ->
-                        EntryRow(entry, onClick = { editing = entry }, modifier = pad.animateItem())
+                        // A new row fades in at full height, a removed one fades out in 120 ms; nothing below slides.
+                        EntryRow(
+                            entry,
+                            onClick = { editing = entry },
+                            modifier = pad.animateItem(fadeInSpec = tween(220, easing = EaseOut), placementSpec = null, fadeOutSpec = tween(120, easing = EaseOut)),
+                        )
                     }
                 }
 
@@ -229,17 +246,26 @@ fun FoodLogScreen(
                 }
             }
 
-            // Rises from behind the dock in 240 ms and leaves the same way in 160.
+            // Rises from behind the dock in 240 ms and leaves the same way in 160; a fade only under reduce motion.
+            val still = LocalReduceMotion.current
             AnimatedVisibility(
                 visible = undo != null,
-                enter = slideInVertically(tween(240, easing = EaseOut)) { it } + fadeIn(tween(240, easing = EaseOut)),
-                exit = slideOutVertically(tween(160, easing = EaseOut)) { it } + fadeOut(tween(160)),
+                enter = if (still) {
+                    fadeIn(tween(REDUCED_FADE))
+                } else {
+                    slideInVertically(tween(240, easing = EaseOut)) { it } + fadeIn(tween(240, easing = EaseOut))
+                },
+                exit = if (still) {
+                    fadeOut(tween(REDUCED_FADE))
+                } else {
+                    slideOutVertically(tween(160, easing = EaseOut)) { it } + fadeOut(tween(160))
+                },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
                     .padding(start = 16.dp, end = 16.dp, bottom = 100.dp),
             ) {
-                undo?.let { UndoToast(text = it.text, onUndo = it.undo) }
+                undo?.let { UndoToast(text = it.text, onUndo = it.undo, onHold = viewModel::holdUndo) }
             }
         }
     }
@@ -304,7 +330,8 @@ private fun Hero(day: FoodDay, burned: Burned?, partly: Boolean, modifier: Modif
     val eaten = totals.totals.kcal ?: 0.0
     Column(modifier) {
         Row(verticalAlignment = Alignment.Bottom) {
-            Text(totals.kcalRounded?.let { "%,d".format(it) } ?: "—", style = PawseType.Hero)
+            // A changed total swaps in place, so old and new never read as two numbers.
+            Text(totals.kcalRounded?.let { "%,d".format(it) } ?: "—", style = PawseType.Hero, modifier = Modifier.swapIn(rememberSwap(totals.kcalRounded)))
             Text("kcal", style = PawseType.Heading.copy(fontWeight = PawseType.Body.fontWeight), color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp, bottom = 10.dp))
         }
         if (partly) Text(tr("Partly logged", "일부만 기록함"), style = PawseType.BodyStrong)

@@ -84,13 +84,13 @@ data class WeighInUiState(
     val fatPercent: Double? get() = fatMass?.let { it / value(InBodyRow.WEIGHT) * 100.0 }
     val leanKg: Double? get() = fatMass?.let { value(InBodyRow.WEIGHT) - it }
 
-    /** Katch–McArdle, from lean mass. Shown, not saved: Health Connect would take it for a measurement. */
+    /** Katch–McArdle, from lean mass. Saved with the InBody result, as the design's Decisions board specifies. */
     val bmr: Double? get() = leanKg?.let { 370.0 + 21.6 * it }
 
     val saveLabel: String get() = if (inBody) tr("Save InBody result", "인바디 결과 저장") else tr("Save weigh-in", "체중 저장")
 
     fun toWeighIn(): WeighIn = if (inBody) {
-        WeighIn(at = Instant.now(), weightKg = value(InBodyRow.WEIGHT), fatPercent = fatPercent, leanKg = leanKg)
+        WeighIn(at = Instant.now(), weightKg = value(InBodyRow.WEIGHT), fatPercent = fatPercent, leanKg = leanKg, bmrKcal = bmr)
     } else {
         WeighIn(at = Instant.now(), weightKg = kg)
     }

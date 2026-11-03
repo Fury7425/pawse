@@ -19,6 +19,13 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -88,7 +95,9 @@ import androidx.compose.ui.unit.dp
 import app.pawse.core.ui.theme.PawseTheme
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.scoring.tr
+import androidx.compose.ui.unit.IntOffset
 import kotlin.math.cos
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
@@ -349,6 +358,12 @@ fun <T> Segmented(
     modifier: Modifier = Modifier,
     height: Dp = 40.dp,
     glyph: ((T) -> String)? = null,
+    /**
+     * A pager's live position (page plus offset). Given, the thumb follows the
+     * finger exactly instead of sliding after the page lands: the thumb and the
+     * page are one object. Read in layout only.
+     */
+    position: (() -> Float)? = null,
 ) {
     val index = options.indexOf(selected)
     val thumb = PawseTheme.semantics.segmentThumb
@@ -360,11 +375,18 @@ fun <T> Segmented(
             .padding(4.dp),
     ) {
         val segment = maxWidth / options.size
-        val offset by animateDpAsState(segment * index.coerceAtLeast(0), tween(240, easing = EaseInOut), label = "thumb")
+        val reduce = LocalReduceMotion.current
+        val offset by animateDpAsState(segment * index.coerceAtLeast(0), if (reduce) snap() else tween(240, easing = EaseInOut), label = "thumb")
         if (index >= 0) {
             Box(
                 Modifier
-                    .offset(x = offset)
+                    .then(
+                        if (position != null) {
+                            Modifier.offset { IntOffset((segment.toPx() * position().coerceIn(0f, options.size - 1f)).roundToInt(), 0) }
+                        } else {
+                            Modifier.offset(x = offset)
+                        },
+                    )
                     .width(segment)
                     .height(height)
                     .background(thumb, RoundedCornerShape(8.dp))
@@ -377,7 +399,7 @@ fun <T> Segmented(
                 val color by animateColorAsState(
                     if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                     // In step with the thumb, so label and pill arrive together.
-                    tween(240),
+                    tween(if (reduce) REDUCED_FADE else 240),
                     label = "segment",
                 )
                 Row(
@@ -512,6 +534,14 @@ fun ScoreRing(
     range: ClosedFloatingPointRange<Float>? = null,
     /** A pinned day's value: a grey tick just outside the ring, the one ghost style. */
     ghost: Float? = null,
+    /** First week: nights learned of seven, drawn as seven segments in place of the arc. */
+    segments: Int? = null,
+    /** The seventh night, once ever: 0 → 1 as the segments grow into one ring. */
+    join: Float = 0f,
+    /** Then 0 → 1 as the joined segments give way to the arc. */
+    reveal: Float = 0f,
+    /** The day's first fill was already seen (a tab return): start at the value, no sweep from zero. */
+    skipFirstDraw: Boolean = false,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val track = PawseTheme.semantics.baselineOuter
@@ -519,9 +549,11 @@ fun ScoreRing(
     val ghostColor = MaterialTheme.colorScheme.onSurfaceVariant
     val targetColor = MaterialTheme.colorScheme.onSurface
     val reduce = LocalReduceMotion.current
-    val sweep = remember { Animatable(0f) }
+    // A new day's band crossfades its colour with the sweep; colour uses plain ease.
+    val arcColor by animateColorAsState(color, tween(PawseMotion.VALUE), label = "ringColor")
+    val sweep = remember { Animatable(if (skipFirstDraw) (fraction ?: 0f).coerceIn(0f, 1f) else 0f) }
     // The first fill draws in 700 ms on EaseOut; a changed value glides 400 ms on EaseInOut.
-    var drawn by remember { mutableStateOf(false) }
+    var drawn by remember { mutableStateOf(skipFirstDraw) }
     LaunchedEffect(fraction) {
         val to = (fraction ?: 0f).coerceIn(0f, 1f)
         when {
@@ -543,12 +575,28 @@ fun ScoreRing(
                 val from = r.start.coerceIn(0f, 1f)
                 drawArc(band, -90f + 360f * from, 360f * (r.endInclusive.coerceIn(0f, 1f) - from), false, topLeft, arcSize, style = Stroke(stroke * unit))
             }
-            if (sweep.value > 0f) {
-                if (glow) {
-                    drawArc(color.copy(alpha = 0.12f), -90f, 360f * sweep.value, false, topLeft, arcSize, style = Stroke((stroke + 8f) * unit, cap = StrokeCap.Round))
-                    drawArc(color.copy(alpha = 0.16f), -90f, 360f * sweep.value, false, topLeft, arcSize, style = Stroke((stroke + 3f) * unit, cap = StrokeCap.Round))
+            // Seven segments, a 6 dp gap between their round ends, that close up as they join.
+            segments?.let { done ->
+                val alpha = 1f - reveal.coerceIn(0f, 1f)
+                val gapDeg = (6.dp.toPx() + stroke * unit) * (1f - join) / radius * (180f / Math.PI.toFloat())
+                for (i in 0 until 7) {
+                    val tint = if (join > 0f || i < done) ghostColor else band
+                    drawArc(
+                        tint.copy(alpha = tint.alpha * alpha),
+                        -90f + i * 360f / 7f + gapDeg / 2f,
+                        (360f / 7f - gapDeg).coerceAtLeast(0.01f),
+                        false, topLeft, arcSize,
+                        style = Stroke(stroke * unit, cap = StrokeCap.Round),
+                    )
                 }
-                drawArc(color, -90f, 360f * sweep.value, false, topLeft, arcSize, style = Stroke(stroke * unit, cap = StrokeCap.Round))
+            }
+            val arcAlpha = if (segments != null) reveal.coerceIn(0f, 1f) else 1f
+            if (sweep.value > 0f && arcAlpha > 0f) {
+                if (glow) {
+                    drawArc(arcColor.copy(alpha = 0.12f * arcAlpha), -90f, 360f * sweep.value, false, topLeft, arcSize, style = Stroke((stroke + 8f) * unit, cap = StrokeCap.Round))
+                    drawArc(arcColor.copy(alpha = 0.16f * arcAlpha), -90f, 360f * sweep.value, false, topLeft, arcSize, style = Stroke((stroke + 3f) * unit, cap = StrokeCap.Round))
+                }
+                drawArc(arcColor.copy(alpha = arcColor.alpha * arcAlpha), -90f, 360f * sweep.value, false, topLeft, arcSize, style = Stroke(stroke * unit, cap = StrokeCap.Round))
             }
             fun tick(at: Float, from: Float, to: Float, width: Float, tint: Color) {
                 val angle = Math.toRadians(at * 360.0)
@@ -604,13 +652,26 @@ fun SplitBar(parts: List<Pair<Float, Color>>, modifier: Modifier = Modifier, hei
     }
 }
 
-/** The raised graphite toast that confirms an action and offers to take it back. */
+/**
+ * The raised graphite toast that confirms an action and offers to take it back.
+ * Read out politely; a finger on it holds it ([onHold] true until let go).
+ */
 @Composable
-fun UndoToast(text: String, onUndo: () -> Unit, modifier: Modifier = Modifier) {
+fun UndoToast(text: String, onUndo: () -> Unit, modifier: Modifier = Modifier, onHold: (Boolean) -> Unit = {}) {
     val semantics = PawseTheme.semantics
+    val hold by rememberUpdatedState(onHold)
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .semantics { liveRegion = LiveRegionMode.Polite }
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    hold(true)
+                    waitForUpOrCancellation()
+                    hold(false)
+                }
+            }
             .heightIn(min = 52.dp)
             .lift(RoundedCornerShape(16.dp))
             .background(semantics.toast, RoundedCornerShape(16.dp))
@@ -716,23 +777,32 @@ fun rememberSwap(key: Any?): Animatable<Float, AnimationVector1D> {
     var last by remember { mutableStateOf(key) }
     val reduce = LocalReduceMotion.current
     LaunchedEffect(key) {
-        if (key == last || reduce) return@LaunchedEffect
+        if (key == last) return@LaunchedEffect
         last = key
         reveal.snapTo(0f)
-        reveal.animateTo(1f, tween(PawseMotion.SWAP, easing = EaseOut))
+        // Reduce motion keeps the fade, shortened; [swapIn] drops the rise and blur.
+        reveal.animateTo(1f, tween(if (reduce) REDUCED_FADE else PawseMotion.SWAP, easing = EaseOut))
     }
     return reveal
 }
 
+/** Under reduce motion, movement gives way to a fade this long. */
+const val REDUCED_FADE = 150
+
 /** Applies [rememberSwap] in the draw phase only, so a swap never recomposes what it moves. */
-fun Modifier.swapIn(reveal: Animatable<Float, AnimationVector1D>): Modifier = graphicsLayer {
-    val hidden = 1f - reveal.value
-    alpha = reveal.value
-    translationY = hidden * 4.dp.toPx()
-    // Blur needs Android 12; older phones get the fade and the lift alone.
-    renderEffect = if (hidden > 0f && Build.VERSION.SDK_INT >= 31) {
-        BlurEffect(hidden * 2.dp.toPx(), hidden * 2.dp.toPx(), TileMode.Decal)
-    } else {
-        null
+@Composable
+fun Modifier.swapIn(reveal: Animatable<Float, AnimationVector1D>): Modifier {
+    val still = LocalReduceMotion.current
+    return graphicsLayer {
+        val hidden = 1f - reveal.value
+        alpha = reveal.value
+        if (still) return@graphicsLayer
+        translationY = hidden * 4.dp.toPx()
+        // Blur needs Android 12; older phones get the fade and the lift alone.
+        renderEffect = if (hidden > 0f && Build.VERSION.SDK_INT >= 31) {
+            BlurEffect(hidden * 2.dp.toPx(), hidden * 2.dp.toPx(), TileMode.Decal)
+        } else {
+            null
+        }
     }
 }

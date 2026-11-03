@@ -1,6 +1,10 @@
 package app.pawse.feature.food
 
+import android.content.Context
+import android.os.Build
+import android.view.accessibility.AccessibilityManager
 import androidx.lifecycle.ViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import androidx.lifecycle.viewModelScope
 import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
 import app.pawse.core.data.activity.MovingRepository
@@ -55,7 +59,22 @@ class FoodLogViewModel @Inject constructor(
     private val gateway: HealthConnectGateway,
     private val scoring: ScoringRepository,
     private val moving: MovingRepository,
+    @ApplicationContext context: Context,
 ) : ViewModel() {
+
+    /**
+     * How long Undo stays: 4 s, or longer when the phone's accessibility settings ask
+     * for more time to act on controls.
+     */
+    private val undoWindowMs: Long = run {
+        val base = 4_000
+        val manager = context.getSystemService(AccessibilityManager::class.java)
+        if (manager != null && Build.VERSION.SDK_INT >= 29) {
+            manager.getRecommendedTimeoutMillis(base, AccessibilityManager.FLAG_CONTENT_TEXT or AccessibilityManager.FLAG_CONTENT_CONTROLS).toLong()
+        } else {
+            base.toLong()
+        }
+    }
 
     private val _burned = MutableStateFlow<Burned?>(null)
 
@@ -218,10 +237,21 @@ class FoodLogViewModel @Inject constructor(
                 reloadSideFacts()
             }
         }
+        startUndoTimeout()
+    }
+
+    private fun startUndoTimeout() {
+        undoTimeout?.cancel()
         undoTimeout = viewModelScope.launch {
-            delay(UNDO_WINDOW_MS)
+            delay(undoWindowMs)
             dismissUndo()
         }
+    }
+
+    /** A finger on the Undo bar holds it; letting go gives it a full window again. */
+    fun holdUndo(held: Boolean) {
+        if (_undo.value == null) return
+        if (held) undoTimeout?.cancel() else startUndoTimeout()
     }
 
     private suspend fun reloadSideFacts() {
@@ -285,6 +315,5 @@ class FoodLogViewModel @Inject constructor(
 
     private companion object {
         const val STOP_TIMEOUT_MS = 5_000L
-        const val UNDO_WINDOW_MS = 6_000L
     }
 }

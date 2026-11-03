@@ -95,6 +95,29 @@ class HomeViewModel @Inject constructor(
 
     fun setNotify(kind: NotifyKind, on: Boolean) = notificationSettings.set(kind, on)
 
+    /** Null until read, so a once-ever moment never flashes on a slow first frame. */
+    val coachSeen: StateFlow<Boolean?> = profilePreferences.coachSeen
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), null)
+    val firstWeek: StateFlow<Int?> = profilePreferences.firstWeek
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), null)
+
+    /** Hide scores today: true only on the day it was chosen. */
+    val hiddenToday: StateFlow<Boolean> = profilePreferences.scoresHiddenOn
+        .map { it == LocalDate.now() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), false)
+
+    fun setHiddenToday(hidden: Boolean) {
+        viewModelScope.launch { profilePreferences.setScoresHiddenOn(if (hidden) LocalDate.now() else null) }
+    }
+
+    fun dismissCoach() {
+        viewModelScope.launch { profilePreferences.setCoachSeen() }
+    }
+
+    fun setFirstWeek(stage: Int) {
+        viewModelScope.launch { profilePreferences.setFirstWeek(stage) }
+    }
+
     /** Scores' cards: null is Automatic, otherwise the user's order. */
     val cardOrder: StateFlow<List<ScoresCard>?> = profilePreferences.cardOrder
         .map { names -> names?.mapNotNull { n -> ScoresCard.entries.firstOrNull { it.name == n } }?.let(ScoresCard::complete) }
@@ -157,14 +180,16 @@ class HomeViewModel @Inject constructor(
         if (failed.atEpochMs <= dismissed) return@combine null
         when (failed.reason) {
             SyncFailure.READ_FAILED -> tr(
-                "Health Connect didn't answer at ${ScoreCopy.clock(failed.atEpochMs)}. " +
-                    "Nothing new was read, so these are the last numbers we had.",
-                "${ScoreCopy.clock(failed.atEpochMs)}에 헬스 커넥트가 응답하지 않았어요. " +
-                    "새로 읽은 게 없어서 마지막으로 읽은 값을 보여주고 있어요.",
+                "Health Connect didn’t answer. This is usually brief. Your last scores are below.",
+                "헬스 커넥트가 응답하지 않았어요. 보통 잠깐이에요. 마지막 점수는 아래에 있어요.",
             )
             SyncFailure.UNAVAILABLE -> tr(
                 "Health Connect isn't available on this phone, so nothing new can be read.",
                 "이 휴대폰에서는 헬스 커넥트를 쓸 수 없어서 새 데이터를 읽을 수 없어요.",
+            )
+            SyncFailure.NEEDS_UPDATE -> tr(
+                "Pawse reads everything through Health Connect. Update it from the Play Store, then come back.",
+                "Pawse는 모든 데이터를 헬스 커넥트로 읽어요. Play 스토어에서 업데이트한 뒤 돌아오세요.",
             )
             SyncFailure.ACCESS_OFF -> null
         }

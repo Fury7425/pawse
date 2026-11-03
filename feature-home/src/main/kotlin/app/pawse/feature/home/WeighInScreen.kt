@@ -53,9 +53,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -85,6 +83,7 @@ import app.pawse.core.ui.component.GhostButton
 import app.pawse.core.ui.component.GlyphButton
 import app.pawse.core.ui.component.Glyphs
 import app.pawse.core.ui.component.PawseCard
+import app.pawse.core.ui.component.PawseHaptic
 import app.pawse.core.ui.component.PawseMotion
 import app.pawse.core.ui.component.Segmented
 import app.pawse.core.ui.component.SelectChip
@@ -92,6 +91,7 @@ import app.pawse.core.ui.component.SplitRow
 import app.pawse.core.ui.component.aura
 import app.pawse.core.ui.component.cardSurface
 import app.pawse.core.ui.component.pressable
+import app.pawse.core.ui.component.rememberHaptic
 import app.pawse.core.ui.theme.PawseTheme
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.scoring.body.WeighInPoint
@@ -148,8 +148,16 @@ fun WeighInScreen(
         }
     }
 
+    val haptic = rememberHaptic()
     LaunchedEffect(state.saved) {
-        if (state.saved) onDone()
+        if (state.saved) {
+            haptic(PawseHaptic.Confirm)
+            onDone()
+        }
+    }
+    // The sheet was read: confirm, and let the eyes stay on the numbers to check.
+    LaunchedEffect(state.fromSheet) {
+        if (state.fromSheet) haptic(PawseHaptic.Confirm)
     }
     LaunchedEffect(state.askFor) {
         state.askFor?.let {
@@ -367,10 +375,10 @@ private fun InBodyForm(state: WeighInUiState, viewModel: WeighInViewModel, onPho
     }
     Caption(
         tr(
-            "Weight, body fat and lean mass go to Health Connect. Skeletal muscle and visceral fat stay in Pawse: Health Connect has no record for them. " +
-                "Basal metabolic rate is worked out, so it is shown, not saved.",
-            "체중, 체지방, 제지방량은 헬스 커넥트에 저장해요. 골격근량과 내장지방은 헬스 커넥트에 항목이 없어서 Pawse에만 남아요. " +
-                "기초대사량은 계산한 값이라 보여 주기만 하고 저장하지 않아요.",
+            "Weight, body fat, lean mass and basal metabolic rate go to Health Connect. " +
+                "Skeletal muscle and visceral fat stay in Pawse: Health Connect has no record for them.",
+            "체중, 체지방, 제지방량, 기초대사량은 헬스 커넥트에 저장해요. " +
+                "골격근량과 내장지방은 헬스 커넥트에 항목이 없어서 Pawse에만 남아요.",
         ),
         Modifier.padding(top = 12.dp),
     )
@@ -528,7 +536,7 @@ private fun ValueRuler(
     val state = rememberLazyListState(initialFirstVisibleItemIndex = tickOf(value))
     val latest by rememberUpdatedState(value)
     val latestOnValue by rememberUpdatedState(onValue)
-    val haptics = LocalHapticFeedback.current
+    val haptic = rememberHaptic()
     val measurer = rememberTextMeasurer()
     val minor = MaterialTheme.colorScheme.outline
     val half = MaterialTheme.colorScheme.onSurfaceVariant
@@ -541,7 +549,8 @@ private fun ValueRuler(
         snapshotFlow { state.centered()?.index }.collect { tick ->
             if (tick != null && state.isScrollInProgress && tick != tickOf(latest)) {
                 val units = (valueOf(tick) / step).roundToInt()
-                haptics.performHapticFeedback(if (units % major == 0) HapticFeedbackType.LongPress else HapticFeedbackType.TextHandleMove)
+                // 0.1 kg under the thumb; whole kilograms a firmer tick.
+                haptic(if (units % major == 0) PawseHaptic.FineTick else PawseHaptic.Ruler)
                 latestOnValue(valueOf(tick))
             }
         }
