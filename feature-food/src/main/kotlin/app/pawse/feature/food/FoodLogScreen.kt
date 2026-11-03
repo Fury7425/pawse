@@ -160,7 +160,7 @@ fun FoodLogScreen(
                 item {
                     Row(pad.heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(tr("Food", "음식"), style = PawseType.Title, modifier = Modifier.weight(1f))
-                        GlyphButton(Glyphs.Scan, tr("Scan or search foods", "음식 스캔·검색"), onClick = onScan)
+                        GlyphButton(Glyphs.Search, tr("Search foods", "음식 검색"), onClick = onScan)
                         GlyphButton(Glyphs.Sliders, tr("Food settings", "음식 설정"), onClick = { showSettings = true })
                     }
                     WeekStrip(

@@ -339,7 +339,6 @@ private fun CardOrder(order: List<ScoresCard>?, hidden: Set<ScoresCard>, actions
         selected = order != null,
         onSelect = { mine -> actions.onCardOrder(if (mine) ScoresCard.complete(ScoresCard.automatic(evening = false)) else null) },
         label = { if (it) tr("My order", "내 순서") else tr("Automatic", "자동") },
-        height = 32.dp,
         modifier = Modifier.padding(top = 16.dp),
     )
     if (order == null) {

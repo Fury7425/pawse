@@ -119,7 +119,6 @@ internal fun DayTab(
             selected = span,
             onSelect = onRange,
             label = { tr("$it days", "${it}일") },
-            height = 36.dp,
             modifier = Modifier.padding(top = 12.dp),
         )
         if (type == ScoreType.BODY) {

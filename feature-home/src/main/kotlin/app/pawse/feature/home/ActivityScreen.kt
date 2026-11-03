@@ -98,7 +98,6 @@ fun ActivityScreen(
                         selected = figure,
                         onSelect = { figure = it },
                         label = ::figureName,
-                        height = 32.dp,
                         modifier = Modifier.width(264.dp),
                     )
                 }

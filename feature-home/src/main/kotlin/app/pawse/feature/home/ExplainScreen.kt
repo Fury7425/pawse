@@ -34,6 +34,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -64,9 +66,12 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pawse.core.data.scoring.NightDetail
@@ -182,7 +187,6 @@ fun ExplainScreen(
                         selected = shown,
                         onSelect = ::show,
                         label = ScoreCopy::name,
-                        height = 32.dp,
                         modifier = Modifier.width(240.dp),
                         position = { pager.currentPage + pager.currentPageOffsetFraction },
                     )
@@ -432,7 +436,9 @@ private fun DetailHero(
     val reduce = LocalReduceMotion.current
     val step = with(LocalDensity.current) { 12.dp.roundToPx() }
     Column(modifier.fillMaxWidth().padding(top = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(Modifier.fillMaxWidth().lookIn(look, 1), verticalAlignment = Alignment.CenterVertically) {
+        // ‹ day › on the left and Compare on the right, the date under it. The head
+        // reaches 12 dp past the page padding so the arrows' glyphs sit on the text edge.
+        Row(Modifier.fillMaxWidth().bleed(12.dp).heightIn(min = 48.dp).lookIn(look, 1), verticalAlignment = Alignment.CenterVertically) {
             GlyphButton(Glyphs.ChevronLeft, tr("Day before", "전날"), onClick = {
                 if (back < oldest) {
                     haptic(PawseHaptic.Step)
@@ -443,7 +449,7 @@ private fun DetailHero(
             // slides it 12 dp in from the side it travelled, the old one out fast.
             AnimatedContent(
                 targetState = date,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.widthIn(max = 176.dp),
                 transitionSpec = {
                     // An earlier day comes in from the left, a later one from the right.
                     val from = if (targetState < initialState) -step else step
@@ -459,14 +465,15 @@ private fun DetailHero(
                 val shownTitle = dayTitle(shownDate)
                 Text(
                     shownTitle,
-                    style = PawseType.Heading,
-                    textAlign = TextAlign.Center,
+                    style = PawseType.Heading.copy(fontSize = 17.sp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
-                        .fillMaxWidth()
                         .heightIn(min = 48.dp)
                         .pressable(onClick = onCalendar)
                         .semantics { contentDescription = "$shownTitle, " + tr("choose a date", "날짜 선택") }
-                        .padding(top = 12.dp),
+                        .wrapContentHeight()
+                        .padding(horizontal = 2.dp),
                 )
             }
             GlyphButton(Glyphs.ChevronRight, tr("Day after", "다음 날"), onClick = {
@@ -475,19 +482,23 @@ private fun DetailHero(
                     onPick(back - 1)
                 }
             })
+            Spacer(Modifier.weight(1f))
+            CompareChip(pinDate, onOpen = onCompare, onUnpin = onUnpin, modifier = Modifier.padding(end = 12.dp))
         }
-        Row(Modifier.lookIn(look, 1), verticalAlignment = Alignment.CenterVertically) {
-            Text(shortDate(date), style = PawseType.Micro, color = s.faint)
+        Row(
+            Modifier.fillMaxWidth().bleed(12.dp).heightIn(min = 32.dp).padding(start = 48.dp, end = 12.dp).lookIn(look, 1),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(shortDate(date), style = PawseType.Label, color = grey, modifier = Modifier.weight(1f))
             if (back > 0) {
                 Text(
                     tr("Back to today", "오늘로"),
-                    style = PawseType.Micro.copy(fontWeight = PawseType.BodyStrong.fontWeight),
+                    style = PawseType.Label.copy(fontWeight = PawseType.BodyStrong.fontWeight),
                     color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(start = 8.dp).heightIn(min = 32.dp).pressable { onPick(0) }.padding(horizontal = 6.dp, vertical = 8.dp),
+                    modifier = Modifier.heightIn(min = 32.dp).pressable { onPick(0) }.padding(horizontal = 4.dp, vertical = 7.dp),
                 )
             }
         }
-        CompareChip(pinDate, onOpen = onCompare, onUnpin = onUnpin)
 
         val face = heroFace(type, day, showNumbers)
         ScoreRing(
@@ -510,6 +521,14 @@ private fun DetailHero(
         BandDot(color = face.dot, label = face.word, hollow = face.hollow, modifier = Modifier.padding(top = 12.dp).lookIn(look, 2))
         Text(face.sentence, style = PawseType.Body, color = grey, modifier = Modifier.fillMaxWidth().padding(top = 16.dp).lookIn(look, 2))
     }
+}
+
+/** Reaches [x] past the parent's padding on both sides, like a CSS margin of -x. */
+private fun Modifier.bleed(x: Dp): Modifier = layout { measurable, constraints ->
+    val px = x.roundToPx()
+    if (!constraints.hasBoundedWidth) return@layout measurable.measure(constraints).let { p -> layout(p.width, p.height) { p.place(0, 0) } }
+    val p = measurable.measure(constraints.copy(minWidth = constraints.minWidth + 2 * px, maxWidth = constraints.maxWidth + 2 * px))
+    layout(p.width - 2 * px, p.height) { p.place(-px, 0) }
 }
 
 private fun dayTitle(date: LocalDate): String {

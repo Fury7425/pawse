@@ -856,7 +856,6 @@ private fun Trend(
         selected = range,
         onSelect = onRange,
         label = { tr("$it nights", "${it}밤") },
-        height = 36.dp,
         modifier = Modifier.padding(top = 20.dp),
     )
 
