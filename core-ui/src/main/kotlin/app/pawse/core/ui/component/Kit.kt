@@ -640,8 +640,9 @@ fun BoxScope.BottomAction(
     text: String,
     onClick: () -> Unit,
     enabled: Boolean = true,
-    above: (@Composable ColumnScope.() -> Unit)? = null,
     height: Dp = 64.dp,
+    // Last, so a trailing lambda still lands here.
+    above: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     val background = MaterialTheme.colorScheme.background
     Column(
