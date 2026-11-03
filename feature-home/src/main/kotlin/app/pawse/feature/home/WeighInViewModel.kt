@@ -4,7 +4,10 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.pawse.core.data.body.BodyRepository
 import app.pawse.core.data.body.BodyWriter
+import app.pawse.scoring.body.Weight
+import app.pawse.scoring.config.ScoringConfig
 import app.pawse.core.data.body.InBodyExtra
 import app.pawse.core.data.body.InBodyStore
 import app.pawse.core.data.body.RecentWeighIn
@@ -54,6 +57,8 @@ data class WeighInUiState(
     val kg: Double = InBodyRow.WEIGHT.park,
     val lastKg: Double? = null,
     val recent: List<RecentWeighIn> = emptyList(),
+    /** Body's weight trend, the same figure the Body tab leads with. */
+    val trendKg: Double? = null,
     /** Removed in this visit, keyed by time, kept so Undo can write them back. */
     val removed: Map<Long, WeighIn> = emptyMap(),
     val rows: Map<InBodyRow, Double> = InBodyRow.entries.associateWith { it.park },
@@ -84,13 +89,13 @@ data class WeighInUiState(
     val fatPercent: Double? get() = fatMass?.let { it / value(InBodyRow.WEIGHT) * 100.0 }
     val leanKg: Double? get() = fatMass?.let { value(InBodyRow.WEIGHT) - it }
 
-    /** Katch–McArdle, from lean mass. Shown, not saved: Health Connect would take it for a measurement. */
+    /** Katch–McArdle, from lean mass. Saved with the InBody result, as the design's Decisions board specifies. */
     val bmr: Double? get() = leanKg?.let { 370.0 + 21.6 * it }
 
     val saveLabel: String get() = if (inBody) tr("Save InBody result", "인바디 결과 저장") else tr("Save weigh-in", "체중 저장")
 
     fun toWeighIn(): WeighIn = if (inBody) {
-        WeighIn(at = Instant.now(), weightKg = value(InBodyRow.WEIGHT), fatPercent = fatPercent, leanKg = leanKg)
+        WeighIn(at = Instant.now(), weightKg = value(InBodyRow.WEIGHT), fatPercent = fatPercent, leanKg = leanKg, bmrKcal = bmr)
     } else {
         WeighIn(at = Instant.now(), weightKg = kg)
     }
@@ -119,6 +124,7 @@ class WeighInViewModel @Inject constructor(
     private val writer: BodyWriter,
     private val gateway: HealthConnectGateway,
     private val inBodyStore: InBodyStore,
+    private val body: BodyRepository,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
@@ -133,6 +139,10 @@ class WeighInViewModel @Inject constructor(
             val extra = inBodyStore.results.first().lastOrNull()
             val fat = writer.lastFatPercent()
             val weight = lastKg ?: InBodyRow.WEIGHT.park
+            // The trend over every weigh-in, not the three listed: three readings a month
+            // apart give a trend that matches nothing on the Body tab.
+            val trend = runCatching { body.snapshot() }.getOrNull()
+                ?.let { Weight.trend(weighIns(it), ScoringConfig.DEFAULT.weight).lastOrNull()?.trend }
             val last = buildMap {
                 lastKg?.let { put(InBodyRow.WEIGHT, it) }
                 extra?.skeletalMuscleKg?.let { put(InBodyRow.MUSCLE, it) }
@@ -142,6 +152,7 @@ class WeighInViewModel @Inject constructor(
             _state.update { s ->
                 s.copy(
                     recent = recent,
+                    trendKg = trend,
                     kg = weight,
                     lastKg = lastKg,
                     rows = InBodyRow.entries.associateWith { last[it] ?: it.park },

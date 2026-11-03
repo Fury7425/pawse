@@ -9,6 +9,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -52,10 +53,9 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -85,18 +85,17 @@ import app.pawse.core.ui.component.GhostButton
 import app.pawse.core.ui.component.GlyphButton
 import app.pawse.core.ui.component.Glyphs
 import app.pawse.core.ui.component.PawseCard
+import app.pawse.core.ui.component.PawseHaptic
 import app.pawse.core.ui.component.PawseMotion
 import app.pawse.core.ui.component.Segmented
 import app.pawse.core.ui.component.SelectChip
 import app.pawse.core.ui.component.SplitRow
+import app.pawse.core.ui.component.StatusBarScrim
 import app.pawse.core.ui.component.aura
-import app.pawse.core.ui.component.cardSurface
 import app.pawse.core.ui.component.pressable
+import app.pawse.core.ui.component.rememberHaptic
 import app.pawse.core.ui.theme.PawseTheme
 import app.pawse.core.ui.theme.PawseType
-import app.pawse.scoring.body.WeighInPoint
-import app.pawse.scoring.body.Weight
-import app.pawse.scoring.config.ScoringConfig
 import app.pawse.scoring.tr
 import java.io.File
 import java.time.Instant
@@ -148,8 +147,16 @@ fun WeighInScreen(
         }
     }
 
+    val haptic = rememberHaptic()
     LaunchedEffect(state.saved) {
-        if (state.saved) onDone()
+        if (state.saved) {
+            haptic(PawseHaptic.Confirm)
+            onDone()
+        }
+    }
+    // The sheet was read: confirm, and let the eyes stay on the numbers to check.
+    LaunchedEffect(state.fromSheet) {
+        if (state.fromSheet) haptic(PawseHaptic.Confirm)
     }
     LaunchedEffect(state.askFor) {
         state.askFor?.let {
@@ -164,7 +171,8 @@ fun WeighInScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
-                    .padding(top = padding.calculateTopPadding() + 12.dp, bottom = if (state.inBody) 280.dp else 140.dp)
+                    // Room under the last row for the InBody ruler panel and Save, so nothing sits behind them.
+                    .padding(top = padding.calculateTopPadding() + 12.dp, bottom = if (state.inBody) 340.dp else 140.dp)
                     .padding(horizontal = 24.dp),
             ) {
                 Row(Modifier.offset(x = (-12).dp).heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -198,6 +206,8 @@ fun WeighInScreen(
                     ScaleReading(state, viewModel)
                 }
             }
+
+            StatusBarScrim()
 
             BottomAction(
                 text = state.saveLabel,
@@ -234,7 +244,7 @@ fun WeighInScreen(
                                 max = state.max(row),
                                 step = row.step,
                                 major = if (row.step < 1.0) 10 else 5,
-                                spacing = if (row.step < 1.0) 8.dp else 20.dp,
+                                spacing = if (row.step < 1.0) 10.dp else 20.dp,
                                 name = row.label,
                                 valueText = row.format(state.value(row)),
                                 modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
@@ -266,7 +276,8 @@ private fun ScaleReading(state: WeighInUiState, viewModel: WeighInViewModel) {
         max = WeighInUiState.MAX_KG,
         step = 0.1,
         major = 10,
-        spacing = 8.dp,
+        // A kilogram is 100 dp: ten ticks of 10.
+        spacing = 10.dp,
         name = tr("Weight", "체중"),
         valueText = WeighInUiState.oneDecimal(state.kg) + " kg",
         modifier = Modifier.padding(top = 32.dp),
@@ -295,14 +306,10 @@ private fun delta(kg: Double, last: Double?): String {
 /** What a weigh-in is read against: the trend and the last few readings. */
 @Composable
 private fun Recent(state: WeighInUiState, viewModel: WeighInViewModel) {
-    val trend = Weight.trend(
-        state.recent.map { WeighInPoint(Instant.ofEpochMilli(it.atEpochMs).atZone(ZoneId.systemDefault()).toLocalDate().toEpochDay(), it.weightKg) },
-        ScoringConfig.DEFAULT.weight,
-    ).lastOrNull()
     PawseCard(modifier = Modifier.padding(top = 24.dp)) {
         SplitRow {
             Caption(tr("Recent weigh-ins", "최근 체중 기록"), Modifier.weight(1f))
-            trend?.let { Text(tr("trend ${WeighInUiState.oneDecimal(it.trend)} kg", "추세 ${WeighInUiState.oneDecimal(it.trend)}kg"), style = PawseType.Micro, color = PawseTheme.semantics.faint) }
+            state.trendKg?.let { Text(tr("trend ${WeighInUiState.oneDecimal(it)} kg", "추세 ${WeighInUiState.oneDecimal(it)}kg"), style = PawseType.Micro, color = PawseTheme.semantics.faint) }
         }
         state.recent.forEach { entry ->
             RecentRow(
@@ -367,10 +374,10 @@ private fun InBodyForm(state: WeighInUiState, viewModel: WeighInViewModel, onPho
     }
     Caption(
         tr(
-            "Weight, body fat and lean mass go to Health Connect. Skeletal muscle and visceral fat stay in Pawse: Health Connect has no record for them. " +
-                "Basal metabolic rate is worked out, so it is shown, not saved.",
-            "체중, 체지방, 제지방량은 헬스 커넥트에 저장해요. 골격근량과 내장지방은 헬스 커넥트에 항목이 없어서 Pawse에만 남아요. " +
-                "기초대사량은 계산한 값이라 보여 주기만 하고 저장하지 않아요.",
+            "Weight, body fat, lean mass and basal metabolic rate go to Health Connect. " +
+                "Skeletal muscle and visceral fat stay in Pawse: Health Connect has no record for them.",
+            "체중, 체지방, 제지방량, 기초대사량은 헬스 커넥트에 저장해요. " +
+                "골격근량과 내장지방은 헬스 커넥트에 항목이 없어서 Pawse에만 남아요.",
         ),
         Modifier.padding(top = 12.dp),
     )
@@ -393,8 +400,14 @@ private fun InBodyLine(row: InBodyRow, state: WeighInUiState, onPick: () -> Unit
         state.fromSheet -> tr("read from the sheet", "결과지에서 읽음")
         else -> tr("last result ", "지난 결과 ") + (state.last[row]?.let(row::format) ?: tr("not known", "모름"))
     }
+    // The picked row is raised with a hairline: it is the one the ruler below is setting.
+    val edge by animateColorAsState(
+        if (picked) MaterialTheme.colorScheme.outline else Color.Transparent,
+        tween(PawseMotion.PRESS_UP, easing = EaseOut),
+        label = "rowEdge",
+    )
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(fill),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(fill).border(1.dp, edge, RoundedCornerShape(12.dp)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
@@ -528,12 +541,13 @@ private fun ValueRuler(
     val state = rememberLazyListState(initialFirstVisibleItemIndex = tickOf(value))
     val latest by rememberUpdatedState(value)
     val latestOnValue by rememberUpdatedState(onValue)
-    val haptics = LocalHapticFeedback.current
+    val haptic = rememberHaptic()
     val measurer = rememberTextMeasurer()
-    val minor = MaterialTheme.colorScheme.outline
-    val half = MaterialTheme.colorScheme.onSurfaceVariant
+    // The canvas's ruler: grey ticks on the page, no box; the labelled ones a step lighter.
+    val minor = PawseTheme.semantics.mark
+    val labelledTick = MaterialTheme.colorScheme.onSurfaceVariant
     val strong = MaterialTheme.colorScheme.onSurface
-    val labelStyle = PawseType.Label.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val labelStyle = PawseType.Label.copy(color = PawseTheme.semantics.faint)
 
     // A drag or fling moves the number a step per tick, harder on each labelled one.
     // Only while scrolling, so opening the screen never sets a value the user didn't choose.
@@ -541,7 +555,8 @@ private fun ValueRuler(
         snapshotFlow { state.centered()?.index }.collect { tick ->
             if (tick != null && state.isScrollInProgress && tick != tickOf(latest)) {
                 val units = (valueOf(tick) / step).roundToInt()
-                haptics.performHapticFeedback(if (units % major == 0) HapticFeedbackType.LongPress else HapticFeedbackType.TextHandleMove)
+                // 0.1 kg under the thumb; whole kilograms a firmer tick.
+                haptic(if (units % major == 0) PawseHaptic.FineTick else PawseHaptic.Ruler)
                 latestOnValue(valueOf(tick))
             }
         }
@@ -565,8 +580,7 @@ private fun ValueRuler(
     BoxWithConstraints(
         modifier
             .fillMaxWidth()
-            .height(64.dp)
-            .cardSurface(RoundedCornerShape(12.dp))
+            .height(92.dp)
             .clearAndSetSemantics {
                 contentDescription = name
                 stateDescription = valueText
@@ -596,25 +610,26 @@ private fun ValueRuler(
                     val x = size.width / 2
                     val units = (valueOf(tick) / step).roundToInt()
                     val labelled = units % major == 0
-                    val (length, color) = when {
-                        labelled -> 22.dp to strong
-                        major % 2 == 0 && units % (major / 2) == 0 -> 16.dp to half
-                        else -> 10.dp to minor
+                    val length = when {
+                        labelled -> 34.dp
+                        major % 2 == 0 && units % (major / 2) == 0 -> 24.dp
+                        else -> 14.dp
                     }
-                    drawLine(color, Offset(x, 0f), Offset(x, length.toPx()), strokeWidth = (if (labelled) 2.dp else 1.dp).toPx())
+                    drawLine(if (labelled) labelledTick else minor, Offset(x, 0f), Offset(x, length.toPx()), strokeWidth = 2.dp.toPx(), cap = StrokeCap.Round)
                     if (labelled) {
                         val label = measurer.measure(valueOf(tick).roundToInt().toString(), labelStyle)
-                        drawText(label, topLeft = Offset(x - label.size.width / 2f, 32.dp.toPx()))
+                        drawText(label, topLeft = Offset(x - label.size.width / 2f, 40.dp.toPx()))
                     }
                 }
             }
         }
+        // The fixed centre line the ticks pass under.
         Box(
             Modifier
                 .align(Alignment.TopCenter)
-                .width(2.dp)
-                .height(30.dp)
-                .background(strong, RoundedCornerShape(bottomStart = 1.dp, bottomEnd = 1.dp)),
+                .width(3.dp)
+                .height(44.dp)
+                .background(strong, RoundedCornerShape(1.5.dp)),
         )
     }
 }

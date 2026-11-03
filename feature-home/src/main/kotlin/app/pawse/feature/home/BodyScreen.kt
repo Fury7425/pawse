@@ -3,6 +3,7 @@ package app.pawse.feature.home
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -59,8 +60,10 @@ import app.pawse.core.ui.component.PrimaryButton
 import app.pawse.core.ui.component.RangeTrack
 import app.pawse.core.ui.component.Segmented
 import app.pawse.core.ui.component.SplitRow
+import app.pawse.core.ui.component.StatusBarScrim
 import app.pawse.core.ui.component.aura
 import app.pawse.core.ui.component.pressable
+import app.pawse.core.ui.theme.PawseFontFamily
 import app.pawse.core.ui.theme.PawseTheme
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.scoring.body.BodyUsual
@@ -101,6 +104,7 @@ fun BodyScreen(
     LaunchedEffect(Unit) { viewModel.reload() }
 
     Scaffold(modifier = modifier, containerColor = MaterialTheme.colorScheme.background) { padding ->
+        Box(Modifier.fillMaxSize()) {
         LazyColumn(
             modifier = Modifier.fillMaxSize().aura(),
             contentPadding = PaddingValues(
@@ -164,6 +168,8 @@ fun BodyScreen(
             item { AgainstUsual(s) }
             item { FitnessAgeCard(s) }
         }
+        StatusBarScrim()
+        }
     }
 
     if (editingGoal) {
@@ -190,7 +196,7 @@ private fun statusLine(s: BodySnapshot): String {
     }
 }
 
-private fun weighIns(s: BodySnapshot): List<WeighInPoint> {
+internal fun weighIns(s: BodySnapshot): List<WeighInPoint> {
     val zone = ZoneId.systemDefault()
     return s.series[Metric.BODY_WEIGHT].orEmpty().map {
         val t = java.time.Instant.ofEpochMilli(it.atEpochMs).atZone(zone)
@@ -231,7 +237,6 @@ private fun TrendSection(
             selected = range,
             onSelect = onRange,
             label = { it.label },
-            height = 32.dp,
             modifier = Modifier.padding(top = 16.dp),
         )
         WeightChart(trend, s.today, range, s.goalKg, Modifier.padding(top = 16.dp))
@@ -286,7 +291,15 @@ private fun goalLine(goal: Double, e: GoalEstimate): String {
 @Composable
 private fun WeightChart(trend: List<TrendPoint>, today: LocalDate, range: BodyRange, goal: Double?, modifier: Modifier = Modifier) {
     val first = today.minusDays(range.days).toEpochDay()
-    val shown = trend.filter { it.day >= first }
+    val inRange = trend.filter { it.day >= first }
+    // The line enters at the left edge where the trend stood on the range's first day,
+    // so a range holding one weigh-in, or none, still draws its trend.
+    val edge = trend.lastOrNull { it.day < first }?.let { l ->
+        val next = inRange.firstOrNull()
+        val v = if (next == null) l.trend else l.trend + (next.trend - l.trend) * (first - l.day) / (next.day - l.day).toDouble()
+        TrendPoint(first, v, v, false)
+    }
+    val shown = listOfNotNull(edge) + inRange + listOfNotNull(edge?.takeIf { inRange.isEmpty() }?.copy(day = today.toEpochDay()))
     if (shown.isEmpty()) return
     val s = PawseTheme.semantics
     val on = MaterialTheme.colorScheme.onSurface
@@ -294,8 +307,8 @@ private fun WeightChart(trend: List<TrendPoint>, today: LocalDate, range: BodyRa
     val hair = MaterialTheme.colorScheme.outlineVariant
     val grey = MaterialTheme.colorScheme.onSurfaceVariant
     val measurer = rememberTextMeasurer()
-    val label = TextStyle(fontSize = 12.sp, color = s.faint)
-    val values = shown.flatMap { listOf(it.kg, it.trend) } + listOfNotNull(goal?.takeIf { g -> abs(g - shown.last().trend) < 6.0 })
+    val label = TextStyle(fontFamily = PawseFontFamily, fontSize = 12.sp, color = s.faint)
+    val values = inRange.map { it.kg } + shown.map { it.trend } + listOfNotNull(goal?.takeIf { g -> abs(g - shown.last().trend) < 6.0 })
     val lo = values.min() - 0.4
     val hi = values.max() + 0.4
     val start = LocalDate.ofEpochDay(first).format(DateTimeFormatter.ofPattern(tr("d MMM", "M월 d일"), Locale.getDefault()))
@@ -305,8 +318,8 @@ private fun WeightChart(trend: List<TrendPoint>, today: LocalDate, range: BodyRa
             .height(168.dp)
             .semantics {
                 contentDescription = tr(
-                    "Trend weight over ${range.label}, ending at ${oneDecimal(shown.last().trend)} kg.",
-                    "최근 ${range.label} 추세 체중, 마지막 ${oneDecimal(shown.last().trend)} kg.",
+                    "Trend weight over ${range.spoken}, ending at ${oneDecimal(shown.last().trend)} kg.",
+                    "최근 ${range.spoken} 추세 체중, 마지막 ${oneDecimal(shown.last().trend)} kg.",
                 )
             },
     ) {
@@ -323,7 +336,7 @@ private fun WeightChart(trend: List<TrendPoint>, today: LocalDate, range: BodyRa
         goal?.takeIf { it in lo..hi }?.let {
             drawLine(grey.copy(alpha = 0.7f), Offset(0f, y(it)), Offset(size.width, y(it)), 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 5.dp.toPx())))
         }
-        shown.forEach { drawCircle(s.mark, 2.5.dp.toPx(), Offset(x(it.day), y(it.kg))) }
+        inRange.forEach { drawCircle(s.mark, 2.5.dp.toPx(), Offset(x(it.day), y(it.kg))) }
         if (shown.size > 1) {
             val path = Path()
             shown.forEachIndexed { i, p -> if (i == 0) path.moveTo(x(p.day), y(p.trend)) else path.lineTo(x(p.day), y(p.trend)) }
@@ -356,13 +369,13 @@ private fun Composition(s: BodySnapshot, days: Long, inBody: List<InBodyExtra>) 
     PawseCard(modifier = Modifier.padding(top = 32.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(tr("Composition", "체성분"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-            Segmented(listOf(false, true), inKg, onSelect = { inKg = it }, label = { if (it) "kg" else "%" }, height = 28.dp, modifier = Modifier.width(112.dp))
+            Segmented(listOf(false, true), inKg, onSelect = { inKg = it }, label = { if (it) "kg" else "%" }, height = 36.dp, modifier = Modifier.width(112.dp))
         }
         CompositionRow(tr("Body fat", "체지방"), fat.filter { !it.date.isBefore(first) }.mapNotNull { r -> fatShown(r)?.let { r.date to it } }, unit)
         CompositionRow(tr("Lean mass", "제지방량"), lean.filter { !it.date.isBefore(first) }.mapNotNull { r -> leanShown(r)?.let { r.date to it } }, unit)
         CompositionRow(tr("Skeletal muscle", "골격근량"), extras.mapNotNull { e -> e.skeletalMuscleKg?.let { e.date to it } }, " kg")
         CompositionRow(tr("Visceral fat level", "내장지방 레벨"), extras.mapNotNull { e -> e.visceralFat?.let { e.date to it.toDouble() } }, "")
-        val source = (fat.lastOrNull() ?: lean.lastOrNull())?.sourceApp?.let(::writer).orEmpty()
+        val source = (fat.lastOrNull() ?: lean.lastOrNull())?.sourceApp?.let { writer(it) }.orEmpty()
         Text(
             listOf(tr("Same ${days / 7} weeks as the weight chart", "체중 차트와 같은 ${days / 7}주"), source).filter { it.isNotEmpty() }.joinToString(" · "),
             style = PawseType.Micro,

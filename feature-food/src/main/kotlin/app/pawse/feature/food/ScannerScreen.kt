@@ -49,6 +49,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -84,11 +85,13 @@ import app.pawse.core.ui.component.Glyph
 import app.pawse.core.ui.component.Glyphs
 import app.pawse.core.ui.component.PawseCard
 import app.pawse.core.ui.component.PawseField
+import app.pawse.core.ui.component.PawseHaptic
 import app.pawse.core.ui.component.PrimaryButton
 import app.pawse.core.ui.component.SecondaryButton
 import app.pawse.core.ui.component.cardSurface
 import app.pawse.core.ui.component.lift
 import app.pawse.core.ui.component.pressable
+import app.pawse.core.ui.component.rememberHaptic
 import app.pawse.core.ui.theme.PawseTheme
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.feature.food.camera.BarcodeFrameReader
@@ -131,6 +134,17 @@ fun ScannerScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val mode by viewModel.mode.collectAsStateWithLifecycle()
     val consentRequested by viewModel.consentRequested.collectAsStateWithLifecycle()
+
+    // A scan resolving is felt, so the eyes can stay on the food: yes for a code or a
+    // label read, a gentle no for a code nobody knows.
+    val haptic = rememberHaptic()
+    LaunchedEffect(state::class) {
+        when (state) {
+            is ScanState.Found, is ScanState.LabelRead -> haptic(PawseHaptic.Confirm)
+            is ScanState.NotFound -> haptic(PawseHaptic.Reject)
+            else -> Unit
+        }
+    }
 
     var granted by remember {
         mutableStateOf(
@@ -251,6 +265,7 @@ fun ScannerScreen(
  */
 @Composable
 private fun Logger(viewModel: ScannerViewModel, onManualEntry: () -> Unit, onLogged: () -> Unit) {
+    val haptic = rememberHaptic()
     val foods by viewModel.foods.collectAsStateWithLifecycle()
     val query by viewModel.query.collectAsStateWithLifecycle()
     val plate by viewModel.plate.collectAsStateWithLifecycle()
@@ -319,7 +334,10 @@ private fun Logger(viewModel: ScannerViewModel, onManualEntry: () -> Unit, onLog
             }
             PrimaryButton(
                 text = if (plate.isEmpty()) tr("Log", "기록") else tr("Log $total kcal", "${total}kcal 기록"),
-                onClick = { viewModel.logPlate(onLogged) },
+                onClick = {
+                    haptic(PawseHaptic.Confirm)
+                    viewModel.logPlate(onLogged)
+                },
                 enabled = plate.isNotEmpty(),
                 modifier = Modifier.width(150.dp),
             )

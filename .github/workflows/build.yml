@@ -102,6 +102,15 @@ jobs:
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
 
+      # One debug signing key across runs. Without it AGP makes a new key on every
+      # runner, each APK is signed differently, and installing a newer build over
+      # an older one fails until the app (and its data) is uninstalled.
+      - name: Keep the debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: pawse-debug-keystore-v1
+
       - name: Assemble debug and run unit tests
         run: |
           set -o pipefail

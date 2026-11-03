@@ -1,7 +1,10 @@
 package app.pawse.core.data.health
 
 import android.content.Context
+import android.util.Log
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.records.metadata.DataOrigin
+import kotlinx.coroutines.CancellationException
 import androidx.health.connect.client.aggregate.AggregateMetric
 import androidx.health.connect.client.aggregate.AggregationResultGroupedByDuration
 import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
@@ -141,15 +144,34 @@ class HealthConnectGateway @Inject constructor(
         start: Instant,
         end: Instant,
         slice: Duration,
+        /** Only these writers. Empty: Health Connect's own priority order decides. */
+        origins: Set<String> = emptySet(),
     ): List<AggregationResultGroupedByDuration> = withContext(Dispatchers.IO) {
         runCatching {
-            requireClient().aggregateGroupByDuration(
-                AggregateGroupByDurationRequest(metrics, TimeRangeFilter.between(start, end), slice),
-            )
+            // A month of 15-minute slices with several writers per slice is too big to
+            // cross the binder in one answer (TransactionTooLargeException), so the
+            // window is asked for a week at a time. A week is a whole number of slices.
+            val chunk = Duration.ofDays(CHUNK_DAYS).let { if (it < slice) slice else it }
+            generateSequence(start) { it.plus(chunk) }.takeWhile { it < end }.toList().flatMap { from ->
+                requireClient().aggregateGroupByDuration(
+                    AggregateGroupByDurationRequest(
+                        metrics,
+                        TimeRangeFilter.between(from, minOf(from.plus(chunk), end)),
+                        slice,
+                        dataOriginFilter = origins.mapTo(HashSet()) { DataOrigin(it) },
+                    ),
+                )
+            }
+        }.onFailure {
+            if (it is CancellationException) throw it
+            // A silent empty answer is undebuggable: say why in logcat.
+            Log.w(TAG, "Aggregate of ${metrics.joinToString()} failed", it)
         }.getOrDefault(emptyList())
     }
 
     companion object {
         const val HEALTH_CONNECT_PACKAGE = "com.google.android.apps.healthdata"
+        private const val TAG = "PawseHealth"
+        private const val CHUNK_DAYS = 7L
     }
 }

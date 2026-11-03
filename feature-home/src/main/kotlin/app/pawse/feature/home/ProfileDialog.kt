@@ -50,6 +50,8 @@ import app.pawse.core.ui.component.PawseSheet
 import app.pawse.core.ui.component.PrimaryButton
 import app.pawse.core.ui.component.Segmented
 import app.pawse.core.ui.component.pressable
+import app.pawse.core.ui.component.rememberHaptic
+import app.pawse.core.ui.component.toggleHaptic
 import app.pawse.core.ui.theme.PawseTheme
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.scoring.model.BiologicalSex
@@ -71,6 +73,8 @@ class ProfileState(
     /** Null is Automatic. */
     val cardOrder: List<ScoresCard>?,
     val hiddenCards: Set<ScoresCard>,
+    /** The rings are swapped for one line until tomorrow morning. */
+    val hiddenToday: Boolean = false,
 )
 
 class ProfileActions(
@@ -83,6 +87,7 @@ class ProfileActions(
     val onResetModel: () -> Unit,
     val onCardOrder: (List<ScoresCard>?) -> Unit,
     val onHidden: (ScoresCard, Boolean) -> Unit,
+    val onHideToday: (Boolean) -> Unit = {},
 )
 
 private enum class ProfilePage { MAIN, NOTIFICATIONS, CARDS, CALCULATES }
@@ -126,6 +131,12 @@ private fun Main(state: ProfileState, actions: ProfileActions, onDismiss: () -> 
             tr("Dark is the reference; light is tuned to match", "기본은 어두운 테마예요"),
             state.appearance == Appearance.LIGHT,
         ) { actions.onAppearance(if (it) Appearance.LIGHT else Appearance.DARK) }
+        SwitchRow(
+            tr("Hide scores today", "오늘 점수 숨기기"),
+            tr("Comes back tomorrow morning", "내일 아침 다시 보여요"),
+            state.hiddenToday,
+            onChange = actions.onHideToday,
+        )
         SwitchRow(
             tr("Hide Body's number", "컨디션 숫자 숨기기"),
             tr("Words only on Scores; the detail still shows the arithmetic", "점수 화면에는 말로만, 자세히 보기에는 계산이 그대로 나와요"),
@@ -188,11 +199,16 @@ private fun Language() {
 @Composable
 private fun SwitchRow(title: String, sub: String, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
     val s = PawseTheme.semantics
+    // Settings are rare, so they can carry a haptic.
+    val haptic = rememberHaptic()
     Row(
         Modifier
             .fillMaxWidth()
             .heightIn(min = 56.dp)
-            .pressable(enabled = enabled, role = Role.Switch) { onChange(!checked) }
+            .pressable(enabled = enabled, role = Role.Switch) {
+                haptic(toggleHaptic(!checked))
+                onChange(!checked)
+            }
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -323,7 +339,6 @@ private fun CardOrder(order: List<ScoresCard>?, hidden: Set<ScoresCard>, actions
         selected = order != null,
         onSelect = { mine -> actions.onCardOrder(if (mine) ScoresCard.complete(ScoresCard.automatic(evening = false)) else null) },
         label = { if (it) tr("My order", "내 순서") else tr("Automatic", "자동") },
-        height = 32.dp,
         modifier = Modifier.padding(top = 16.dp),
     )
     if (order == null) {

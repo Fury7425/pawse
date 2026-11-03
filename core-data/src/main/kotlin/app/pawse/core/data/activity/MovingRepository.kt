@@ -7,6 +7,9 @@ import app.pawse.core.data.health.HealthConnectGateway
 import app.pawse.scoring.activity.MovingDay
 import app.pawse.scoring.activity.MovingReading
 import app.pawse.scoring.activity.MovingToday
+import app.pawse.scoring.config.MovingConfig
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import app.pawse.scoring.config.ScoringConfig
 import java.time.DayOfWeek
 import java.time.Duration
@@ -30,6 +33,25 @@ data class MovingSnapshot(
     val asOfEpochMs: Long,
     /** Your usual active energy from now to bed, for Food's "burned by bedtime". Null without a bed. */
     val usualActiveUntilBed: Double? = null,
+    /** The Activity detail's "Through the day" and "Last 7 days", one per figure. */
+    val stepsDay: ThroughDay? = null,
+    val energyDay: ThroughDay? = null,
+)
+
+/**
+ * One figure through today, from midnight, against the same clock hours on your
+ * recent days of the same type. Hours run 0..24; [today] stops at now.
+ */
+data class ThroughDay(
+    /** Running total at each hour mark since midnight, up to now (the last one is now). */
+    val today: List<Double>,
+    /** Today's amount in each hour so far. */
+    val perHour: List<Double>,
+    /** Your usual running total at each hour mark 0..24: [Q25, Q75]. Empty while learning. */
+    val usualLow: List<Double>,
+    val usualHigh: List<Double>,
+    /** The last seven days, oldest first, today's so far last. */
+    val week: List<Pair<LocalDate, Double>>,
 )
 
 /**
@@ -40,12 +62,18 @@ data class MovingSnapshot(
 @Singleton
 class MovingRepository @Inject constructor(private val gateway: HealthConnectGateway) {
 
+    /** The last reading, so a screen opened from Scores starts with what Scores showed. Memory only. */
+    @Volatile
+    var last: MovingSnapshot? = null
+        private set
+
     /**
      * [wakes]: each day's main-sleep end, by wake date. [bedMinute], minutes after
      * today's midnight, also works out the usual active energy until bed. Null when
      * nothing was written at all.
      */
-    suspend fun read(now: ZonedDateTime, wakes: Map<LocalDate, Long>, bedMinute: Double? = null): MovingSnapshot? {
+    // Off the main thread: a month of 15-minute buckets is summed hour by hour for the detail.
+    suspend fun read(now: ZonedDateTime, wakes: Map<LocalDate, Long>, bedMinute: Double? = null): MovingSnapshot? = withContext(Dispatchers.Default) {
         val config = ScoringConfig.DEFAULT.moving
         val zone = now.zone
         val today = now.toLocalDate()
@@ -53,11 +81,22 @@ class MovingRepository @Inject constructor(private val gateway: HealthConnectGat
         val end = now.toInstant()
         val slice = Duration.ofMinutes(15)
 
-        val steps = gateway.slices(setOf(StepsRecord.COUNT_TOTAL), start, end, slice)
+        suspend fun stepSlices(origins: Set<String> = emptySet()) = gateway.slices(setOf(StepsRecord.COUNT_TOTAL), start, end, slice, origins)
             .associate { it.startTime.toEpochMilli() to (it.result[StepsRecord.COUNT_TOTAL]?.toDouble() ?: 0.0) }
+        // One writer for steps, the one that counted the most over the last two days.
+        // Health Connect's own total follows its priority list, which on a phone with a
+        // watch app, a fitness app and the phone's own counter can be the one that
+        // counted least, or none of them at all (every hour zero). Read alone, the
+        // fullest writer gives the day Samsung Health or the watch app shows.
+        val stepsWriter = gateway.readOrEmpty(StepsRecord::class, end.minus(Duration.ofDays(2)), end)
+            .groupBy { it.metadata.dataOrigin.packageName }
+            .mapValues { (_, records) -> records.sumOf { it.count } }
+            .maxByOrNull { it.value }?.key
+        var steps = stepSlices(setOfNotNull(stepsWriter))
+        if (stepsWriter != null && steps.values.none { it > 0.0 }) steps = stepSlices()
         val energy = gateway.slices(setOf(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL), start, end, slice)
             .associate { it.startTime.toEpochMilli() to (it.result[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories ?: 0.0) }
-        if (steps.isEmpty() && energy.isEmpty()) return null
+        if (steps.isEmpty() && energy.isEmpty()) return@withContext null
 
         val midnight = today.atStartOfDay(zone).toInstant()
         val wake = wakes[today]?.takeIf { it in midnight.toEpochMilli()..end.toEpochMilli() }
@@ -86,7 +125,12 @@ class MovingRepository @Inject constructor(private val gateway: HealthConnectGat
             val bedSinceWake = (midnight.toEpochMilli() + (bed * 60_000).toLong() - from) / 60_000.0
             MovingToday.usualRest(sinceWake, bedSinceWake, weekend, MovingAssembler.days(energy, past, wakes, zone), config)
         }
-        return MovingSnapshot(reading(steps), reading(energy), from, wake != null, heart, end.toEpochMilli(), untilBed)
+        fun through(buckets: Map<Long, Double>) = MovingAssembler.throughDay(buckets, today, end.toEpochMilli(), past, zone, weekend, config)
+        MovingSnapshot(
+            reading(steps), reading(energy), from, wake != null, heart, end.toEpochMilli(), untilBed,
+            stepsDay = through(steps),
+            energyDay = through(energy),
+        ).also { last = it }
     }
 }
 
@@ -116,6 +160,45 @@ object MovingAssembler {
         buckets.filterKeys { it + SLICE_MS > fromEpochMs && it < nowEpochMs }.values.sum()
 
     fun weekend(d: LocalDate): Boolean = d.dayOfWeek == DayOfWeek.SATURDAY || d.dayOfWeek == DayOfWeek.SUNDAY
+
+    /**
+     * Today by the clock, hour by hour, against the same hours on past days of the
+     * same type (all days when there are too few of it): the Activity detail's chart
+     * and its last seven days. A past day with nothing written is left out.
+     */
+    fun throughDay(
+        buckets: Map<Long, Double>,
+        today: LocalDate,
+        nowEpochMs: Long,
+        past: List<LocalDate>,
+        zone: ZoneId,
+        weekend: Boolean,
+        config: MovingConfig,
+    ): ThroughDay {
+        fun hourly(d: LocalDate, until: Long = Long.MAX_VALUE): List<Double> {
+            val midnight = d.atStartOfDay(zone).toInstant().toEpochMilli()
+            return (0 until 24).map { h ->
+                val from = midnight + h * HOUR_MS
+                buckets.filterKeys { it >= from && it < from + HOUR_MS && it < until }.values.sum()
+            }
+        }
+        fun running(perHour: List<Double>) = perHour.runningFold(0.0) { a, b -> a + b }
+        val midnight = today.atStartOfDay(zone).toInstant().toEpochMilli()
+        val nowHour = ((nowEpochMs - midnight) / HOUR_MS).toInt().coerceIn(0, 23)
+        val perHour = hourly(today, nowEpochMs).take(nowHour + 1)
+
+        val days = past.map { it to running(hourly(it)) }.filter { (_, r) -> r.last() > 0.0 }.takeLast(config.windowDays)
+        val same = days.filter { (d, _) -> weekend(d) == weekend }
+        val pool = (if (same.size >= config.minSameType) same else days).map { it.second }
+        val learning = days.size < config.minDays
+        fun band(q: Double) = if (learning) emptyList() else (0..24).map { h -> MovingToday.quantile(pool.map { it[h] }, q) }
+
+        val totals = past.associateWith { d -> hourly(d).sum() }
+        val week = (6 downTo 1).map { today.minusDays(it.toLong()) }.map { it to (totals[it] ?: 0.0) } + (today to perHour.sum())
+        return ThroughDay(running(perHour), perHour, band(config.lowQuantile), band(config.highQuantile), week)
+    }
+
+    private const val HOUR_MS = 60 * 60_000L
 
     private fun floor(t: Long, midnight: Long): Long = midnight + Math.floorDiv(t - midnight, SLICE_MS) * SLICE_MS
 }

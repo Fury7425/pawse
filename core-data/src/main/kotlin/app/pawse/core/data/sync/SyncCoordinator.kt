@@ -17,8 +17,11 @@ enum class SyncStep { READ, COMPARE, SCORE }
 
 /** Why the last read produced nothing new. Each one gets its own sentence on screen. */
 enum class SyncFailure {
-    /** No Health Connect, or one too old to talk to. */
+    /** No Health Connect on this phone. */
     UNAVAILABLE,
+
+    /** Health Connect is there but out of date; the Play Store fixes it. */
+    NEEDS_UPDATE,
 
     /** Every grant the scores rest on was turned off. */
     ACCESS_OFF,
@@ -65,9 +68,11 @@ class SyncCoordinator @Inject constructor(
     private val _status = MutableStateFlow<SyncStatus>(SyncStatus.Idle)
     val status: StateFlow<SyncStatus> = _status.asStateFlow()
 
-    suspend fun run(inBackground: Boolean = false): SyncStatus = mutex.withLock {
+    suspend fun run(inBackground: Boolean = false): SyncStatus = mutex.withLock { runLocked(inBackground) }
+
+    private suspend fun runLocked(inBackground: Boolean): SyncStatus {
         _status.value = SyncStatus.Running(SyncStep.READ)
-        val result = sync.sync()
+        val result = sync.sync(inBackground = inBackground)
 
         // Rescored whatever happened. A failed read still leaves yesterday's samples
         // in the store, and the screen should show those as yesterday's rather than
@@ -82,21 +87,31 @@ class SyncCoordinator @Inject constructor(
         val next = when (result) {
             is SyncResult.Success -> SyncStatus.Done(now)
             SyncResult.Unavailable -> SyncStatus.Failed(SyncFailure.UNAVAILABLE, now)
+            SyncResult.NeedsUpdate -> SyncStatus.Failed(SyncFailure.NEEDS_UPDATE, now)
             SyncResult.AccessOff -> SyncStatus.Failed(SyncFailure.ACCESS_OFF, now)
+            // Nothing was read and nothing went wrong: the next open reads.
+            SyncResult.Deferred -> SyncStatus.Idle
             is SyncResult.Failed -> SyncStatus.Failed(SyncFailure.READ_FAILED, now)
         }
         _status.value = next
-        next
+        return next
     }
 
     /**
      * Opening the app reads Health Connect when the last read is older than
      * [maxAgeMs], and otherwise only recomputes from what is stored. WorkManager's
      * nightly run is inexact, so this is what makes a morning open feel current.
+     * A read already under way answers for this one, so a cold start that asks
+     * twice reads once.
      */
     suspend fun runIfStale(maxAgeMs: Long = STALE_AFTER_MS) {
-        val last = prefs.lastSyncEpochMs.first()
-        if (System.currentTimeMillis() - last > maxAgeMs) run() else scoring.ensureFresh()
+        if (!mutex.tryLock()) return
+        try {
+            val last = prefs.lastSyncEpochMs.first()
+            if (System.currentTimeMillis() - last > maxAgeMs) runLocked(inBackground = false) else scoring.ensureFresh()
+        } finally {
+            mutex.unlock()
+        }
     }
 
     private companion object {

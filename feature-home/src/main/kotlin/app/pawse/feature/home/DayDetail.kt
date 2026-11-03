@@ -65,6 +65,7 @@ import app.pawse.scoring.model.LoadReading
 import app.pawse.scoring.model.ScoreType
 import app.pawse.scoring.model.SessionLoad
 import app.pawse.scoring.model.SignalDetail
+import androidx.compose.ui.platform.LocalContext
 import app.pawse.scoring.tr
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -118,7 +119,6 @@ internal fun DayTab(
             selected = span,
             onSelect = onRange,
             label = { tr("$it days", "${it}일") },
-            height = 36.dp,
             modifier = Modifier.padding(top = 12.dp),
         )
         if (type == ScoreType.BODY) {
@@ -141,7 +141,8 @@ internal fun DayTab(
             )
             Text(shortDate(picked.date), style = PawseType.Label, color = grey, modifier = Modifier.padding(end = 30.dp))
         }
-        val lines = if (type == ScoreType.BODY) bodyLines(snapshot, rows, selI) else loadLines(rows, selI)
+        val pm = LocalContext.current.packageManager
+        val lines = if (type == ScoreType.BODY) bodyLines(snapshot, rows, selI) else loadLines(rows, selI) { appName(pm, it) }
         lines.forEachIndexed { i, line ->
             SignalRow(line, selI, expanded = open == i, onToggle = { onOpen(if (open == i) -1 else i) })
         }
@@ -330,7 +331,7 @@ private fun LoadChart(rows: List<NightRow>, selI: Int, onPick: (Int) -> Unit) {
             Modifier
                 .width(plot)
                 .fillMaxHeight()
-                .scrub { f -> if (f != null) onPick((f * n).toInt().coerceIn(0, n - 1)) }
+                .scrub(n) { f -> if (f != null) onPick((f * n).toInt().coerceIn(0, n - 1)) }
                 .semantics { contentDescription = description },
         ) {
             val h = size.height
@@ -523,7 +524,7 @@ private fun bodyLines(snapshot: ScoringSnapshot, rows: List<NightRow>, selI: Int
     )
 }
 
-private fun loadLines(rows: List<NightRow>, selI: Int): List<DayLine> {
+private fun loadLines(rows: List<NightRow>, selI: Int, name: (String) -> String): List<DayLine> {
     val loads = rows.map { it.day?.load }
     val l = loads[selI]
     val config = ScoringConfig.DEFAULT.load
@@ -561,7 +562,7 @@ private fun loadLines(rows: List<NightRow>, selI: Int): List<DayLine> {
             val high = load.rangeHigh
             listOf(
                 tr("Counted by", "계산 방식") to load.sessions.mapNotNull { it.method }.distinct().joinToString(", ") { ScoreCopy.loadMethod(it) }.ifEmpty { "—" },
-                tr("Sessions", "운동") to load.sessions.joinToString("; ", transform = ::sessionText).ifEmpty { tr("None", "없음") },
+                tr("Sessions", "운동") to load.sessions.joinToString("; ") { sessionText(it, name) }.ifEmpty { tr("None", "없음") },
                 tr("Sources", "출처") to load.sessions.map { it.citation }.filter { it.isNotBlank() }.distinct().joinToString(" ").ifEmpty { "—" },
                 tr("Range that day", "그날 범위") to when {
                     load.rest -> tr("Rest: overnight heart rate was high", "휴식: 야간 심박수가 높았어요")
@@ -604,13 +605,13 @@ private fun loadLines(rows: List<NightRow>, selI: Int): List<DayLine> {
 }
 
 /** "Run, 42 min · 35 · Published · Samsung Health", or why it wasn't counted. */
-private fun sessionText(s: SessionLoad): String =
+private fun sessionText(s: SessionLoad, name: (String) -> String): String =
     listOfNotNull(
         "${s.title ?: tr("Workout", "운동")}, ${minutesText(s.durationMinutes)}",
         s.skippedReason ?: ScoreCopy.load(s.load),
         // Every number carries where its coefficient came from (Provenance.kt).
         ScoreCopy.provenanceLabel(s.provenance).takeIf { s.skippedReason == null },
-        s.source.takeIf { it.isNotBlank() }?.let(::writer),
+        s.source.takeIf { it.isNotBlank() }?.let(name),
     ).joinToString(" · ")
 
 @Composable
