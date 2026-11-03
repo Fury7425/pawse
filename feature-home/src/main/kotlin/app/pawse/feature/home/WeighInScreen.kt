@@ -1,21 +1,15 @@
 package app.pawse.feature.home
 
 import android.Manifest
-import android.app.DatePickerDialog
-import android.app.TimePickerDialog
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.text.format.DateFormat
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.animateScrollBy
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -38,12 +32,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
@@ -51,7 +47,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
@@ -61,12 +56,21 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.drawText
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
@@ -75,18 +79,16 @@ import androidx.health.connect.client.PermissionController
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pawse.core.data.body.RecentWeighIn
-import app.pawse.core.ui.component.BackLink
 import app.pawse.core.ui.component.BottomAction
 import app.pawse.core.ui.component.EaseOut
 import app.pawse.core.ui.component.GhostButton
-import app.pawse.core.ui.component.Glyph
 import app.pawse.core.ui.component.GlyphButton
 import app.pawse.core.ui.component.Glyphs
 import app.pawse.core.ui.component.PawseCard
-import app.pawse.core.ui.component.PawseField
-import app.pawse.core.ui.component.RevealEnter
-import app.pawse.core.ui.component.RevealExit
+import app.pawse.core.ui.component.PawseMotion
 import app.pawse.core.ui.component.Segmented
+import app.pawse.core.ui.component.SelectChip
+import app.pawse.core.ui.component.SplitRow
 import app.pawse.core.ui.component.aura
 import app.pawse.core.ui.component.cardSurface
 import app.pawse.core.ui.component.pressable
@@ -106,11 +108,10 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
- * Add a weigh-in: for a scale that doesn't talk to Health Connect, or a day without one.
- *
- * Weight is the only figure asked for. Composition is there for someone reading it
- * off a scale's display, and every blank stays blank: a typed weight never grows a
- * body fat figure it wasn't given.
+ * Weigh-in, two ways in. Weight: a scale reading set with the ruler. InBody: a
+ * whole result sheet, typed in from the last one or read from a photo of it, where
+ * tapping a number hands it the same ruler. What Pawse works out follows live, and
+ * a number the sheet doesn't have is marked Don't know rather than guessed.
  */
 @Composable
 fun WeighInScreen(
@@ -121,9 +122,8 @@ fun WeighInScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val onv = MaterialTheme.colorScheme.onSurfaceVariant
     val low = PawseTheme.semantics.bandLow
-    val launcher = rememberLauncherForActivityResult(PermissionController.createRequestPermissionResultContract()) {
+    val grants = rememberLauncherForActivityResult(PermissionController.createRequestPermissionResultContract()) {
         viewModel.onGrantResult()
     }
 
@@ -154,7 +154,7 @@ fun WeighInScreen(
     LaunchedEffect(state.askFor) {
         state.askFor?.let {
             viewModel.onAskLaunched()
-            launcher.launch(it)
+            grants.launch(it)
         }
     }
 
@@ -164,28 +164,27 @@ fun WeighInScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
-                    .padding(top = padding.calculateTopPadding() + 12.dp, bottom = 140.dp)
+                    .padding(top = padding.calculateTopPadding() + 12.dp, bottom = if (state.inBody) 280.dp else 140.dp)
                     .padding(horizontal = 24.dp),
             ) {
                 Row(Modifier.offset(x = (-12).dp).heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
                     GlyphButton(Glyphs.ChevronLeft, tr("Back to Body", "신체로 돌아가기"), onClick = onBack)
                     Text(tr("Weigh-in", "체중 기록"), style = PawseType.Heading, modifier = Modifier.semantics { heading() })
                 }
-                // One weigh-in, two ways in: the scale ruler, or a body composition result typed in.
                 Segmented(
                     options = listOf(false, true),
-                    selected = state.compositionOpen,
-                    onSelect = { if (it != state.compositionOpen) viewModel.toggleComposition() },
+                    selected = state.inBody,
+                    onSelect = viewModel::setInBody,
                     label = { if (it) "InBody" else tr("Weight", "체중") },
-                    glyph = { if (it) Glyphs.Panel else Glyphs.Body },
-                    height = 40.dp,
+                    glyph = { if (it) Glyphs.Sheet else Glyphs.Body },
+                    height = 48.dp,
                     modifier = Modifier.padding(top = 8.dp),
                 )
                 Text(
-                    if (state.compositionOpen) {
-                        tr("From an InBody sheet or a scale's display. Blanks stay blank.", "인바디 결과지나 체중계 화면을 보고 입력해요. 빈칸은 비워 둬요.")
+                    if (state.inBody) {
+                        tr("A full InBody sheet: weight, muscle, fat and visceral fat", "인바디 결과지 전체: 체중, 근육, 체지방, 내장지방")
                     } else {
-                        tr("Drag or fling the ruler, or type it in.", "눈금자를 밀거나 직접 입력하세요.")
+                        tr("A scale reading, set with the ruler", "체중계 측정값을 눈금자로 입력")
                     },
                     style = PawseType.Micro,
                     color = PawseTheme.semantics.faint,
@@ -193,192 +192,244 @@ fun WeighInScreen(
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
 
-                Column(Modifier.fillMaxWidth().padding(top = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        if (state.earlier) whenText(state.earlierAt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()) else whenText(System.currentTimeMillis()),
-                        style = PawseType.Label,
-                        color = onv,
-                    )
-                    Row(verticalAlignment = Alignment.Bottom) {
-                        Text(state.weightKg?.let { WeighInUiState.oneDecimal(it) } ?: "—", style = PawseType.Hero)
-                        Text("kg", style = PawseType.Heading.copy(fontWeight = PawseType.Body.fontWeight), color = onv, modifier = Modifier.padding(start = 8.dp, bottom = 10.dp))
-                    }
-                    Text(
-                        text = if (state.weightBad) tr("Between 20 and 300 kg", "20–300 kg 사이로 입력하세요") else weightHint(state.recent.firstOrNull()),
-                        style = PawseType.Micro,
-                        color = if (state.weightBad) low else PawseTheme.semantics.faint,
-                    )
+                if (state.inBody) {
+                    InBodyForm(state, viewModel, onPhoto = photograph)
+                } else {
+                    ScaleReading(state, viewModel)
                 }
-                WeightRuler(kg = state.weightKg, onKg = viewModel::setWeightKg, modifier = Modifier.padding(top = 24.dp))
-                Text(
-                    tr("It settles on the nearest 0.1 kg.", "가장 가까운 0.1 kg에 멈춰요."),
-                    style = PawseType.Micro,
-                    color = PawseTheme.semantics.faint,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                )
-                PawseField(
-                    value = state.weightText,
-                    onValueChange = viewModel::setWeight,
-                    suffix = "kg",
-                    placeholder = tr("Type it in", "직접 입력"),
-                    numeric = true,
-                    height = 48.dp,
-                    modifier = Modifier.padding(top = 12.dp),
-                )
-
-                Spacer(Modifier.height(24.dp))
-                Caption(tr("When", "언제"))
-                Spacer(Modifier.height(8.dp))
-                val now = remember { ScoreCopy.clock(System.currentTimeMillis()) }
-                Segmented(
-                    options = listOf(false, true),
-                    selected = state.earlier,
-                    onSelect = viewModel::setEarlier,
-                    label = { if (it) tr("Earlier", "이전 시간") else tr("Now", "지금") + " · $now" },
-                )
-                AnimatedVisibility(state.earlier, enter = RevealEnter, exit = RevealExit) {
-                    Column {
-                        Spacer(Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            val at = state.earlierAt
-                            PickerBox(
-                                label = tr("Day", "날짜"),
-                                value = at.format(DateTimeFormatter.ofPattern(tr("EEE d MMM", "M월 d일 (E)"), Locale.getDefault())),
-                                onClick = {
-                                    DatePickerDialog(
-                                        context,
-                                        { _, y, m, d -> viewModel.setEarlierAt(LocalDate.of(y, m + 1, d).atTime(at.toLocalTime())) },
-                                        at.year,
-                                        at.monthValue - 1,
-                                        at.dayOfMonth,
-                                    ).apply { datePicker.maxDate = System.currentTimeMillis() }.show()
-                                },
-                                modifier = Modifier.weight(1f),
-                            )
-                            PickerBox(
-                                label = tr("Time", "시간"),
-                                value = ScoreCopy.clock(at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()),
-                                onClick = {
-                                    TimePickerDialog(
-                                        context,
-                                        { _, h, min -> viewModel.setEarlierAt(at.toLocalDate().atTime(h, min)) },
-                                        at.hour,
-                                        at.minute,
-                                        DateFormat.is24HourFormat(context),
-                                    ).show()
-                                },
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            tr("Not later than now. A weigh-in in the future can’t be true yet.", "지금 이후는 안 돼요. 미래의 체중은 아직 사실일 수 없으니까요."),
-                            style = PawseType.Label,
-                            color = if (state.timeBad) low else onv,
-                        )
-                    }
-                }
-
-                AnimatedVisibility(state.compositionOpen, enter = RevealEnter, exit = RevealExit) {
-                    Column {
-                        Spacer(Modifier.height(8.dp))
-                        GhostButton(
-                            if (state.reading) tr("Reading the result sheet…", "결과지 읽는 중…") else tr("Photograph the result sheet", "결과지 찍기"),
-                            onClick = { if (!state.reading) photograph() },
-                            glyph = Glyphs.Scan,
-                        )
-                        Caption(state.readNote ?: tr("Read on this phone. The photo is not kept.", "휴대폰에서 바로 읽어요. 사진은 남기지 않아요."))
-                        Spacer(Modifier.height(8.dp))
-                        PawseCard(padding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
-                            BodyFigure.entries.forEach { figure ->
-                                FigureRow(
-                                    figure = figure,
-                                    value = state.figures[figure].orEmpty(),
-                                    error = state.figureError(figure),
-                                    onValueChange = { viewModel.setFigure(figure, it) },
-                                )
-                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                            }
-                            val (derived, warn) = derivedLine(state)
-                            Text(
-                                derived,
-                                style = PawseType.Label,
-                                color = if (warn) PawseTheme.semantics.bandModerate else onv,
-                                modifier = Modifier.padding(vertical = 12.dp),
-                            )
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        Caption(
-                            tr(
-                                "Leave any blank you don't know. Pawse saves only what you give it and never fills a gap with a guess. " +
-                                    "Weight, body fat, lean mass and water go to Health Connect. Skeletal muscle and visceral fat stay in Pawse: " +
-                                    "Health Connect has no record for them.",
-                                "모르는 칸은 비워 두세요. Pawse는 입력한 값만 저장하고 빈칸을 추측으로 채우지 않아요. " +
-                                    "체중, 체지방, 제지방량, 체수분은 헬스 커넥트에 저장해요. 골격근량과 내장지방은 헬스 커넥트에 항목이 없어서 Pawse에만 남아요.",
-                            ),
-                        )
-                    }
-                }
-
-                if (state.recent.isNotEmpty()) {
-                    // What a weigh-in is read against: the trend and the last few readings.
-                    val trend = Weight.trend(
-                        state.recent.map { WeighInPoint(Instant.ofEpochMilli(it.atEpochMs).atZone(ZoneId.systemDefault()).toLocalDate().toEpochDay(), it.weightKg) },
-                        ScoringConfig.DEFAULT.weight,
-                    ).lastOrNull()
-                    PawseCard(modifier = Modifier.padding(top = 24.dp)) {
-                        Row(verticalAlignment = Alignment.Bottom) {
-                            Caption(tr("Recent weigh-ins", "최근 체중 기록"), Modifier.weight(1f))
-                            trend?.let { Text(tr("Trend ${WeighInUiState.oneDecimal(it.trend)} kg", "추세 ${WeighInUiState.oneDecimal(it.trend)} kg"), style = PawseType.Micro, color = PawseTheme.semantics.faint) }
-                        }
-                        state.recent.forEach { entry ->
-                            RecentRow(
-                                entry = entry,
-                                removed = entry.atEpochMs in state.removed,
-                                onRemove = { viewModel.remove(entry) },
-                                onUndo = { viewModel.undoRemove(entry.atEpochMs) },
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Caption(
-                        tr(
-                            "Only what you typed here can be removed here. A scale’s readings belong to the scale’s app.",
-                            "여기서 입력한 기록만 여기서 지울 수 있어요. 체중계 기록은 체중계 앱의 몫이에요.",
-                        ),
-                    )
-                }
-
-                Spacer(Modifier.height(24.dp))
-                Caption(
-                    tr(
-                        "Saved to Health Connect, marked as typed in by hand, so other apps see it and can tell it apart from a scale.",
-                        "헬스 커넥트에 직접 입력한 값으로 표시해 저장해요. 다른 앱도 이 값을 보고 체중계 기록과 구별할 수 있어요.",
-                    ),
-                )
             }
 
             BottomAction(
                 text = state.saveLabel,
                 onClick = viewModel::save,
-                enabled = state.canSave,
+                enabled = !state.busy && !state.reading,
+                height = 56.dp,
                 above = {
                     state.problem?.let { problem ->
                         Text(problem, style = PawseType.Label, color = low)
                         if (problem == WeighInViewModel.NOT_ALLOWED) {
                             GhostButton(
                                 tr("Open Health Connect", "헬스 커넥트 열기"),
-                                onClick = {
-                                    runCatching { context.startActivity(Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS)) }
-                                },
+                                onClick = { runCatching { context.startActivity(Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS)) } },
                             )
                         }
                         Spacer(Modifier.height(8.dp))
                     }
+                    // The InBody ruler sits here, under the rows it sets, so it never scrolls away.
+                    if (state.inBody && !state.reading) {
+                        val row = state.picked
+                        Text(
+                            "${row.label} · ${row.format(state.value(row))}",
+                            style = PawseType.Micro,
+                            color = PawseTheme.semantics.faint,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        // A new row re-centres the ruler on its value at once, with no slide.
+                        key(row) {
+                            ValueRuler(
+                                value = state.value(row),
+                                onValue = { viewModel.setRow(row, it) },
+                                min = row.min,
+                                max = state.max(row),
+                                step = row.step,
+                                major = if (row.step < 1.0) 10 else 5,
+                                spacing = if (row.step < 1.0) 8.dp else 20.dp,
+                                name = row.label,
+                                valueText = row.format(state.value(row)),
+                                modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+                            )
+                        }
+                    }
                 },
             )
         }
+    }
+}
+
+/** Weight: today's reading at 64, the change since last time, the ruler, and what it is read against. */
+@Composable
+private fun ScaleReading(state: WeighInUiState, viewModel: WeighInViewModel) {
+    val onv = MaterialTheme.colorScheme.onSurfaceVariant
+    Column(Modifier.fillMaxWidth().padding(top = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(whenText(System.currentTimeMillis()), style = PawseType.Label, color = onv)
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(WeighInUiState.oneDecimal(state.kg), style = PawseType.Hero)
+            Text("kg", style = PawseType.Label, color = onv, modifier = Modifier.padding(start = 6.dp, bottom = 12.dp))
+        }
+        Text(delta(state.kg, state.lastKg), style = PawseType.Micro, color = PawseTheme.semantics.faint)
+    }
+    ValueRuler(
+        value = state.kg,
+        onValue = viewModel::setKg,
+        min = WeighInUiState.MIN_KG,
+        max = WeighInUiState.MAX_KG,
+        step = 0.1,
+        major = 10,
+        spacing = 8.dp,
+        name = tr("Weight", "체중"),
+        valueText = WeighInUiState.oneDecimal(state.kg) + " kg",
+        modifier = Modifier.padding(top = 32.dp),
+    )
+    Text(
+        tr("Drag or fling. It settles on the nearest 0.1 kg.", "끌거나 튕기세요. 가장 가까운 0.1kg에 멈춰요."),
+        style = PawseType.Micro,
+        color = PawseTheme.semantics.faint,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+    )
+    if (state.recent.isNotEmpty()) Recent(state, viewModel)
+}
+
+private fun delta(kg: Double, last: Double?): String {
+    last ?: return tr("Your first weigh-in here", "여기서 첫 체중 기록")
+    val d = (kg * 10).roundToInt() / 10.0 - last
+    return if (abs(d) < 0.05) {
+        tr("Same as last time", "지난번과 같아요")
+    } else {
+        val signed = (if (d > 0) "+" else "−") + WeighInUiState.oneDecimal(abs(d))
+        tr("$signed kg since last time", "지난번보다 ${signed}kg")
+    }
+}
+
+/** What a weigh-in is read against: the trend and the last few readings. */
+@Composable
+private fun Recent(state: WeighInUiState, viewModel: WeighInViewModel) {
+    val trend = Weight.trend(
+        state.recent.map { WeighInPoint(Instant.ofEpochMilli(it.atEpochMs).atZone(ZoneId.systemDefault()).toLocalDate().toEpochDay(), it.weightKg) },
+        ScoringConfig.DEFAULT.weight,
+    ).lastOrNull()
+    PawseCard(modifier = Modifier.padding(top = 24.dp)) {
+        SplitRow {
+            Caption(tr("Recent weigh-ins", "최근 체중 기록"), Modifier.weight(1f))
+            trend?.let { Text(tr("trend ${WeighInUiState.oneDecimal(it.trend)} kg", "추세 ${WeighInUiState.oneDecimal(it.trend)}kg"), style = PawseType.Micro, color = PawseTheme.semantics.faint) }
+        }
+        state.recent.forEach { entry ->
+            RecentRow(
+                entry = entry,
+                removed = entry.atEpochMs in state.removed,
+                onRemove = { viewModel.remove(entry) },
+                onUndo = { viewModel.undoRemove(entry.atEpochMs) },
+            )
+        }
+    }
+}
+
+/** InBody: the photo, the four numbers with Don't know, and what Pawse works out from them. */
+@Composable
+private fun InBodyForm(state: WeighInUiState, viewModel: WeighInViewModel, onPhoto: () -> Unit) {
+    if (!state.reading) {
+        GhostButton(tr("Photograph the result sheet", "결과지 찍기"), onClick = onPhoto, glyph = Glyphs.Camera, modifier = Modifier.padding(top = 16.dp))
+        Caption(state.readNote ?: tr("Read on this phone. The photo is not kept.", "휴대폰에서 바로 읽어요. 사진은 남기지 않아요."))
+    } else {
+        PawseCard(modifier = Modifier.padding(top = 24.dp).semantics { contentDescription = tr("Reading the result sheet", "결과지 읽는 중") }) {
+            Text(tr("Reading the result sheet…", "결과지 읽는 중…"), style = PawseType.BodyStrong)
+            LinearProgressIndicator(
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                trackColor = PawseTheme.semantics.baselineBand,
+                modifier = Modifier.padding(top = 12.dp).fillMaxWidth().height(2.dp),
+            )
+        }
+        return
+    }
+
+    val since = state.lastDate?.format(DateTimeFormatter.ofPattern(tr("d MMM", "M월 d일"), Locale.getDefault()))
+    Text(
+        tr("The weight counts as today’s weigh-in. ", "체중은 오늘의 체중 기록이 돼요. ") +
+            when {
+                state.fromSheet -> tr(
+                    "Read from the sheet. Check each number against it: tap one, then drag the ruler to correct it.",
+                    "결과지에서 읽었어요. 하나씩 결과지와 비교하고, 누른 다음 눈금자를 끌어 고쳐 주세요.",
+                )
+                since != null -> tr(
+                    "Starts from your last result, $since. Tap a number, then drag or fling the ruler.",
+                    "지난 결과($since)에서 시작해요. 숫자를 누르고 눈금자를 끌거나 튕기세요.",
+                )
+                else -> tr("Tap a number, then drag or fling the ruler.", "숫자를 누르고 눈금자를 끌거나 튕기세요.")
+            } +
+            tr(" Not on your sheet? Mark it Don’t know: it is left out, never guessed.", " 결과지에 없나요? 모름으로 두면 빼고 저장해요. 추측하지 않아요."),
+        style = PawseType.Micro,
+        color = PawseTheme.semantics.faint,
+        modifier = Modifier.padding(top = 16.dp),
+    )
+
+    PawseCard(modifier = Modifier.padding(top = 8.dp), padding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)) {
+        InBodyRow.entries.forEach { row -> InBodyLine(row, state, onPick = { viewModel.pick(row) }, onUnknown = { viewModel.toggleUnknown(row) }) }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(top = 8.dp))
+        val needs = tr("needs body fat mass", "체지방량이 필요해요")
+        Derived(tr("Body fat", "체지방률"), if (state.fatMass != null) tr("fat mass ÷ weight", "체지방량 ÷ 체중") else needs, state.fatPercent?.let { WeighInUiState.oneDecimal(it) + "%" })
+        Derived(tr("Lean mass", "제지방량"), if (state.fatMass != null) tr("weight − fat mass", "체중 − 체지방량") else needs, state.leanKg?.let { WeighInUiState.oneDecimal(it) + " kg" })
+        Derived(
+            tr("Basal metabolic rate", "기초대사량"),
+            if (state.fatMass != null) tr("370 + 21.6 × lean mass (Katch–McArdle)", "370 + 21.6 × 제지방량 (Katch–McArdle)") else needs,
+            state.bmr?.let { "%,d kcal".format(it.roundToInt()) },
+        )
+    }
+    Caption(
+        tr(
+            "Weight, body fat and lean mass go to Health Connect. Skeletal muscle and visceral fat stay in Pawse: Health Connect has no record for them. " +
+                "Basal metabolic rate is worked out, so it is shown, not saved.",
+            "체중, 체지방, 제지방량은 헬스 커넥트에 저장해요. 골격근량과 내장지방은 헬스 커넥트에 항목이 없어서 Pawse에만 남아요. " +
+                "기초대사량은 계산한 값이라 보여 주기만 하고 저장하지 않아요.",
+        ),
+        Modifier.padding(top = 12.dp),
+    )
+}
+
+/** One InBody number: tap it to set it with the ruler; Don't know leaves it out. */
+@Composable
+private fun InBodyLine(row: InBodyRow, state: WeighInUiState, onPick: () -> Unit, onUnknown: () -> Unit) {
+    val picked = row == state.picked && row !in state.unknown
+    val unknown = row in state.unknown
+    val fill by animateColorAsState(
+        if (picked) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent,
+        tween(PawseMotion.PRESS_UP, easing = EaseOut),
+        label = "row",
+    )
+    val shown = if (unknown) "—" else row.format(state.value(row))
+    val note = when {
+        unknown && state.fromSheet -> tr("couldn’t read it · tap to set it", "읽지 못했어요 · 눌러서 입력")
+        unknown -> tr("left out · tap to set it", "빼고 저장 · 눌러서 입력")
+        state.fromSheet -> tr("read from the sheet", "결과지에서 읽음")
+        else -> tr("last result ", "지난 결과 ") + (state.last[row]?.let(row::format) ?: tr("not known", "모름"))
+    }
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(fill),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            Modifier
+                .weight(1f)
+                .heightIn(min = 60.dp)
+                .pressable(onClick = onPick)
+                .semantics(mergeDescendants = true) {
+                    role = Role.Button
+                    selected = picked
+                    stateDescription = if (picked) tr("set with the ruler below", "아래 눈금자로 조정") else tr("tap to set with the ruler", "눌러서 눈금자로 조정")
+                }
+                .padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(row.label, style = PawseType.Body)
+                Text(note, style = PawseType.Micro, color = PawseTheme.semantics.faint)
+            }
+            Text(shown, style = PawseType.MetricValue, color = if (unknown) PawseTheme.semantics.faint else MaterialTheme.colorScheme.onSurface)
+        }
+        if (row != InBodyRow.WEIGHT) {
+            SelectChip(tr("Don’t know", "모름"), selected = unknown, onClick = onUnknown, modifier = Modifier.padding(end = 6.dp))
+        }
+    }
+}
+
+@Composable
+private fun Derived(name: String, how: String, value: String?) {
+    SplitRow(Modifier.padding(top = 8.dp, start = 10.dp, end = 10.dp)) {
+        Column(Modifier.weight(1f)) {
+            Text(name, style = PawseType.Body)
+            Text(how, style = PawseType.Micro, color = PawseTheme.semantics.faint)
+        }
+        Text(value ?: "—", style = PawseType.MetricValue, color = if (value == null) PawseTheme.semantics.faint else MaterialTheme.colorScheme.onSurface)
     }
 }
 
@@ -388,21 +439,6 @@ class SheetFileProvider : FileProvider()
 @Composable
 private fun Caption(text: String, modifier: Modifier = Modifier) {
     Text(text, style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = modifier)
-}
-
-private fun weightHint(last: RecentWeighIn?): String {
-    last ?: return tr("Scroll the ruler or type it.", "눈금자를 밀거나 직접 입력하세요.")
-    val date = Instant.ofEpochMilli(last.atEpochMs).atZone(ZoneId.systemDefault()).toLocalDate()
-    val day = when (date) {
-        LocalDate.now() -> tr("today", "오늘")
-        LocalDate.now().minusDays(1) -> tr("yesterday", "어제")
-        else -> tr("on ", "") + date.format(DateTimeFormatter.ofPattern(tr("EEE d MMM", "M월 d일 (E)"), Locale.getDefault()))
-    }
-    val kg = WeighInUiState.oneDecimal(last.weightKg)
-    return tr(
-        "Last: $kg kg $day, ${source(last).replaceFirstChar { it.lowercase() }}.",
-        "지난 기록: $day $kg kg, ${source(last)}.",
-    )
 }
 
 private fun source(entry: RecentWeighIn): String = when {
@@ -421,84 +457,14 @@ private fun whenText(epochMs: Long): String {
     return "$day, ${ScoreCopy.clock(epochMs)}"
 }
 
-/** What a body fat figure means in kilograms, or where it disagrees with lean mass. */
-private fun derivedLine(s: WeighInUiState): Pair<String, Boolean> {
-    val w = s.weightKg
-    val fat = s.figure(BodyFigure.FAT)?.takeIf { s.figureError(BodyFigure.FAT) == null }
-    if (w == null || fat == null) {
-        return tr(
-            "Type a body fat figure and Pawse shows what it means in kilograms.",
-            "체지방률을 입력하면 몇 kg인지 보여 드려요.",
-        ) to false
-    }
-    val fatKg = w * fat / 100.0
-    val rest = w - fatKg
-    val lean = s.figure(BodyFigure.LEAN)?.takeIf { s.figureError(BodyFigure.LEAN) == null }
-    if (lean != null && abs(rest - lean) > 1.0) {
-        val gap = WeighInUiState.oneDecimal(abs(rest - lean))
-        return tr(
-            "Body fat and lean mass disagree by $gap kg. A scale reports both from one reading, so check the display.",
-            "체지방률과 제지방량이 $gap kg 어긋나요. 체중계는 한 번 측정으로 둘 다 알려 주니 화면을 다시 확인하세요.",
-        ) to true
-    }
-    fun one(v: Double) = WeighInUiState.oneDecimal(v)
-    return tr(
-        "At ${one(w)} kg, ${one(fat)}% is ${one(fatKg)} kg of fat and ${one(rest)} kg of everything else.",
-        "${one(w)} kg 중 ${one(fat)}%는 지방 ${one(fatKg)} kg, 나머지는 ${one(rest)} kg이에요.",
-    ) to false
-}
-
-@Composable
-private fun PickerBox(label: String, value: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier
-            .height(56.dp)
-            .pressable(onClick = onClick)
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp))
-            .padding(horizontal = 14.dp),
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text(label, style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = PawseType.Body)
-    }
-}
-
-@Composable
-private fun FigureRow(figure: BodyFigure, value: String, error: String?, onValueChange: (String) -> Unit) {
-    Column(Modifier.padding(vertical = 10.dp)) {
-        Row(Modifier.heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(figure.label, style = PawseType.Body, modifier = Modifier.weight(1f))
-            PawseField(
-                value = value,
-                onValueChange = onValueChange,
-                suffix = figure.unit,
-                placeholder = "—",
-                numeric = true,
-                height = 44.dp,
-                modifier = Modifier.width(132.dp),
-            )
-        }
-        if (error != null) {
-            Text(
-                error,
-                style = PawseType.Label,
-                color = PawseTheme.semantics.bandLow,
-                modifier = Modifier.align(Alignment.End).padding(top = 4.dp),
-            )
-        }
-    }
-}
-
 @Composable
 private fun RecentRow(entry: RecentWeighIn, removed: Boolean, onRemove: () -> Unit, onUndo: () -> Unit) {
     val onv = MaterialTheme.colorScheme.onSurfaceVariant
     Row(
         Modifier
             .fillMaxWidth()
-            .heightIn(min = 64.dp)
-            .padding(vertical = 10.dp),
+            .heightIn(min = 56.dp)
+            .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (removed) {
@@ -519,7 +485,7 @@ private fun RecentRow(entry: RecentWeighIn, removed: Boolean, onRemove: () -> Un
             val kg = "${WeighInUiState.oneDecimal(entry.weightKg)} kg"
             Column(Modifier.weight(1f)) {
                 Text(whenText, style = PawseType.Body)
-                Text(source(entry), style = PawseType.Label, color = onv)
+                Text(source(entry), style = PawseType.Micro, color = PawseTheme.semantics.faint)
             }
             Text(kg, style = PawseType.MetricValue)
             if (entry.typedIn) {
@@ -531,15 +497,6 @@ private fun RecentRow(entry: RecentWeighIn, removed: Boolean, onRemove: () -> Un
 
 // --- The ruler -----------------------------------------------------------------
 
-private const val RULER_TICKS = 2801 // one per 0.1 kg, 20 to 300
-private const val RULER_REST_KG = 70.0
-private val TICK_SPACING = 8.dp
-
-private fun tickOf(kg: Double): Int =
-    ((kg - WeighInUiState.MIN_KG) * 10).roundToInt().coerceIn(0, RULER_TICKS - 1)
-
-private fun kgOf(tick: Int): Double = WeighInUiState.MIN_KG + tick / 10.0
-
 /** The tick under the centre line. Offsets are measured from the start padding, so the middle is too. */
 private fun LazyListState.centered(): LazyListItemInfo? {
     val info = layoutInfo
@@ -548,36 +505,51 @@ private fun LazyListState.centered(): LazyListItemInfo? {
 }
 
 /**
- * A ruler dragged sideways under a fixed centre line: a tick per 0.1 kg, a number
- * per kilogram. It and the field above are two views of one value; the field is
- * the accessible one, so the ruler is hidden from TalkBack rather than repeating it.
+ * A ruler dragged sideways under a fixed centre line: a tick per [step], taller
+ * every half major, labelled every [major] steps. Weight and every InBody number
+ * use it. For TalkBack it is a slider that moves one step at a time.
  */
 @Composable
-private fun WeightRuler(kg: Double?, onKg: (Double) -> Unit, modifier: Modifier = Modifier) {
-    val state = rememberLazyListState(initialFirstVisibleItemIndex = tickOf(kg ?: RULER_REST_KG))
-    val latestKg by rememberUpdatedState(kg)
-    val latestOnKg by rememberUpdatedState(onKg)
+private fun ValueRuler(
+    value: Double,
+    onValue: (Double) -> Unit,
+    min: Double,
+    max: Double,
+    step: Double,
+    major: Int,
+    spacing: Dp,
+    name: String,
+    valueText: String,
+    modifier: Modifier = Modifier,
+) {
+    val count = ((max - min) / step).roundToInt() + 1
+    fun tickOf(v: Double): Int = ((v - min) / step).roundToInt().coerceIn(0, count - 1)
+    fun valueOf(tick: Int): Double = ((min + tick * step) / step).roundToInt() * step
+    val state = rememberLazyListState(initialFirstVisibleItemIndex = tickOf(value))
+    val latest by rememberUpdatedState(value)
+    val latestOnValue by rememberUpdatedState(onValue)
     val haptics = LocalHapticFeedback.current
     val measurer = rememberTextMeasurer()
     val minor = MaterialTheme.colorScheme.outline
     val half = MaterialTheme.colorScheme.onSurfaceVariant
-    val major = MaterialTheme.colorScheme.onSurface
+    val strong = MaterialTheme.colorScheme.onSurface
     val labelStyle = PawseType.Label.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-    // A drag or fling moves the number, one tenth per tick. Only while scrolling,
-    // so opening the screen never types a weight the user didn't choose.
+    // A drag or fling moves the number a step per tick, harder on each labelled one.
+    // Only while scrolling, so opening the screen never sets a value the user didn't choose.
     LaunchedEffect(state) {
         snapshotFlow { state.centered()?.index }.collect { tick ->
-            if (tick != null && state.isScrollInProgress && tick != latestKg?.let(::tickOf)) {
-                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                latestOnKg(kgOf(tick))
+            if (tick != null && state.isScrollInProgress && tick != tickOf(latest)) {
+                val units = (valueOf(tick) / step).roundToInt()
+                haptics.performHapticFeedback(if (units % major == 0) HapticFeedbackType.LongPress else HapticFeedbackType.TextHandleMove)
+                latestOnValue(valueOf(tick))
             }
         }
     }
 
-    // Typing moves the ruler. Skipped mid-drag, so the two never fight.
-    LaunchedEffect(kg) {
-        val target = kg?.let(::tickOf) ?: return@LaunchedEffect
+    // A value set elsewhere (TalkBack, a photo) moves the ruler. Skipped mid-drag, so the two never fight.
+    LaunchedEffect(value) {
+        val target = tickOf(value)
         if (!state.isScrollInProgress && state.centered()?.index != target) state.scrollToItem(target)
     }
 
@@ -595,11 +567,19 @@ private fun WeightRuler(kg: Double?, onKg: (Double) -> Unit, modifier: Modifier 
             .fillMaxWidth()
             .height(64.dp)
             .cardSurface(RoundedCornerShape(12.dp))
-            .clearAndSetSemantics {},
+            .clearAndSetSemantics {
+                contentDescription = name
+                stateDescription = valueText
+                progressBarRangeInfo = ProgressBarRangeInfo(value.toFloat(), min.toFloat()..max.toFloat(), steps = (count - 2).coerceAtLeast(0))
+                setProgress { target ->
+                    latestOnValue(valueOf(tickOf(target.toDouble())))
+                    true
+                }
+            },
     ) {
         LazyRow(
             state = state,
-            contentPadding = PaddingValues(horizontal = (maxWidth - TICK_SPACING) / 2),
+            contentPadding = PaddingValues(horizontal = (maxWidth - spacing) / 2),
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
@@ -611,18 +591,19 @@ private fun WeightRuler(kg: Double?, onKg: (Double) -> Unit, modifier: Modifier 
                     )
                 },
         ) {
-            items(RULER_TICKS) { tick ->
-                Canvas(Modifier.width(TICK_SPACING).fillMaxHeight()) {
+            items(count) { tick ->
+                Canvas(Modifier.width(spacing).fillMaxHeight()) {
                     val x = size.width / 2
-                    val kilo = tick % 10 == 0
+                    val units = (valueOf(tick) / step).roundToInt()
+                    val labelled = units % major == 0
                     val (length, color) = when {
-                        kilo -> 22.dp to major
-                        tick % 5 == 0 -> 16.dp to half
+                        labelled -> 22.dp to strong
+                        major % 2 == 0 && units % (major / 2) == 0 -> 16.dp to half
                         else -> 10.dp to minor
                     }
-                    drawLine(color, Offset(x, 0f), Offset(x, length.toPx()), strokeWidth = (if (kilo) 2.dp else 1.dp).toPx())
-                    if (kilo) {
-                        val label = measurer.measure((WeighInUiState.MIN_KG.toInt() + tick / 10).toString(), labelStyle)
+                    drawLine(color, Offset(x, 0f), Offset(x, length.toPx()), strokeWidth = (if (labelled) 2.dp else 1.dp).toPx())
+                    if (labelled) {
+                        val label = measurer.measure(valueOf(tick).roundToInt().toString(), labelStyle)
                         drawText(label, topLeft = Offset(x - label.size.width / 2f, 32.dp.toPx()))
                     }
                 }
@@ -633,7 +614,7 @@ private fun WeightRuler(kg: Double?, onKg: (Double) -> Unit, modifier: Modifier 
                 .align(Alignment.TopCenter)
                 .width(2.dp)
                 .height(30.dp)
-                .background(major, RoundedCornerShape(bottomStart = 1.dp, bottomEnd = 1.dp)),
+                .background(strong, RoundedCornerShape(bottomStart = 1.dp, bottomEnd = 1.dp)),
         )
     }
 }

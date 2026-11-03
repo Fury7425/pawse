@@ -19,12 +19,13 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
-import java.time.LocalDateTime
-import java.time.ZoneId
+import java.time.Instant
+import java.time.LocalDate
 import java.util.Locale
 import javax.inject.Inject
 import kotlin.coroutines.resume
@@ -32,128 +33,82 @@ import kotlin.coroutines.resumeWithException
 import kotlin.math.roundToInt
 
 /**
- * The optional figures under "Body composition", with the range a real one falls in.
- * Skeletal muscle and visceral fat stay in Pawse: Health Connect has no record for them.
+ * InBody's four numbers: the ruler's step, the range a real one falls in, and
+ * where the ruler parks for a row the last result didn't know.
  */
-enum class BodyFigure(private val en: String, private val ko: String, val unit: String) {
-    FAT("Body fat", "체지방률", "%"),
-    MUSCLE("Skeletal muscle", "골격근량", "kg"),
-    VISCERAL("Visceral fat level", "내장지방 레벨", ""),
-    LEAN("Lean mass", "제지방량", "kg"),
-    WATER("Body water", "체수분", "kg"),
-    BONE("Bone mass", "골량", "kg");
+enum class InBodyRow(private val en: String, private val ko: String, val step: Double, val min: Double, val max: Double, val park: Double) {
+    WEIGHT("Weight", "체중", 0.1, WeighInUiState.MIN_KG, WeighInUiState.MAX_KG, 70.0),
+    MUSCLE("Skeletal muscle mass", "골격근량", 0.1, 10.0, 80.0, 33.0),
+    FAT("Body fat mass", "체지방량", 0.1, 2.0, 80.0, 13.0),
+    VISCERAL("Visceral fat level", "내장지방 레벨", 1.0, 1.0, 20.0, 6.0),
+    ;
 
     val label: String get() = tr(en, ko)
 
-    /** Lean, muscle and water can't outweigh the person they were measured on. */
-    fun range(weightKg: Double?): ClosedFloatingPointRange<Double> = when (this) {
-        FAT -> 2.0..75.0
-        MUSCLE -> 5.0..(weightKg ?: 80.0).coerceAtMost(80.0)
-        VISCERAL -> 1.0..30.0
-        LEAN -> 10.0..(weightKg ?: WeighInUiState.MAX_KG)
-        WATER -> 5.0..(weightKg ?: WeighInUiState.MAX_KG)
-        BONE -> 0.5..10.0
-    }
+    fun format(value: Double): String = if (this == VISCERAL) value.roundToInt().toString() else WeighInUiState.oneDecimal(value) + " kg"
 }
 
 data class WeighInUiState(
-    val weightText: String = "",
-    val earlier: Boolean = false,
-    val earlierAt: LocalDateTime = LocalDateTime.now().withSecond(0).withNano(0),
-    val compositionOpen: Boolean = true,
-    val figures: Map<BodyFigure, String> = emptyMap(),
+    /** Weigh-in's two ways in: a scale reading, or a whole InBody sheet. */
+    val inBody: Boolean = false,
+    val kg: Double = InBodyRow.WEIGHT.park,
+    val lastKg: Double? = null,
     val recent: List<RecentWeighIn> = emptyList(),
     /** Removed in this visit, keyed by time, kept so Undo can write them back. */
     val removed: Map<Long, WeighIn> = emptyMap(),
+    val rows: Map<InBodyRow, Double> = InBodyRow.entries.associateWith { it.park },
+    /** Rows marked Don't know: shown as "—", left out of the save, never guessed. */
+    val unknown: Set<InBodyRow> = emptySet(),
+    /** The row the ruler sets. */
+    val picked: InBodyRow = InBodyRow.WEIGHT,
+    /** The last result, for each row's "last result" line. */
+    val last: Map<InBodyRow, Double> = emptyMap(),
+    val lastDate: LocalDate? = null,
+    /** The rows came from a photo of the sheet, not the last result. */
+    val fromSheet: Boolean = false,
+    val reading: Boolean = false,
+    /** What the last photo gave, when it gave nothing to check. */
+    val readNote: String? = null,
     /** Grants to ask Health Connect for; the screen launches the sheet and clears it. */
     val askFor: Set<String>? = null,
     val problem: String? = null,
     val busy: Boolean = false,
     val saved: Boolean = false,
-    /** A photo of the result sheet is being read. */
-    val reading: Boolean = false,
-    /** What the last photo gave, in words, until the next one. */
-    val readNote: String? = null,
 ) {
-    val weightKg: Double? get() = parse(weightText)?.takeIf { it in MIN_KG..MAX_KG }
-    val weightBad: Boolean get() = weightText.isNotBlank() && weightKg == null
+    fun value(row: InBodyRow): Double = rows.getValue(row)
 
-    fun figure(figure: BodyFigure): Double? = parse(figures[figure].orEmpty())
+    /** Fat can never reach the weight it was measured in. */
+    fun max(row: InBodyRow): Double = if (row == InBodyRow.FAT) (value(InBodyRow.WEIGHT) - 1.0).coerceAtLeast(row.min) else row.max
 
-    fun figureError(figure: BodyFigure): String? {
-        val text = figures[figure].orEmpty()
-        if (text.isBlank()) return null
-        val range = figure.range(weightKg)
-        val value = parse(text)
-        if (value != null && value in range) return null
-        return when (figure.unit) {
-            "%" -> {
-                val lo = range.start.toInt()
-                val hi = range.endInclusive.toInt()
-                tr("Between $lo and $hi%", "$lo–$hi% 사이로 입력하세요")
-            }
-            "" -> {
-                val lo = range.start.toInt()
-                val hi = range.endInclusive.toInt()
-                tr("A level from $lo to $hi", "$lo–$hi 사이 레벨로 입력하세요")
-            }
-            else -> {
-                val lo = oneDecimal(range.start)
-                val hi = oneDecimal(range.endInclusive)
-                tr("Between $lo and $hi kg", "$lo–$hi kg 사이로 입력하세요")
-            }
-        }
+    val fatMass: Double? get() = value(InBodyRow.FAT).takeIf { InBodyRow.FAT !in unknown }
+    val fatPercent: Double? get() = fatMass?.let { it / value(InBodyRow.WEIGHT) * 100.0 }
+    val leanKg: Double? get() = fatMass?.let { value(InBodyRow.WEIGHT) - it }
+
+    /** Katch–McArdle, from lean mass. Shown, not saved: Health Connect would take it for a measurement. */
+    val bmr: Double? get() = leanKg?.let { 370.0 + 21.6 * it }
+
+    val saveLabel: String get() = if (inBody) tr("Save InBody result", "인바디 결과 저장") else tr("Save weigh-in", "체중 저장")
+
+    fun toWeighIn(): WeighIn = if (inBody) {
+        WeighIn(at = Instant.now(), weightKg = value(InBodyRow.WEIGHT), fatPercent = fatPercent, leanKg = leanKg)
+    } else {
+        WeighIn(at = Instant.now(), weightKg = kg)
     }
 
-    /** What only Pawse keeps from this result, or null when neither was given. */
-    fun extra(zone: ZoneId = ZoneId.systemDefault()): InBodyExtra? {
-        fun ok(f: BodyFigure) = figure(f)?.takeIf { figureError(f) == null }
-        val muscle = ok(BodyFigure.MUSCLE)
-        val visceral = ok(BodyFigure.VISCERAL)?.roundToInt()
-        if (muscle == null && visceral == null) return null
-        val date = if (earlier) earlierAt.toLocalDate() else java.time.LocalDate.now(zone)
-        return InBodyExtra(date, muscle, visceral)
-    }
-
-    val filledFigures: Int get() = BodyFigure.entries.count { figure(it) != null && figureError(it) == null }
-    val anyFigureBad: Boolean get() = BodyFigure.entries.any { figureError(it) != null }
-
-    /** A weigh-in in the future can't be true yet. */
-    val timeBad: Boolean get() = earlier && earlierAt.isAfter(LocalDateTime.now())
-
-    val canSave: Boolean get() = weightKg != null && !anyFigureBad && !timeBad && !busy
-
-    val saveLabel: String
-        get() = when {
-            weightKg == null -> tr("Enter a weight", "체중을 입력하세요")
-            anyFigureBad -> tr("Check the figure in red", "빨간색 값을 확인하세요")
-            timeBad -> tr("Pick a time before now", "지금보다 이전 시간을 고르세요")
-            else -> {
-                val kg = oneDecimal(weightKg!!)
-                tr(
-                    "Save $kg kg" + if (filledFigures > 0) " and $filledFigures more" else "",
-                    "$kg kg" + (if (filledFigures > 0) " 외 ${filledFigures}개" else "") + " 저장",
-                )
-            }
-        }
-
-    fun toWeighIn(zone: ZoneId = ZoneId.systemDefault()): WeighIn {
-        fun ok(f: BodyFigure) = figure(f)?.takeIf { figureError(f) == null }
-        return WeighIn(
-            at = if (earlier) earlierAt.atZone(zone).toInstant() else java.time.Instant.now(),
-            weightKg = weightKg!!,
-            fatPercent = ok(BodyFigure.FAT),
-            leanKg = ok(BodyFigure.LEAN),
-            waterKg = ok(BodyFigure.WATER),
-            boneKg = ok(BodyFigure.BONE),
+    /** What only Pawse keeps from this result. */
+    fun extra(): InBodyExtra? = if (!inBody) {
+        null
+    } else {
+        InBodyExtra(
+            date = LocalDate.now(),
+            skeletalMuscleKg = value(InBodyRow.MUSCLE).takeIf { InBodyRow.MUSCLE !in unknown },
+            visceralFat = value(InBodyRow.VISCERAL).roundToInt().takeIf { InBodyRow.VISCERAL !in unknown },
         )
     }
 
     companion object {
         const val MIN_KG = 20.0
         const val MAX_KG = 300.0
-
-        fun parse(text: String): Double? = text.trim().replace(',', '.').toDoubleOrNull()
 
         fun oneDecimal(value: Double): String = String.format(Locale.getDefault(), "%.1f", value)
     }
@@ -163,7 +118,7 @@ data class WeighInUiState(
 class WeighInViewModel @Inject constructor(
     private val writer: BodyWriter,
     private val gateway: HealthConnectGateway,
-    private val inBody: InBodyStore,
+    private val inBodyStore: InBodyStore,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
@@ -173,32 +128,60 @@ class WeighInViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             val recent = writer.recent()
-            // Start from the last weigh-in: most mornings are a tenth or two away from it.
+            val lastKg = recent.firstOrNull()?.weightKg
+            // InBody starts from the last result; a row it didn't know starts as Don't know.
+            val extra = inBodyStore.results.first().lastOrNull()
+            val fat = writer.lastFatPercent()
+            val weight = lastKg ?: InBodyRow.WEIGHT.park
+            val last = buildMap {
+                lastKg?.let { put(InBodyRow.WEIGHT, it) }
+                extra?.skeletalMuscleKg?.let { put(InBodyRow.MUSCLE, it) }
+                fat?.let { put(InBodyRow.FAT, it.second / 100.0 * weight) }
+                extra?.visceralFat?.let { put(InBodyRow.VISCERAL, it.toDouble()) }
+            }
             _state.update { s ->
                 s.copy(
                     recent = recent,
-                    weightText = s.weightText.ifEmpty { recent.firstOrNull()?.let { WeighInUiState.oneDecimal(it.weightKg) }.orEmpty() },
+                    kg = weight,
+                    lastKg = lastKg,
+                    rows = InBodyRow.entries.associateWith { last[it] ?: it.park },
+                    unknown = InBodyRow.entries.filter { it != InBodyRow.WEIGHT && it !in last }.toSet(),
+                    last = last,
+                    lastDate = listOfNotNull(extra?.date, fat?.first).maxOrNull(),
                 )
             }
         }
     }
 
-    fun setWeight(text: String) = _state.update { it.copy(weightText = clean(text), problem = null) }
+    fun setInBody(inBody: Boolean) = _state.update { it.copy(inBody = inBody, problem = null) }
 
-    fun setWeightKg(kg: Double) = setWeight(WeighInUiState.oneDecimal(kg))
+    fun setKg(kg: Double) = _state.update { it.copy(kg = kg.coerceIn(WeighInUiState.MIN_KG, WeighInUiState.MAX_KG), problem = null) }
 
-    fun setEarlier(earlier: Boolean) = _state.update { it.copy(earlier = earlier) }
+    /** The ruler's value for the picked row. A lighter weight pulls fat down with it. */
+    fun setRow(row: InBodyRow, value: Double) = _state.update { s ->
+        val rows = s.rows + (row to value.coerceIn(row.min, s.max(row)))
+        val next = s.copy(rows = rows, problem = null)
+        next.copy(rows = rows + (InBodyRow.FAT to rows.getValue(InBodyRow.FAT).coerceAtMost(next.max(InBodyRow.FAT))))
+    }
 
-    fun setEarlierAt(at: LocalDateTime) = _state.update { it.copy(earlierAt = at) }
+    /** Tapping a row hands it the ruler; tapping a Don't know row brings it back. */
+    fun pick(row: InBodyRow) = _state.update { it.copy(picked = row, unknown = it.unknown - row) }
 
-    fun toggleComposition() = _state.update { it.copy(compositionOpen = !it.compositionOpen) }
-
-    fun setFigure(figure: BodyFigure, text: String) =
-        _state.update { it.copy(figures = it.figures + (figure to clean(text)), problem = null) }
+    fun toggleUnknown(row: InBodyRow) {
+        if (row == InBodyRow.WEIGHT) return
+        _state.update { s ->
+            if (row in s.unknown) {
+                s.copy(unknown = s.unknown - row, picked = row)
+            } else {
+                s.copy(unknown = s.unknown + row, picked = if (s.picked == row) InBodyRow.WEIGHT else s.picked)
+            }
+        }
+    }
 
     /**
      * Reads a photo of the result sheet on this phone, fills in what it finds, and
-     * deletes the photo. Nothing is saved until the user checks the numbers and taps Save.
+     * deletes the photo. A row it couldn't read becomes Don't know. Nothing is saved
+     * until the user checks the numbers and taps Save.
      */
     fun readSheet(photo: Uri, file: File) {
         _state.update { it.copy(reading = true, readNote = null) }
@@ -208,30 +191,33 @@ class WeighInViewModel @Inject constructor(
             val read = lines?.let(InBodySheet::parse).orEmpty()
             _state.update { s ->
                 val weight = read[SheetField.WEIGHT]
-                // Fat as a percent of that weight is arithmetic on two printed numbers, not a guess.
-                val fat = read[SheetField.FAT_PERCENT]
-                    ?: read[SheetField.FAT_MASS]?.let { kg -> (weight ?: s.weightKg)?.let { kg / it * 100.0 } }
-                val figures = listOfNotNull(
-                    fat?.let { BodyFigure.FAT to it },
-                    read[SheetField.MUSCLE]?.let { BodyFigure.MUSCLE to it },
-                    read[SheetField.VISCERAL]?.let { BodyFigure.VISCERAL to it },
-                    read[SheetField.LEAN]?.let { BodyFigure.LEAN to it },
-                    read[SheetField.WATER]?.let { BodyFigure.WATER to it },
-                ).associate { (f, v) -> f to if (f == BodyFigure.VISCERAL) v.roundToInt().toString() else WeighInUiState.oneDecimal(v) }
-                val count = figures.size + if (weight != null) 1 else 0
-                s.copy(
-                    reading = false,
-                    weightText = weight?.let(WeighInUiState::oneDecimal) ?: s.weightText,
-                    figures = s.figures + figures,
-                    readNote = when {
-                        lines == null -> tr("Couldn't read the photo. Try again, or type the numbers in.", "사진을 읽지 못했어요. 다시 찍거나 직접 입력하세요.")
-                        count == 0 -> tr("No InBody numbers found. Try a flat, well-lit photo of the whole sheet.", "인바디 숫자를 찾지 못했어요. 결과지 전체를 평평하고 밝게 찍어 보세요.")
-                        else -> tr(
-                            "$count read from the sheet. Check each one before saving.",
-                            "결과지에서 ${count}개를 읽었어요. 저장하기 전에 하나씩 확인하세요.",
-                        )
-                    },
-                )
+                // Fat mass from a printed percent and weight is arithmetic, not a guess.
+                val fat = read[SheetField.FAT_MASS]
+                    ?: read[SheetField.FAT_PERCENT]?.let { pct -> (weight ?: s.value(InBodyRow.WEIGHT)) * pct / 100.0 }
+                val found = mapOf(
+                    InBodyRow.WEIGHT to weight,
+                    InBodyRow.MUSCLE to read[SheetField.MUSCLE],
+                    InBodyRow.FAT to fat,
+                    InBodyRow.VISCERAL to read[SheetField.VISCERAL],
+                ).filterValues { it != null }.mapValues { it.value!! }
+                if (found.isEmpty()) {
+                    s.copy(
+                        reading = false,
+                        readNote = if (lines == null) {
+                            tr("Couldn't read the photo. Try again, or set the numbers with the ruler.", "사진을 읽지 못했어요. 다시 찍거나 눈금자로 입력하세요.")
+                        } else {
+                            tr("No InBody numbers found. Try a flat, well-lit photo of the whole sheet.", "인바디 숫자를 찾지 못했어요. 결과지 전체를 평평하고 밝게 찍어 보세요.")
+                        },
+                    )
+                } else {
+                    s.copy(
+                        reading = false,
+                        fromSheet = true,
+                        rows = s.rows + found,
+                        unknown = InBodyRow.entries.filter { it != InBodyRow.WEIGHT && it !in found }.toSet(),
+                        picked = InBodyRow.WEIGHT,
+                    )
+                }
             }
         }
     }
@@ -254,7 +240,7 @@ class WeighInViewModel @Inject constructor(
     /** Asks for whichever write grants this weigh-in needs and doesn't have, then saves. */
     fun save() {
         val s = _state.value
-        if (!s.canSave) return
+        if (s.busy) return
         viewModelScope.launch {
             val missing = writer.permissionsFor(s.toWeighIn()) - granted()
             if (missing.isEmpty()) write() else _state.update { it.copy(askFor = missing) }
@@ -301,8 +287,9 @@ class WeighInViewModel @Inject constructor(
 
     private suspend fun write() {
         _state.update { it.copy(busy = true, problem = null) }
-        val ok = writer.write(_state.value.toWeighIn())
-        if (ok) _state.value.extra()?.let { inBody.add(it) }
+        val s = _state.value
+        val ok = writer.write(s.toWeighIn())
+        if (ok) s.extra()?.let { inBodyStore.add(it) }
         _state.update {
             if (ok) {
                 it.copy(busy = false, saved = true)
@@ -313,8 +300,6 @@ class WeighInViewModel @Inject constructor(
     }
 
     private suspend fun granted(): Set<String> = runCatching { gateway.grantedPermissions() }.getOrDefault(emptySet())
-
-    private fun clean(text: String) = text.filter { it.isDigit() || it == '.' || it == ',' }.take(6)
 
     companion object {
         val NOT_ALLOWED: String

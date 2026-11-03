@@ -226,7 +226,8 @@ private fun PawseNavGraph(initialRoute: String?) {
                     navArgument(HomeDestinations.EXPLAIN_ARG) { type = NavType.StringType },
                     navArgument(HomeDestinations.EXPLAIN_BACK_ARG) { type = NavType.IntType; defaultValue = 0 },
                 ),
-                enterTransition = { pushIn },
+                // The look-in: the layer only fades, so the ring's flight lands where the ring is measured.
+                enterTransition = { fadeIn(tween(200, easing = EaseOut)) },
             ) { backStackEntry ->
                 ExplainScreen(
                     type = HomeDestinations.scoreTypeOf(backStackEntry.arguments?.getString(HomeDestinations.EXPLAIN_ARG)),

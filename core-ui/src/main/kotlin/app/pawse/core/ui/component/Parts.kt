@@ -92,6 +92,12 @@ data class WeekDay(
  */
 @Composable
 fun WeekStrip(days: List<WeekDay>, selected: Int, onPick: (Int) -> Unit, modifier: Modifier = Modifier) {
+    // Before the week loads there are no tiles to divide the width by: an empty
+    // strip would size each tile at infinity and the highlight's offset at NaN.
+    if (days.isEmpty()) {
+        Spacer(modifier.fillMaxWidth().height(64.dp))
+        return
+    }
     val raised = MaterialTheme.colorScheme.surfaceContainerHigh
     val faint = PawseTheme.semantics.faint
     val reduce = LocalReduceMotion.current
