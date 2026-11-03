@@ -117,12 +117,25 @@ class PawseModel @Inject constructor(
                 prefs.turnOn(Engine.NANO, today)
                 true
             }
-            llamaRuns() && enoughMemory() -> {
+            canRunLlama -> {
                 prefs.turnOn(Engine.LLAMA, today.takeIf { ModelFile.done(context).exists() })
                 true
             }
             else -> false
         }
+    }
+
+    /** Whether this phone can run LFM3 through llama.cpp at all, Gemini Nano or not. */
+    val canRunLlama: Boolean by lazy { llamaRuns() && enoughMemory() }
+
+    /**
+     * LFM3 instead of Gemini Nano, for people who would rather have it. It needs its
+     * download, and summaries start again the morning after that finishes.
+     */
+    suspend fun preferLlama(): Boolean {
+        if (!canRunLlama) return false
+        prefs.turnOn(Engine.LLAMA, LocalDate.now().takeIf { ModelFile.done(context).exists() })
+        return true
     }
 
     /**

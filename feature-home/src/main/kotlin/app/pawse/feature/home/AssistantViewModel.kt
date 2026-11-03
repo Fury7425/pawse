@@ -45,8 +45,11 @@ data class AssistantUi(
     }
 }
 
-/** The switch in settings and what sits under it. [unsupported]: the last turn-on was refused. */
-data class ModelSettings(val state: ModelState, val dropped: Int, val unsupported: Boolean, val room: Boolean)
+/**
+ * The switch in settings and what sits under it. [unsupported]: the last turn-on was
+ * refused. [canRunLlama]: LFM3 can stand in for Gemini Nano on this phone.
+ */
+data class ModelSettings(val state: ModelState, val dropped: Int, val unsupported: Boolean, val room: Boolean, val canRunLlama: Boolean)
 
 /**
  * Its own ViewModel so Scores and the settings sheet each hook the model in with one
@@ -101,8 +104,8 @@ class AssistantViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AssistantUi.NONE)
 
     val settings: StateFlow<ModelSettings> = combine(model.state, model.dropped, refused) { s, dropped, no ->
-        ModelSettings(s, dropped, no, model.hasRoom())
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), ModelSettings(ModelState.Off, 0, false, true))
+        ModelSettings(s, dropped, no, model.hasRoom(), model.canRunLlama)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), ModelSettings(ModelState.Off, 0, false, true, false))
 
     fun setModel(on: Boolean) {
         viewModelScope.launch {
@@ -111,6 +114,11 @@ class AssistantViewModel @Inject constructor(
     }
 
     fun download(mobileData: Boolean) = model.download(mobileData)
+
+    /** Gemini Nano gives way to LFM3, whose download starts now. */
+    fun useLlama() {
+        viewModelScope.launch { if (model.preferLlama()) model.download(mobileData = false) }
+    }
 
     fun summaryRose() {
         val date = ui.value.summary?.date ?: return
