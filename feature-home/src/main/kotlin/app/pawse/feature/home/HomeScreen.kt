@@ -128,6 +128,7 @@ import app.pawse.core.ui.component.WeekStrip
 import app.pawse.core.ui.component.aura
 import app.pawse.core.ui.component.pressable
 import app.pawse.core.ui.component.rememberHaptic
+import app.pawse.core.ui.theme.PawseFontFamily
 import app.pawse.core.ui.theme.PawseTheme
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.scoring.activity.MovingReading
@@ -1226,7 +1227,7 @@ private fun HeartChart(hours: List<HeartHour>, wakeHour: Float, modifier: Modifi
     val faint = s.faint
     val grey = MaterialTheme.colorScheme.onSurfaceVariant
     val measurer = rememberTextMeasurer()
-    val axis = TextStyle(fontSize = 11.sp, color = faint)
+    val axis = TextStyle(fontFamily = PawseFontFamily, fontSize = 11.sp, color = faint)
     val asleep = tr("Asleep", "수면")
     val nowHour = LocalTime.now().let { it.hour + it.minute / 60f }
     Canvas(
@@ -1383,8 +1384,8 @@ private fun YourDay(energy: EnergyForecast) {
     val stroke = MaterialTheme.colorScheme.outline
     val card = MaterialTheme.colorScheme.surfaceContainer
     val measurer = rememberTextMeasurer()
-    val label = TextStyle(fontSize = 12.sp, color = grey, textAlign = TextAlign.Center)
-    val axis = TextStyle(fontSize = 12.sp, color = s.faint)
+    val label = TextStyle(fontFamily = PawseFontFamily, fontSize = 12.sp, color = grey, textAlign = TextAlign.Center)
+    val axis = TextStyle(fontFamily = PawseFontFamily, fontSize = 12.sp, color = s.faint)
     val now = LocalTime.now().let { it.hour * 60 + it.minute }
     val words = Triple(tr("Focus", "집중"), tr("Dip", "처짐"), tr("Bed", "취침"))
     PawseCard {

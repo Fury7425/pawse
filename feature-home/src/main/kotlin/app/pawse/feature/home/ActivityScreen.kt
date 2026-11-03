@@ -58,6 +58,7 @@ import app.pawse.core.ui.component.Segmented
 import app.pawse.core.ui.component.aura
 import app.pawse.core.ui.component.rememberSwap
 import app.pawse.core.ui.component.swapIn
+import app.pawse.core.ui.theme.PawseFontFamily
 import app.pawse.core.ui.theme.PawseTheme
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.scoring.activity.MovingReading
@@ -339,7 +340,7 @@ private fun ThroughChart(day: ThroughDay, nowFrac: Float, picked: Int?, onPick: 
     val grey = MaterialTheme.colorScheme.onSurfaceVariant
     val bg = MaterialTheme.colorScheme.background
     val measurer = rememberTextMeasurer()
-    val axis = TextStyle(fontSize = 11.sp, color = s.faint)
+    val axis = TextStyle(fontFamily = PawseFontFamily, fontSize = 11.sp, color = s.faint)
     val nowHour = day.perHour.lastIndex + 1
     // Hour marks along the line; the last one is now, not the end of this hour.
     fun mark(i: Int): Float = if (i == day.today.lastIndex) nowFrac else i.toFloat()
@@ -408,7 +409,7 @@ private fun HeartHours(hours: List<HeartHour>, wakeHour: Int, picked: Int?, onPi
     val on = MaterialTheme.colorScheme.onSurface
     val grey = MaterialTheme.colorScheme.onSurfaceVariant
     val measurer = rememberTextMeasurer()
-    val axis = TextStyle(fontSize = 11.sp, color = s.faint)
+    val axis = TextStyle(fontFamily = PawseFontFamily, fontSize = 11.sp, color = s.faint)
     val asleep = tr("Asleep", "수면")
     Canvas(
         Modifier

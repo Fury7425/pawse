@@ -63,6 +63,7 @@ import app.pawse.core.ui.component.SplitRow
 import app.pawse.core.ui.component.StatusBarScrim
 import app.pawse.core.ui.component.aura
 import app.pawse.core.ui.component.pressable
+import app.pawse.core.ui.theme.PawseFontFamily
 import app.pawse.core.ui.theme.PawseTheme
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.scoring.body.BodyUsual
@@ -299,7 +300,7 @@ private fun WeightChart(trend: List<TrendPoint>, today: LocalDate, range: BodyRa
     val hair = MaterialTheme.colorScheme.outlineVariant
     val grey = MaterialTheme.colorScheme.onSurfaceVariant
     val measurer = rememberTextMeasurer()
-    val label = TextStyle(fontSize = 12.sp, color = s.faint)
+    val label = TextStyle(fontFamily = PawseFontFamily, fontSize = 12.sp, color = s.faint)
     val values = shown.flatMap { listOf(it.kg, it.trend) } + listOfNotNull(goal?.takeIf { g -> abs(g - shown.last().trend) < 6.0 })
     val lo = values.min() - 0.4
     val hi = values.max() + 0.4
