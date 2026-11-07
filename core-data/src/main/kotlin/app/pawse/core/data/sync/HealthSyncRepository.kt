@@ -121,6 +121,11 @@ class HealthSyncRepository @Inject constructor(
             var deleted = 0
             var fullResync = false
 
+            // History granted since the last full read: the tokens only follow changes,
+            // so drop them and read the whole window again, months back this time.
+            val history = HealthPermissions.READ_HISTORY in granted
+            if (history && !prefs.readWithHistory()) prefs.clearAllChangeTokens()
+
             // A type without its read grant is skipped rather than attempted: asking
             // for its change token throws, and one declined scale permission must not
             // fail the night's sync.
@@ -148,6 +153,7 @@ class HealthSyncRepository @Inject constructor(
             }
 
             prefs.setLastSync(System.currentTimeMillis())
+            prefs.setReadWithHistory(history)
             SyncResult.Success(upserted, deleted, fullResync)
         }.getOrElse {
             if (it is CancellationException) throw it
