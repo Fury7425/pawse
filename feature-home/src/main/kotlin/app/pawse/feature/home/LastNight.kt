@@ -40,6 +40,7 @@ import android.content.pm.PackageManager
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -219,6 +220,9 @@ private fun NightPage(
             value = ScoreCopy.minuteOfDay(bed.roundToInt()),
             sub = tr("to ${axis.clockAt(end)}", "~ ${axis.clockAt(end)}"),
             modifier = Modifier.weight(1f),
+            usual = snapshot.usual(NightFigure.TIMING::of)?.let { b ->
+                snapshot.wakeUsual()?.let { w -> tr("Usually ", "평소 ") + ScoreCopy.minuteOfDay(b.mid.roundToInt() % 1440) + "–" + ScoreCopy.minuteOfDay(w.mid.roundToInt() % 1440) }
+            },
             onClick = { onOpen(NightFigure.TIMING) },
         )
         MiniCard(
@@ -226,12 +230,14 @@ private fun NightPage(
             value = night.latencyMinutes?.let(::dur) ?: "—",
             sub = tr("after lights out", "불 끈 뒤"),
             modifier = Modifier.weight(1f),
+            usual = snapshot.usual { it.rec?.sleep?.latencyMinutes }?.let { usualMinutes(it) },
         )
         MiniCard(
             label = tr("Awake", "깬 시간"),
             value = (sleep?.wasoMinutes ?: night.wasoMinutes)?.let(::dur) ?: "—",
             sub = wakeUps(night.awakenings),
             modifier = Modifier.weight(1f),
+            usual = snapshot.usual { it.rec?.sleep?.wasoMinutes }?.let { usualMinutes(it) },
             onClick = { onOpen(NightFigure.EFFICIENCY) },
         )
     }
@@ -280,7 +286,19 @@ private fun NightPage(
     Ticks(axis)
 
     if (night.hasStages) {
-        Row(Modifier.padding(top = 16.dp).height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        // The night's share of each stage, in the chart's lane order, picked stage at full strength.
+        val st = PawseTheme.semantics
+        Row(Modifier.padding(top = 12.dp).fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            listOf(
+                NightStage.AWAKE to ((night.inBedMinutes - night.asleepMinutes) to st.stageAwake),
+                NightStage.REM to ((night.remMinutes ?: 0.0) to st.stageRem),
+                NightStage.LIGHT to ((night.lightMinutes ?: 0.0) to st.stageLight),
+                NightStage.DEEP to ((night.deepMinutes ?: 0.0) to st.stageDeep),
+            ).filter { it.second.first > 0.0 }.forEach { (s, v) ->
+                Box(Modifier.weight(v.first.toFloat()).fillMaxHeight().background(v.second.copy(alpha = if (stage == null || stage == s) 1f else 0.35f)))
+            }
+        }
+        Row(Modifier.padding(top = 12.dp).height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf(NightStage.AWAKE, NightStage.REM, NightStage.LIGHT, NightStage.DEEP).forEach { s ->
                 StageChip(s, night, picked = stage == s, modifier = Modifier.weight(1f)) { onStage(if (stage == s) null else s) }
             }
@@ -311,7 +329,9 @@ private fun NightPage(
 
     Column(Modifier.padding(top = 20.dp)) {
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        vitalsOf(rec, detail, axis).forEach { VitalRow(it, axis, cursor, onCursor, onOpen) }
+        vitalsOf(rec, detail, axis).forEach { v ->
+            VitalRow(v, snapshot.usual(v.figure::of)?.let { usualSpread(v.figure, it) }, axis, cursor, onCursor, onOpen)
+        }
     }
 
     FedInto(row, rec, latest, onOpen)
@@ -396,7 +416,7 @@ private fun AsleepCard(asleep: Double, need: Double, debtHours: Double?, onClick
 }
 
 @Composable
-private fun MiniCard(label: String, value: String, sub: String, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
+private fun MiniCard(label: String, value: String, sub: String, modifier: Modifier = Modifier, usual: String? = null, onClick: (() -> Unit)? = null) {
     val grey = MaterialTheme.colorScheme.onSurfaceVariant
     Column(
         modifier
@@ -411,6 +431,7 @@ private fun MiniCard(label: String, value: String, sub: String, modifier: Modifi
         }
         Text(value, style = Figure15, maxLines = 1, modifier = Modifier.padding(top = 2.dp))
         Text(sub, style = PawseType.Label, color = grey)
+        usual?.let { Text(it, style = PawseType.Micro, color = PawseTheme.semantics.faint) }
     }
 }
 
@@ -668,7 +689,7 @@ private fun vitalsOf(rec: NightRecord, detail: NightDetail?, axis: NightAxis): L
 }
 
 @Composable
-private fun VitalRow(v: Vital, axis: NightAxis, cursor: Float?, onCursor: (Float?) -> Unit, onOpen: (NightFigure) -> Unit) {
+private fun VitalRow(v: Vital, usual: String?, axis: NightAxis, cursor: Float?, onCursor: (Float?) -> Unit, onOpen: (NightFigure) -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val grey = scheme.onSurfaceVariant
     val semantics = PawseTheme.semantics
@@ -696,6 +717,7 @@ private fun VitalRow(v: Vital, axis: NightAxis, cursor: Float?, onCursor: (Float
                     style = PawseType.Label,
                     color = grey,
                 )
+                if (on && usual != null) Text(usual, style = PawseType.Micro, color = semantics.faint)
             }
             Spacer(Modifier.width(12.dp))
             Text(shown, style = PawseType.MetricValue, color = if (on) scheme.onSurface else grey)
@@ -1220,6 +1242,21 @@ internal fun ScoringSnapshot.usual(get: (NightRow) -> Double?): Usual? {
     // v2.5: a usual needs at least 4 nights.
     if (xs.size < 4) return null
     return Usual(Stats.median(xs)!!, Stats.robustSpread(xs)!!, xs.size)
+}
+
+/** "Usually 3–12 min", the design's range for a mini card. */
+private fun usualMinutes(u: Usual): String =
+    tr("Usually ", "평소 ") + "${u.lo.coerceAtLeast(0.0).roundToInt()}–" + dur(u.hi.coerceAtLeast(0.0))
+
+/** "Usually 52 ± 6 ms · 43 nights", under a vital's name. */
+private fun usualSpread(figure: NightFigure, u: Usual): String {
+    val text = figure.text(u.mid)
+    val unit = text.substringAfter(' ', "").let { if (text.endsWith("%")) "%" else if (it.isEmpty()) "" else " $it" }
+    val sd = when (figure) {
+        NightFigure.HRV, NightFigure.SPO2 -> maxOf(1, u.sd.roundToInt()).toString()
+        else -> String.format(Locale.getDefault(), "%.1f", u.sd)
+    }
+    return tr("Usually ${bare(text)} ± $sd$unit · ${u.nights} nights", "평소 ${bare(text)} ± $sd$unit · ${u.nights}일 밤")
 }
 
 private fun ScoringSnapshot.wakeUsual(): Usual? =
