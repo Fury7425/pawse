@@ -167,7 +167,7 @@ internal fun DayRail(
                 .semantics { contentDescription = tr("Days, a week at a time. Drag sideways for other weeks.", "날짜, 한 주씩. 옆으로 끌어 다른 주를 봐요.") },
         ) { w ->
             val start = firstWeek.plusDays(7L * w)
-            val lmax = maxOf(17.5, (0..6).maxOf { byDate[start.plusDays(it.toLong())]?.load?.points ?: 0.0 })
+            val lmax = weekPeak(byDate, start)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 for (i in 0..6) {
                     val d = start.plusDays(i.toLong())
@@ -331,26 +331,43 @@ private fun RailChip(
             style = PawseType.Body.copy(fontSize = 15.sp, lineHeight = 20.sp, textDecoration = if (today) TextDecoration.Underline else null),
             color = if (on) MaterialTheme.colorScheme.onSurface else grey,
         )
-        if (day != null) {
-            val dot = day.body?.let { bodyColor(it.band, day.illness.level) }
-            val bar = when (type) {
-                ScoreType.SLEEP -> day.sleep?.lastNightMinutes?.let { it / 600.0 }
-                ScoreType.LOAD -> day.load?.points?.let { maxOf(1.5 / 12, it / loadMax) }
-                ScoreType.BODY -> null
-            }?.coerceIn(0.0, 1.0)?.toFloat()
-            Canvas(Modifier.padding(top = 2.dp).size(12.dp)) {
-                when {
-                    type == ScoreType.BODY && dot != null -> drawCircle(dot, 3.dp.toPx())
-                    bar != null -> {
-                        val h = bar * size.height
-                        drawRoundRect(grey, Offset(4.5.dp.toPx(), size.height - h), Size(3.dp.toPx(), h), CornerRadius(1.5.dp.toPx()))
-                    }
-                    else -> drawCircle(grey, 2.75.dp.toPx(), style = Stroke(1.5.dp.toPx()))
-                }
+        if (day != null) DayMark(day, type, loadMax, Modifier.padding(top = 2.dp))
+    }
+}
+
+/**
+ * A day's mark for the open page, shared by the rail and the calendar: Body's band
+ * dot (a hollow ring with no reading), Sleep a bar to 10 hours, Load a bar against
+ * [loadMax], the week's peak.
+ */
+@Composable
+internal fun DayMark(day: app.pawse.scoring.model.DayReport, type: ScoreType, loadMax: Double, modifier: Modifier = Modifier) {
+    val grey = MaterialTheme.colorScheme.onSurfaceVariant
+    val dot = day.body?.let { bodyColor(it.band, day.illness.level) }
+    val bar = when (type) {
+        ScoreType.SLEEP -> day.sleep.lastNightMinutes?.let { it / 600.0 }
+        ScoreType.LOAD -> maxOf(1.5 / 12, day.load.points / loadMax)
+        ScoreType.BODY -> null
+    }?.coerceIn(0.0, 1.0)?.toFloat()
+    Canvas(modifier.size(12.dp)) {
+        when {
+            type == ScoreType.BODY && dot != null -> drawCircle(dot, 3.dp.toPx())
+            bar != null -> {
+                val h = bar * size.height
+                drawRoundRect(grey, Offset(4.5.dp.toPx(), size.height - h), Size(3.dp.toPx(), h), CornerRadius(1.5.dp.toPx()))
             }
+            else -> drawCircle(grey, 2.75.dp.toPx(), style = Stroke(1.5.dp.toPx()))
         }
     }
 }
+
+/** Each Sunday-to-Saturday week's peak load, at least 17.5, so a Load bar reads against its own week. */
+internal fun weekPeak(byDate: Map<LocalDate, app.pawse.scoring.model.DayReport>, d: LocalDate): Double {
+    val start = sundayOf(d)
+    return maxOf(17.5, (0..6).maxOf { byDate[start.plusDays(it.toLong())]?.load?.points ?: 0.0 })
+}
+
+internal fun sundayOf(d: LocalDate): LocalDate = d.minusDays((d.dayOfWeek.value % 7).toLong())
 
 @Composable
 private fun StepArrow(glyph: String, label: String, enabled: Boolean, onClick: () -> Unit) {

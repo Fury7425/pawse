@@ -274,6 +274,16 @@ fun ExplainScreen(
                 daySheet = null
             },
             onDismiss = { daySheet = null },
+            pin = pin,
+            // Swap: look at the pinned day, compare with the one you were on.
+            onSwap = {
+                pin?.let { p ->
+                    pin = back
+                    back = p
+                }
+                daySheet = null
+            },
+            onUnpin = { pin = null },
         )
     }
 }
