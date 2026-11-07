@@ -90,6 +90,8 @@ import app.pawse.core.ui.component.PrimaryButton
 import app.pawse.core.ui.component.SecondaryButton
 import app.pawse.core.ui.component.cardSurface
 import app.pawse.core.ui.component.lift
+import app.pawse.core.ui.component.rememberSwap
+import app.pawse.core.ui.component.swapIn
 import app.pawse.core.ui.component.pressable
 import app.pawse.core.ui.component.rememberHaptic
 import app.pawse.core.ui.theme.PawseTheme
@@ -270,6 +272,7 @@ private fun Logger(viewModel: ScannerViewModel, onManualEntry: () -> Unit, onLog
     val query by viewModel.query.collectAsStateWithLifecycle()
     val plate by viewModel.plate.collectAsStateWithLifecycle()
     val meal by viewModel.meal.collectAsStateWithLifecycle()
+    val today by viewModel.todayKcal.collectAsStateWithLifecycle()
     val s = PawseTheme.semantics
     Column(Modifier.fillMaxWidth()) {
         PawseField(value = query, onValueChange = viewModel::search, placeholder = tr("Search foods", "음식 검색"), height = 48.dp, textStyle = PawseType.Body)
@@ -324,12 +327,16 @@ private fun Logger(viewModel: ScannerViewModel, onManualEntry: () -> Unit, onLog
                     .semantics { contentDescription = tr("Meal: ${FoodCopy.meal(meal)}. Tap to change.", "식사: ${FoodCopy.meal(meal)}. 눌러서 바꾸기.") },
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(FoodCopy.meal(meal), style = PawseType.Micro, color = s.faint)
+                    val now = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+                    Text("${FoodCopy.meal(meal)} · $now", style = PawseType.Micro, color = s.faint)
                     Glyph(Glyphs.ChevronDown, size = 12.dp, color = s.faint)
                 }
+                // As on the canvas: what to do while empty, then the day's total once these are logged.
+                val after = String.format(java.util.Locale.getDefault(), "%,d", ((today ?: 0.0) + total).roundToInt())
                 Text(
-                    if (plate.isEmpty()) tr("Plate is empty", "아직 담은 게 없어요") else tr("${plate.size} on the plate", "${plate.size}개 담음"),
+                    if (plate.isEmpty()) tr("Pick or scan a food", "음식을 고르거나 스캔하세요") else tr("Day after: $after", "기록 후 하루: $after"),
                     style = PawseType.BodyStrong,
+                    modifier = Modifier.swapIn(rememberSwap(plate.isEmpty())),
                 )
             }
             PrimaryButton(
@@ -350,27 +357,32 @@ private fun Modifier.glass(shape: Shape): Modifier = this
     .background(Glass, shape)
     .border(1.dp, GlassLine, shape)
 
-/** Barcode or Label, as a glass pill whose light thumb slides between them. */
+/**
+ * Barcode or Label: the design's glassy segmented switch, 208 dp wide and 40 tall,
+ * a translucent thumb sliding 240 ms in-out under light labels.
+ */
 @Composable
 private fun ModeToggle(mode: ScanMode, onModeChange: (ScanMode) -> Unit) {
-    val width = 92.dp
+    val width = 100.dp
     val offset by animateDpAsState(if (mode == ScanMode.BARCODE) 0.dp else width, tween(240, easing = EaseInOut), label = "mode")
     Box(
         Modifier
-            .glass(RoundedCornerShape(26.dp))
-            .padding(6.dp),
+            .lift(RoundedCornerShape(12.dp))
+            .background(Glass, RoundedCornerShape(12.dp))
+            .padding(4.dp),
     ) {
         Box(
             Modifier
                 .offset(x = offset)
-                .size(width = width, height = 40.dp)
-                .background(Ink, RoundedCornerShape(20.dp)),
+                .size(width = width, height = 32.dp)
+                .background(Color.White.copy(alpha = 0.14f), RoundedCornerShape(8.dp)),
         )
         Row {
             listOf(ScanMode.BARCODE to tr("Barcode", "바코드"), ScanMode.LABEL to tr("Label", "라벨")).forEach { (option, label) ->
+                val on = mode == option
                 Box(
                     Modifier
-                        .size(width = width, height = 40.dp)
+                        .size(width = width, height = 32.dp)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -378,7 +390,11 @@ private fun ModeToggle(mode: ScanMode, onModeChange: (ScanMode) -> Unit) {
                         ) { onModeChange(option) },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(label, style = PawseType.BodyStrong, color = if (mode == option) Night else Ink)
+                    Text(
+                        label,
+                        style = if (on) PawseType.Label.copy(fontWeight = PawseType.BodyStrong.fontWeight) else PawseType.Label,
+                        color = if (on) Color(0xFFF3F4F6) else Color(0xFFC9CED4),
+                    )
                 }
             }
         }
