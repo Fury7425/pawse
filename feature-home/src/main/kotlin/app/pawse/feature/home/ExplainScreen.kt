@@ -608,6 +608,7 @@ private fun heroFace(type: ScoreType, day: DayReport?, showNumbers: Boolean): He
                     else -> tr("Longer than your need", "필요량보다 김")
                 },
                 sentence = when {
+                    slept == null && day.date == java.time.LocalDate.now() -> tr("Waiting for last night from your watch.", "워치에서 지난밤 기록을 기다리는 중이에요.")
                     slept == null -> tr("No night came in from your watch.", "워치에서 들어온 밤 기록이 없어요.")
                     abs(gap!!) < 1.0 -> tr("You slept ${ScoreCopy.formatMinutes(slept)}, what you needed.", "${ScoreCopy.formatMinutes(slept)} 잤어요. 필요한 만큼이에요.")
                     gap > 0 -> tr("You slept ${ScoreCopy.formatMinutes(slept)}, ${ScoreCopy.formatMinutes(gap)} short of your ${ScoreCopy.formatMinutes(need)} need.", "${ScoreCopy.formatMinutes(slept)} 잤어요. 필요한 ${ScoreCopy.formatMinutes(need)}보다 ${ScoreCopy.formatMinutes(gap)} 부족해요.")

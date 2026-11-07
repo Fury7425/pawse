@@ -203,8 +203,16 @@ private fun NightPage(
     val end = night?.endEpochMs
     val bed = night?.bedtimeMinutes
     if (rec == null || night == null || start == null || end == null || bed == null || end <= start) {
+        // States board: today's night may simply not have synced yet. Say what it waits for
+        // and when Pawse last looked; nothing pulses.
+        val waiting = row.date == java.time.LocalDate.now() && snapshot.lastSyncEpochMs > 0
         Note(
-            tr("No night recorded: nothing came in from your watch that night.", "기록된 밤이 없어요. 그날 밤 시계에서 들어온 기록이 없어요."),
+            if (waiting) {
+                val at = ScoreCopy.clock(snapshot.lastSyncEpochMs)
+                tr("Waiting for last night from your watch. Last read $at.", "워치에서 지난밤 기록을 기다리는 중이에요. 마지막 확인 $at.")
+            } else {
+                tr("No night recorded: nothing came in from your watch that night.", "기록된 밤이 없어요. 그날 밤 시계에서 들어온 기록이 없어요.")
+            },
             Modifier.padding(top = 12.dp),
         )
         return

@@ -56,6 +56,7 @@ import app.pawse.core.ui.component.EaseOut
 import app.pawse.core.ui.component.Glyph
 import app.pawse.core.ui.component.Glyphs
 import app.pawse.core.ui.component.KeySwatch
+import app.pawse.core.ui.component.PawseCard
 import app.pawse.core.ui.component.RevealEnter
 import app.pawse.core.ui.component.RevealExit
 import app.pawse.core.ui.component.Segmented
@@ -173,7 +174,11 @@ private fun DayFigure(type: ScoreType, day: DayReport?, today: Boolean) {
         // The design's What moved it: each signal's pull in SD, then the sum and the shares.
         if (body != null) WhatMoved(body) else {
             day?.let { ScoreCopy.bodyStatus(it.bodyStatus, it.validNights, ScoringConfig.DEFAULT.body.minValidNights) }?.takeIf { it.isNotEmpty() }?.let {
-                Text(it, style = PawseType.Label, color = grey, modifier = Modifier.padding(top = 32.dp))
+                // States board, first week: a "Why no score" card instead of an empty breakdown.
+                PawseCard(Modifier.padding(top = 32.dp)) {
+                    Text(tr("Why no score", "점수가 없는 이유"), style = PawseType.BodyStrong)
+                    Text(it, style = PawseType.Label, color = grey, modifier = Modifier.padding(top = 4.dp))
+                }
             }
         }
         return
