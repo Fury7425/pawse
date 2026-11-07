@@ -144,6 +144,7 @@ object Notes {
             .setOnlyAlertOnce(true)
             .build()
         runCatching { NotificationManagerCompat.from(context).notify(id, notification) }
+            .onSuccess { NotificationSettings.record(context, title, text) }
         prefs.edit { putBoolean(onceKey, true) }
     }
 }
@@ -234,6 +235,7 @@ object WeeklyNotification {
             .build()
 
         runCatching { NotificationManagerCompat.from(context).notify(ID, notification) }
+            .onSuccess { NotificationSettings.record(context, tr("Your week", "이번 주 요약"), text) }
         prefs.edit { putString("last_weekly", today.toString()) }
     }
 }

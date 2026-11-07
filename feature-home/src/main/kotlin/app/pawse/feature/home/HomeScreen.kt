@@ -252,6 +252,7 @@ fun HomeScreen(
                 cardOrder = cardOrder,
                 hiddenCards = hiddenCards,
                 hiddenToday = hiddenToday,
+                recent = remember { viewModel.recentNotes() },
             ),
             actions = ProfileActions(
                 onShowNumbers = viewModel::setShowNumbers,

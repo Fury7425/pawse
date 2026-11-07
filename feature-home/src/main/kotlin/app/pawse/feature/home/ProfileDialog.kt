@@ -76,6 +76,8 @@ class ProfileState(
     val hiddenCards: Set<ScoresCard>,
     /** The rings are swapped for one line until tomorrow morning. */
     val hiddenToday: Boolean = false,
+    /** What was sent in the last 30 days, newest first. */
+    val recent: List<app.pawse.core.data.profile.SentNote> = emptyList(),
 )
 
 class ProfileActions(
@@ -105,7 +107,7 @@ fun ProfileDialog(state: ProfileState, actions: ProfileActions, onDismiss: () ->
         Column(Modifier.verticalScroll(rememberScrollState())) {
             when (page) {
                 ProfilePage.MAIN -> Main(state, actions, onDismiss, onOpen = { page = it }, onOpenCalc = onOpenCalc)
-                ProfilePage.NOTIFICATIONS -> Notifications(state.notifications, actions.onNotify, onBack = { page = ProfilePage.MAIN })
+                ProfilePage.NOTIFICATIONS -> Notifications(state.notifications, actions.onNotify, onBack = { page = ProfilePage.MAIN }, recent = state.recent)
                 ProfilePage.CARDS -> CardOrder(state.cardOrder, state.hiddenCards, actions, onBack = { page = ProfilePage.MAIN })
             }
         }
@@ -260,7 +262,7 @@ private fun PageHead(title: String, sub: String, onBack: () -> Unit) {
  * overnight heart rate alert passes them.
  */
 @Composable
-private fun Notifications(state: Map<NotifyKind, Boolean>, onNotify: (NotifyKind, Boolean) -> Unit, onBack: () -> Unit) {
+private fun Notifications(state: Map<NotifyKind, Boolean>, onNotify: (NotifyKind, Boolean) -> Unit, onBack: () -> Unit, recent: List<app.pawse.core.data.profile.SentNote> = emptyList()) {
     val context = LocalContext.current
     var pending by remember { mutableStateOf<NotifyKind?>(null) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -329,6 +331,29 @@ private fun Notifications(state: Map<NotifyKind, Boolean>, onNotify: (NotifyKind
             .background(PawseTheme.semantics.baselineOuter, RoundedCornerShape(14.dp))
             .padding(horizontal = 14.dp, vertical = 12.dp),
     )
+    // Recent: what was sent, so a swiped-away note can be read again. No badge, no count.
+    if (recent.isNotEmpty()) {
+        Text(tr("Recent", "최근"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 20.dp))
+        recent.forEach { n ->
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(top = 12.dp))
+            Row(Modifier.padding(top = 12.dp)) {
+                Text(n.title, style = PawseType.BodyStrong, modifier = Modifier.weight(1f))
+                Text(
+                    java.time.Instant.ofEpochMilli(n.atEpochMs).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+                        .format(DateTimeFormatter.ofPattern(tr("EEE d MMM", "M월 d일 (E)"), Locale.getDefault())),
+                    style = PawseType.Micro,
+                    color = PawseTheme.semantics.faint,
+                )
+            }
+            Text(n.text, style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
+        }
+        Text(
+            tr("Kept on this phone for 30 days. Nothing here has a badge or a count.", "이 휴대폰에 30일 동안 보관해요. 배지나 개수는 없어요."),
+            style = PawseType.Micro,
+            color = PawseTheme.semantics.faint,
+            modifier = Modifier.padding(top = 12.dp),
+        )
+    }
 }
 
 /**

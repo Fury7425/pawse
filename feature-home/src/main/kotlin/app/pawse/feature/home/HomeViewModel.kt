@@ -85,6 +85,9 @@ class HomeViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), false)
     val notifications: StateFlow<Map<NotifyKind, Boolean>> = notificationSettings.state
 
+    /** Notes sent in the last 30 days, for Profile › Notifications. */
+    fun recentNotes() = notificationSettings.recent()
+
     fun setReduceMotion(on: Boolean) {
         viewModelScope.launch { profilePreferences.setReduceMotion(on) }
     }
