@@ -361,22 +361,22 @@ private fun ScorePage(
                 modifier = pad.lookIn(look, 3),
             )
         }
+        // Body's why, week, overnight pattern and effects come before how it was worked out, as on the canvas.
+        if (type == ScoreType.BODY && day?.body != null) {
+            item {
+                Column(pad.padding(top = 32.dp).lookIn(look, 4)) {
+                    BodyCards(day, snapshot.insights)
+                }
+            }
+        }
         if (day != null) {
             item {
                 Combiner(
                     combiner = combinerOf(type, day),
                     mathOpen = mathOpen,
                     onToggleMath = { mathOpen = !mathOpen },
-                    modifier = pad.padding(top = 28.dp).lookIn(look, 4),
+                    modifier = pad.padding(top = 32.dp).lookIn(look, 4),
                 )
-            }
-        }
-        // Body's reasons, week, overnight pattern and insights sit under the combiner, as on the board.
-        if (type == ScoreType.BODY && day?.body != null) {
-            item {
-                Column(pad.padding(top = 28.dp).lookIn(look, 4), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    BodyCards(day, snapshot.insights)
-                }
             }
         }
 
@@ -770,71 +770,89 @@ private fun Combiner(
     }
 }
 
+/** A card's small head: the label on the left, an optional word or figure on the right. */
+@Composable
+private fun CardHead(label: String, aside: String? = null, asideColor: Color = MaterialTheme.colorScheme.onSurface) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+        aside?.let { Text(it, style = PawseType.BodyStrong, color = asideColor) }
+    }
+}
+
+@Composable
+private fun MicroLine(k: String, v: String) {
+    Row(Modifier.padding(top = 8.dp)) {
+        Text(k, style = PawseType.Micro, color = PawseTheme.semantics.faint, modifier = Modifier.weight(1f))
+        Text(v, style = PawseType.Micro, color = MaterialTheme.colorScheme.onSurface, textAlign = TextAlign.End)
+    }
+}
+
+/** Body's cards under Over time, in the design's order: why, the week, the overnight pattern, what moves it. */
 @Composable
 private fun BodyCards(today: DayReport, insights: List<Insight>) {
     val body = today.body ?: return
-    if (body.reasons.isNotEmpty()) {
-        PawseCard {
-            SectionTitle(tr("Top reasons", "주요 이유"))
-            Text(ScoreCopy.reasons(body.reasons), style = PawseType.Body)
-            Spacer(Modifier.height(8.dp))
-            Note(
-                ScoreCopy.bandMeaning(body.band) + tr(
-                    " Body ${body.score} is roughly “better than ${body.score}% of your normal days”.",
-                    " 컨디션 ${body.score}점은 대략 ‘평소 날의 ${body.score}%보다 좋음’이라는 뜻이에요.",
-                ),
-            )
-        }
+    val faint = PawseTheme.semantics.faint
+    // Why NN: each signal against your normal, in its own unit.
+    val why = listOfNotNull(
+        body.hrv?.let { h ->
+            h.tonight?.let { t ->
+                val p = ((t - h.baseline) / h.baseline * 100).roundToInt()
+                if (abs(p) < 3) tr("HRV about your normal", "HRV는 평소와 비슷") else tr("HRV ${abs(p)}% ${if (p > 0) "above" else "below"} your normal", "HRV가 평소보다 ${abs(p)}% ${if (p > 0) "높음" else "낮음"}")
+            }
+        },
+        body.sleepingHr?.let { r ->
+            r.tonight?.let { t ->
+                val d = t - r.baseline
+                if (abs(d) < 1) tr("sleeping heart rate about your normal", "수면 중 심박수는 평소와 비슷") else tr("sleeping heart rate ${f1(abs(d))} bpm ${if (d > 0) "above" else "below"} your normal", "수면 중 심박수가 평소보다 ${f1(abs(d))} bpm ${if (d > 0) "높음" else "낮음"}")
+            }
+        },
+    ).joinToString("; ").replaceFirstChar { it.uppercase() }
+    PawseCard {
+        CardHead(tr("Why ${body.score}", "왜 ${body.score}인가요"))
+        Text(if (why.isEmpty()) tr("Your usual needs a few more nights before this score can be explained.", "이 점수를 설명하려면 평소 범위를 알 밤이 몇 개 더 필요해요.") else "$why.", style = PawseType.Body, modifier = Modifier.padding(top = 8.dp))
+        if (body.reasons.isNotEmpty()) Text(ScoreCopy.reasons(body.reasons), style = PawseType.Micro, color = faint, modifier = Modifier.padding(top = 8.dp))
     }
     today.weekly?.let { w ->
-        PawseCard {
-            SectionTitle(tr("The week, not just the day", "하루가 아닌 한 주"))
-            Text(ScoreCopy.weekly(w.pattern), style = PawseType.Body)
-            Spacer(Modifier.height(6.dp))
-            DetailLine(tr("7-day HRV", "7일 HRV"), tr("${w.hrv7.roundToInt()} ms over ${w.nights} nights", "${w.nights}밤 평균 ${w.hrv7.roundToInt()} ms"))
-            DetailLine(
-                tr("Day-to-day variation", "날마다의 변동"),
-                "${fmt(w.cv7)}%" + (w.usualCv7?.let { tr(" (usually ${fmt(it)}%)", " (평소 ${fmt(it)}%)") } ?: ""),
-            )
-            Spacer(Modifier.height(8.dp))
-            Note(
-                tr(
-                    "A falling weekly HRV with shrinking variation under heavy load is a warning even when no single day looks bad.",
-                    "높은 부하 속에 주간 HRV가 떨어지고 변동도 줄어든다면, 하루하루는 괜찮아 보여도 경고 신호예요.",
-                ),
-            )
+        PawseCard(Modifier.padding(top = 16.dp)) {
+            CardHead(tr("The week, not just the day", "하루가 아니라 한 주"), ScoreCopy.weekly(w.pattern))
+            MicroLine(tr("7-day HRV", "7일 HRV"), tr("${w.hrv7.roundToInt()} ms · ${w.nights} nights", "${w.hrv7.roundToInt()} ms · ${w.nights}일 밤"))
+            MicroLine(tr("Day-to-day variation", "날마다 변동"), "${f1(w.cv7)}%" + (w.usualCv7?.let { tr(" (usually ${f1(it)}%)", " (평소 ${f1(it)}%)") } ?: ""))
         }
     }
-    PawseCard {
-        SectionTitle(tr("Overnight heart-rate pattern", "야간 심박수 패턴"))
-        DetailLine(tr("Running sum", "누적 합"), fmt(today.illness.cusum))
-        DetailLine(tr("Quiet note above", "조용한 알림 기준"), "3")
-        DetailLine(tr("Alert above", "경고 기준"), tr("5, with temperature or breathing up", "5, 체온이나 호흡수도 올랐을 때"))
-        Spacer(Modifier.height(8.dp))
-        Note(
+    PawseCard(Modifier.padding(top = 16.dp)) {
+        CardHead(
+            tr("Overnight heart-rate pattern", "밤사이 심박 패턴"),
+            tr("Running sum ${fmt(today.illness.cusum)}", "누적 합 ${fmt(today.illness.cusum)}"),
+            if (today.illness.level == IllnessLevel.ALERT) PawseTheme.semantics.bandLow else MaterialTheme.colorScheme.onSurface,
+        )
+        Row(Modifier.padding(top = 8.dp)) {
+            Text(tr("Quiet note above 3", "3 넘으면 조용한 알림"), style = PawseType.Micro, color = faint, modifier = Modifier.weight(1f))
+            Text(tr("Alert above 5, with temperature or breathing up", "5 넘고 체온이나 호흡이 오르면 경보"), style = PawseType.Micro, color = faint, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
+        }
+        Text(
             tr(
-                "Small excesses add up night after night, so three slightly high nights count and one random spike does not. " +
-                    "Logged drinks and travel or stress tags are checked first. It never names a disease.",
-                "작은 초과분이 밤마다 쌓이는 방식이라, 조금 높은 밤 세 번은 반영되고 우연한 한 번의 급등은 반영되지 " +
-                    "않아요. 기록한 음주와 여행·스트레스 태그를 먼저 확인해요. 병명은 절대 말하지 않아요.",
+                "Small nightly excesses over your normal add up; logged drinks, travel and stress are checked first. It never names a disease.",
+                "평소보다 조금씩 높은 밤이 쌓여요. 기록된 술, 여행, 스트레스를 먼저 확인하고, 질병 이름은 붙이지 않아요.",
             ),
+            style = PawseType.Micro,
+            color = faint,
+            modifier = Modifier.padding(top = 8.dp),
         )
     }
-    PawseCard {
-        SectionTitle(tr("What moves your Body", "컨디션을 움직이는 것"))
+    Text(tr("What moves your Body", "컨디션을 움직이는 것"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 32.dp))
+    PawseCard(Modifier.padding(top = 12.dp)) {
         if (insights.isEmpty()) {
-            Note(
+            Text(
                 tr(
-                    "Nothing clear yet. An insight appears after at least 8 days of exposure and only when its 90% range excludes zero.",
-                    "아직 뚜렷한 건 없어요. 최소 8일 이상 겪은 일이고 90% 범위가 0을 포함하지 않을 때만 인사이트가 나타나요.",
+                    "Nothing clear yet. An effect shows after at least 8 days of exposure, and only when its 90% range excludes zero.",
+                    "아직 뚜렷한 건 없어요. 최소 8일 이상 겪고, 90% 범위가 0을 포함하지 않을 때만 보여줘요.",
                 ),
+                style = PawseType.Label,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            insights.forEach {
-                Text(ScoreCopy.insight(it), style = PawseType.Body, modifier = Modifier.padding(vertical = 4.dp))
-            }
-            Spacer(Modifier.height(4.dp))
-            Note(ScoreCopy.INSIGHT_NOTE)
+            insights.forEach { Text(ScoreCopy.insight(it), style = PawseType.Body, modifier = Modifier.padding(top = 8.dp)) }
+            Text(ScoreCopy.INSIGHT_NOTE, style = PawseType.Micro, color = faint, modifier = Modifier.padding(top = 16.dp))
         }
     }
 }
@@ -880,3 +898,5 @@ internal fun minutesText(minutes: Double): String = "${minutes.roundToInt()}${tr
 internal fun pct(fraction: Double): String = "${(fraction * 100).roundToInt()}%"
 
 private fun fmt(v: Double): String = String.format(Locale.getDefault(), "%.2f", v)
+
+private fun f1(v: Double): String = String.format(Locale.getDefault(), "%.1f", v)
