@@ -44,6 +44,9 @@ sealed interface SyncStatus {
  */
 interface ScoreSurfaces {
     fun onScored(snapshot: ScoringSnapshot, inBackground: Boolean)
+
+    /** Whether the last read could reach Health Connect at all, so a widget can say when it can't. */
+    fun onAccess(readable: Boolean) {}
 }
 
 /**
@@ -82,6 +85,11 @@ class SyncCoordinator @Inject constructor(
 
         if (state is ScoringState.Ready) {
             runCatching { surfaces.get().onScored(state.snapshot, inBackground && result is SyncResult.Success) }
+        }
+        when (result) {
+            is SyncResult.Success -> runCatching { surfaces.get().onAccess(true) }
+            SyncResult.AccessOff -> runCatching { surfaces.get().onAccess(false) }
+            else -> Unit
         }
 
         val next = when (result) {

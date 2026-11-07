@@ -68,8 +68,8 @@ import androidx.compose.ui.draw.clip
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint
-import dev.chrisbanes.haze.hazeEffect
-import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.hazeChild
+import dev.chrisbanes.haze.haze
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
@@ -293,7 +293,7 @@ private fun PawseNavGraph(initialRoute: String?) {
         NavHost(
             navController = navController,
             startDestination = HomeDestinations.HOME,
-            modifier = Modifier.hazeSource(haze),
+            modifier = Modifier.haze(haze),
             enterTransition = { EnterTransition.None },
             exitTransition = { if (targetState.destination.route in PUSHED) holdUnder else ExitTransition.None },
             popEnterTransition = { EnterTransition.None },
@@ -488,7 +488,7 @@ private fun Dock(
                     .lift(RoundedCornerShape(32.dp))
                     .clip(RoundedCornerShape(32.dp))
                     // Real glass: the page behind blurred 24 dp under the design's 62% tint.
-                    .hazeEffect(haze, HazeStyle(backgroundColor = background, tints = listOf(HazeTint(semantics.glass)), blurRadius = 24.dp, noiseFactor = 0f))
+                    .hazeChild(haze, HazeStyle(backgroundColor = background, tints = listOf(HazeTint(semantics.glass)), blurRadius = 24.dp, noiseFactor = 0f))
                     .border(1.dp, semantics.glassLine, RoundedCornerShape(32.dp))
                     .padding(6.dp),
             ) {

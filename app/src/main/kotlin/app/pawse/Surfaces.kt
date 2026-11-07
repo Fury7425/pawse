@@ -54,6 +54,11 @@ class AppSurfaces @Inject constructor(
         if (inBackground && notifications.isOn(NotifyKind.WEEKLY)) WeeklyNotification.maybePost(context, snapshot)
         if (inBackground && notifications.isOn(NotifyKind.NO_NIGHT)) Notes.noNight(context, snapshot)
     }
+
+    override fun onAccess(readable: Boolean) {
+        TodayWidget.setReadable(context, readable)
+        TodayWidget.refresh(context)
+    }
 }
 
 /** The opt-in notes beside the weekly one. Each posts at most once a day. */

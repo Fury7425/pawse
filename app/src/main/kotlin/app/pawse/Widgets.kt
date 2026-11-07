@@ -108,6 +108,11 @@ class TodayWidget : AppWidgetProvider() {
             }
         }
 
+        /** Off when the last read found no Health Connect access: the widget then says so instead of guessing. */
+        fun setReadable(context: Context, readable: Boolean) {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putBoolean("readable", readable) }
+        }
+
         /** Today's wake from the last read, for Moving today; null before one. */
         fun wake(context: Context): Long? {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -141,7 +146,9 @@ class TodayWidget : AppWidgetProvider() {
 
         private fun fill(context: Context, prefs: SharedPreferences, layout: Int): RemoteViews {
             val readAt = prefs.getLong("readAt", 0L)
-            val old = Widgets.stale(readAt)
+            val readable = prefs.getBoolean("readable", true)
+            // No access dims the widget like an old one: it never shows numbers it can't stand behind as current.
+            val old = Widgets.stale(readAt) || !readable
             val age = Widgets.age(readAt)
             val grey = context.getColor(R.color.widget_on2)
             val on = context.getColor(if (old) R.color.widget_faint else R.color.widget_on)
@@ -152,6 +159,7 @@ class TodayWidget : AppWidgetProvider() {
             val sleepValue = slept?.let { String.format(Locale.getDefault(), "%.1f", it / 60f) } ?: "—"
             val points = if (readAt > 0) prefs.getFloat("loadPoints", 0f).roundToInt().toString() else "—"
             val guidance = when {
+                !readable -> tr("Pawse can’t read Health Connect. Open Pawse.", "Pawse가 헬스 커넥트를 읽지 못해요. Pawse를 열어 주세요.")
                 readAt == 0L -> context.getString(R.string.widget_empty)
                 old -> tr("From $age. Open Pawse to update.", "$age 기준이에요. Pawse를 열면 새로 읽어요.")
                 else -> prefs.getString("guidance", null).orEmpty()
