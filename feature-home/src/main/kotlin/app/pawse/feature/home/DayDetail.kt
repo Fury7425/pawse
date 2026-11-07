@@ -121,7 +121,11 @@ internal fun DayTab(
             Text(aside, style = PawseType.Micro, color = PawseTheme.semantics.faint)
         }
         lines.forEachIndexed { i, line ->
-            SignalRow(line, selI, expanded = open == i, onToggle = { onOpen(if (open == i) -1 else i) })
+            if (type == ScoreType.BODY) {
+                NormalRow(line, selI, expanded = open == i, onToggle = { onOpen(if (open == i) -1 else i) })
+            } else {
+                SignalRow(line, selI, expanded = open == i, onToggle = { onOpen(if (open == i) -1 else i) })
+            }
         }
     }
 
@@ -469,6 +473,14 @@ private class DayLine(
     val aside: String = "",
     val band: Pair<Double, Double>? = null,
     val fromZero: Boolean = false,
+    /** Body's rows: the picked day in SDs from your usual, signed so higher pushes Body up. */
+    val z: Double? = null,
+    /** Body's rows: whether the signal feeds Body or is only watched. */
+    val scored: Boolean = true,
+    /** Body's rows: "Usually 52 ± 6 ms · 43 nights". */
+    val usualText: String? = null,
+    /** Body's rows: the day had a reading but the usual needs more nights. */
+    val learning: Boolean = false,
 )
 
 private fun bodyLines(snapshot: ScoringSnapshot, rows: List<NightRow>, selI: Int): List<DayLine> {
@@ -479,9 +491,11 @@ private fun bodyLines(snapshot: ScoringSnapshot, rows: List<NightRow>, selI: Int
     val window = ScoringConfig.DEFAULT.signal.hrWindowMinutes
     val notRecorded = listOf(tr("That day", "그날") to tr("No night recorded", "기록된 밤 없음"))
 
-    fun line(figure: NightFigure, label: String, aside: String, note: String, lines: (Double, Usual?) -> List<Pair<String, String>>): DayLine {
+    fun line(figure: NightFigure, label: String, aside: String, note: String, scored: Boolean = false, lines: (Double, Usual?) -> List<Pair<String, String>>): DayLine {
         val usual = snapshot.usual { figure.of(it) }
         val v = figure.of(row)
+        // Sleeping heart rate is better lower, so its key points the way it pushes Body.
+        val z = if (v != null && usual != null && usual.sd > 0) ((v - usual.mid) / usual.sd).let { if (figure == NightFigure.HR) -it else it } else null
         return DayLine(
             label = label,
             values = rows.map { figure.of(it) },
@@ -490,6 +504,10 @@ private fun bodyLines(snapshot: ScoringSnapshot, rows: List<NightRow>, selI: Int
             note = note,
             aside = aside,
             band = usual?.let { it.lo to it.hi },
+            z = z,
+            scored = scored,
+            usualText = usual?.let { usualSpread(figure, it) },
+            learning = v != null && usual == null,
         )
     }
 
@@ -518,6 +536,7 @@ private fun bodyLines(snapshot: ScoringSnapshot, rows: List<NightRow>, selI: Int
                 "Higher is better. Body reads it on a log scale, so a 10 ms drop matters more from 40 than from 80. Your normal is the 60 nights ending a week ago.",
                 "높을수록 좋아요. 컨디션은 이를 로그 척도로 읽어서, 같은 10 ms 하락도 80보다 40에서 더 크게 반영돼요. 내 평소는 일주일 전까지 60밤이에요.",
             ),
+            scored = true,
         ) { v, u ->
             engine(
                 body?.hrv,
@@ -539,6 +558,7 @@ private fun bodyLines(snapshot: ScoringSnapshot, rows: List<NightRow>, selI: Int
                 "Lower is better. Several high nights in a row are what the overnight pattern detector watches for; it names likely causes from your log, never a disease.",
                 "낮을수록 좋아요. 여러 밤 연속으로 높으면 야간 패턴 감지기가 이를 지켜봐요. 기록에서 그럴 만한 이유를 찾아줄 뿐, 병명은 말하지 않아요.",
             ),
+            scored = true,
         ) { v, u ->
             engine(
                 body?.sleepingHr,
@@ -576,6 +596,12 @@ private fun bodyLines(snapshot: ScoringSnapshot, rows: List<NightRow>, selI: Int
                 "기기 자체 기준 대비 차이예요. ${fmt1(context.tempRiseC)} °C 상승이 며칠 밤 이어지면 감지기가 살피는 신호 중 하나이며, 생리 주기도 영향을 줘요.",
             ),
         ) { _, u -> listOfNotNull(usualLine(NightFigure.TEMP, u), tr("Role", "역할") to tr("Not part of Body", "컨디션에 들어가지 않음")) },
+        line(
+            NightFigure.SPO2,
+            tr("Blood oxygen", "혈중 산소"),
+            tr("Watched", "관찰"),
+            tr("Watched only. Short dips are common and are not scored.", "지켜보기만 해요. 짧게 떨어지는 건 흔하고 점수에 넣지 않아요."),
+        ) { _, u -> listOfNotNull(usualLine(NightFigure.SPO2, u), tr("Role", "역할") to tr("Not part of Body", "컨디션에 들어가지 않음")) },
     )
 }
 
@@ -668,6 +694,96 @@ private fun sessionText(s: SessionLoad, name: (String) -> String): String =
         ScoreCopy.provenanceLabel(s.provenance).takeIf { s.skippedReason == null },
         s.source.takeIf { it.isNotBlank() }?.let(name),
     ).joinToString(" · ")
+
+/**
+ * A Body row as the canvas draws it: name and value, a band line (track ±3σ, your
+ * normal ±1σ, a coloured key where the day sits), the word and your usual under
+ * it; its line over the range and its figures open on a tap.
+ */
+@Composable
+private fun NormalRow(line: DayLine, selI: Int, expanded: Boolean, onToggle: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val s = PawseTheme.semantics
+    val faint = s.faint
+    val turn by animateFloatAsState(if (expanded) 180f else 0f, tween(220, easing = EaseOut), label = "chevron")
+    val z = line.z
+    val key = when {
+        !line.scored || z == null || abs(z) <= 1 -> s.neutral
+        z > 0 -> s.bandHigh
+        else -> s.bandModerate
+    }
+    val word = when {
+        line.shown == null -> tr("No reading", "기록 없음")
+        z == null -> tr("Your usual needs more nights", "평소 범위를 알려면 밤이 더 필요해요")
+        abs(z) <= 1 -> tr("Within your normal", "평소 범위 안")
+        else -> tr("${fmt1(abs(z))}σ ${if (z > 0) "above" else "below"} your normal", "평소보다 ${fmt1(abs(z))}σ ${if (z > 0) "높음" else "낮음"}")
+    } + if (line.scored) "" else tr(" · watched", " · 지켜보기만")
+    Column {
+        HorizontalDivider(color = scheme.outlineVariant)
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .clickable(onClick = onToggle)
+                .padding(top = 12.dp, bottom = 10.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(line.label, style = PawseType.BodyStrong, modifier = Modifier.weight(1f))
+                Text(line.shown ?: "—", style = PawseType.MetricValue)
+                Glyph(Glyphs.ChevronDown, size = 16.dp, color = faint, modifier = Modifier.padding(start = 4.dp).rotate(turn))
+            }
+            Canvas(Modifier.padding(vertical = 8.dp).fillMaxWidth().height(12.dp)) {
+                val r = CornerRadius(6.dp.toPx())
+                drawRoundRect(s.baselineOuter, cornerRadius = r)
+                drawRoundRect(s.baselineBand, Offset(size.width / 3f, 0f), Size(size.width / 3f, size.height), r)
+                drawRect(scheme.outline, Offset(size.width / 2f, 0f), Size(1.dp.toPx(), size.height))
+                val at = (((z ?: 0.0).coerceIn(-3.0, 3.0) + 3) / 6).toFloat() * size.width
+                drawRoundRect(key, Offset(at - 2.dp.toPx(), 0f), Size(4.dp.toPx(), size.height), CornerRadius(2.dp.toPx()))
+            }
+            Row {
+                Text(word, style = PawseType.Micro, color = faint, modifier = Modifier.weight(1f))
+                line.usualText?.let { Text(it, style = PawseType.Micro, color = faint, textAlign = TextAlign.End, modifier = Modifier.padding(start = 8.dp)) }
+            }
+        }
+        AnimatedVisibility(expanded, enter = RevealEnter, exit = RevealExit) {
+            Column(Modifier.padding(bottom = 14.dp)) {
+                Sparkline(line, selI, Modifier.fillMaxWidth().height(36.dp))
+                line.lines.forEach { (k, v) ->
+                    Row(Modifier.padding(top = 4.dp)) {
+                        Text(k, style = PawseType.Micro, color = faint, modifier = Modifier.weight(1f))
+                        Text(v, style = PawseType.Micro, color = scheme.onSurface, textAlign = TextAlign.End)
+                    }
+                }
+                Text(line.note, style = PawseType.Micro, color = faint, modifier = Modifier.padding(top = 8.dp))
+            }
+        }
+    }
+}
+
+/** A row's days as a line, its usual band behind, the picked day marked. */
+@Composable
+private fun Sparkline(line: DayLine, selI: Int, modifier: Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val grey = scheme.onSurfaceVariant
+    val bandColor = scheme.onSurface.copy(alpha = 0.1f)
+    val ext = line.values.filterNotNull() + listOfNotNull(line.band?.first, line.band?.second)
+    val least = if (line.fromZero) 0.0 else ext.minOrNull() ?: 0.0
+    val most = ext.maxOrNull() ?: 1.0
+    val room = ((most - least) * 0.12).takeIf { it > 0.0 } ?: 1.0
+    val lo = if (line.fromZero) least else least - room
+    val hi = most + room
+    Canvas(modifier) {
+        val slot = size.width / line.values.size
+        val x: (Int) -> Float = { i -> i * slot + slot / 2 }
+        val y: (Double) -> Float = { v -> (size.height - (v - lo) / (hi - lo) * size.height).toFloat() }
+        line.band?.let { (a, b) -> drawRect(bandColor, Offset(0f, y(b)), Size(size.width, max(2.dp.toPx(), y(a) - y(b)))) }
+        drawPath(gapPath(line.values, x, y), grey.copy(alpha = 0.7f), style = Stroke(1.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+        line.values.forEachIndexed { i, v -> v?.let { drawCircle(grey, 1.5.dp.toPx(), Offset(x(i), y(it))) } }
+        drawLine(scheme.onSurface, Offset(x(selI), 0f), Offset(x(selI), size.height), 1.dp.toPx())
+        line.values[selI]?.let { drawCircle(scheme.onSurface, 3.dp.toPx(), Offset(x(selI), y(it))) }
+    }
+}
+
 
 @Composable
 private fun SignalRow(line: DayLine, selI: Int, expanded: Boolean, onToggle: () -> Unit) {

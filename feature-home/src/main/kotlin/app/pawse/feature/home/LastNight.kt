@@ -1249,7 +1249,7 @@ private fun usualMinutes(u: Usual): String =
     tr("Usually ", "평소 ") + "${u.lo.coerceAtLeast(0.0).roundToInt()}–" + dur(u.hi.coerceAtLeast(0.0))
 
 /** "Usually 52 ± 6 ms · 43 nights", under a vital's name. */
-private fun usualSpread(figure: NightFigure, u: Usual): String {
+internal fun usualSpread(figure: NightFigure, u: Usual): String {
     val text = figure.text(u.mid)
     val unit = text.substringAfter(' ', "").let { if (text.endsWith("%")) "%" else if (it.isEmpty()) "" else " $it" }
     val sd = when (figure) {
