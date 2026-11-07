@@ -159,6 +159,18 @@ fun ScannerScreen(
     ) { result -> granted = result }
     val cameraOn = granted && hasCamera(context)
 
+    // States board: a label that yields no table after a while gets a tip, a retry and typing.
+    // ponytail: a fixed 8 s, not a signal from the recogniser; tune if it fires on slow reads.
+    var labelTries by remember { mutableStateOf(0) }
+    var labelStuck by remember { mutableStateOf(false) }
+    LaunchedEffect(mode, state, labelTries) {
+        labelStuck = false
+        if (mode == ScanMode.LABEL && state is ScanState.Scanning) {
+            kotlinx.coroutines.delay(8_000)
+            labelStuck = true
+        }
+    }
+
     Box(modifier = modifier.fillMaxSize().background(Color(0xFF0A0B0C))) {
         if (cameraOn) {
             val analyzer: ImageAnalysis.Analyzer = remember(mode) {
@@ -246,6 +258,8 @@ fun ScannerScreen(
                     ScanStatePanel(
                         state = current,
                         mode = mode,
+                        labelStuck = labelStuck,
+                        onLabelRetry = { labelTries++ },
                         onAdd = onProductChosen,
                         onScanAgain = viewModel::scanAgain,
                         onReadLabel = { viewModel.setMode(ScanMode.LABEL) },
@@ -461,6 +475,8 @@ private fun DrawScope.brackets(
 private fun ScanStatePanel(
     state: ScanState,
     mode: ScanMode,
+    labelStuck: Boolean,
+    onLabelRetry: () -> Unit,
     onAdd: (Long) -> Unit,
     onScanAgain: () -> Unit,
     onReadLabel: () -> Unit,
@@ -470,7 +486,23 @@ private fun ScanStatePanel(
 ) {
     Column(Modifier.fillMaxWidth()) {
         when (state) {
-            is ScanState.Scanning -> {
+            is ScanState.Scanning -> if (mode == ScanMode.LABEL && labelStuck) {
+                Text(tr("Couldn’t read that label", "라벨을 읽지 못했어요"), style = PawseType.Heading)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    tr(
+                        "Fill the frame with the nutrition table and keep it flat. Glare and curved bottles are the usual trouble.",
+                        "영양성분표가 화면을 채우도록 평평하게 비춰 주세요. 반사광과 둥근 병이 흔한 원인이에요.",
+                    ),
+                    style = PawseType.Body,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(20.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PrimaryButton(tr("Try again", "다시 시도"), onClick = onLabelRetry, modifier = Modifier.weight(1f))
+                    SecondaryButton(tr("Type it in", "직접 입력"), onClick = onManualEntry, modifier = Modifier.weight(1f))
+                }
+            } else {
                 Text(
                     text = when (mode) {
                         ScanMode.BARCODE -> tr("Point at the barcode.", "바코드를 비춰 주세요.")
