@@ -64,6 +64,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.clip
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.hazeSource
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
@@ -279,12 +285,15 @@ private fun PawseNavGraph(initialRoute: String?) {
         }
     }
 
+    // The dock's glass blurs whatever scrolls under it.
+    val haze = remember { HazeState() }
     Box(Modifier.fillMaxSize()) {
         // Tabs swap at once, because they are switched many times a day. Back is
         // instant too: leaving a screen should never wait on an animation.
         NavHost(
             navController = navController,
             startDestination = HomeDestinations.HOME,
+            modifier = Modifier.hazeSource(haze),
             enterTransition = { EnterTransition.None },
             exitTransition = { if (targetState.destination.route in PUSHED) holdUnder else ExitTransition.None },
             popEnterTransition = { EnterTransition.None },
@@ -415,6 +424,7 @@ private fun PawseNavGraph(initialRoute: String?) {
                 current = current,
                 onTab = navController::switchTab,
                 onScan = { navController.navigate(FoodDestinations.SCAN) },
+                haze = haze,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
@@ -454,6 +464,7 @@ private fun Dock(
     current: String?,
     onTab: (String) -> Unit,
     onScan: () -> Unit,
+    haze: HazeState,
     modifier: Modifier = Modifier,
 ) {
     val background = MaterialTheme.colorScheme.background
@@ -475,7 +486,9 @@ private fun Dock(
                     .weight(1f)
                     .height(64.dp)
                     .lift(RoundedCornerShape(32.dp))
-                    .background(semantics.glass, RoundedCornerShape(32.dp))
+                    .clip(RoundedCornerShape(32.dp))
+                    // Real glass: the page behind blurred 24 dp under the design's 62% tint.
+                    .hazeEffect(haze, HazeStyle(backgroundColor = background, tints = listOf(HazeTint(semantics.glass)), blurRadius = 24.dp, noiseFactor = 0f))
                     .border(1.dp, semantics.glassLine, RoundedCornerShape(32.dp))
                     .padding(6.dp),
             ) {
