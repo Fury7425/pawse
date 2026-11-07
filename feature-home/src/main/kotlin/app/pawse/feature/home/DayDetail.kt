@@ -48,6 +48,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.pawse.core.data.scoring.DailyInputAssembler
 import app.pawse.core.data.scoring.ScoringSnapshot
 import app.pawse.core.ui.component.EaseOut
@@ -163,13 +164,6 @@ private fun DayFigure(type: ScoreType, day: DayReport?, today: Boolean) {
     val grey = MaterialTheme.colorScheme.onSurfaceVariant
     val body = day?.body
     val load = day?.load
-    val neutral = PawseTheme.semantics.neutral
-
-    var value = "—"
-    var unit = ""
-    var dot = neutral
-    var word = tr("No reading", "값 없음")
-    var note = tr("No reading for this day.", "이날은 기록이 없어요.")
     if (type == ScoreType.BODY) {
         // The design's What moved it: each signal's pull in SD, then the sum and the shares.
         if (body != null) WhatMoved(body) else {
@@ -179,17 +173,54 @@ private fun DayFigure(type: ScoreType, day: DayReport?, today: Boolean) {
         }
         return
     }
-    if (type == ScoreType.LOAD && load != null) {
-        value = ScoreCopy.load(load.todayLoad)
-        unit = tr("load", "부하")
-        word = load.formBand?.let(ScoreCopy::form) ?: tr("Building your history", "기록 쌓는 중")
-        note = loadNote(load, today)
+    if (load == null) {
+        Text(tr("No reading for this day.", "이날은 기록이 없어요."), style = PawseType.Label, color = grey, modifier = Modifier.padding(top = 16.dp))
+        return
     }
+    // The number, its word and where it sits in the range are the page's hero; this keeps what makes it up.
+    LoadColumns(load, today)
+    Sessions(load, today)
+}
 
-    // The number and its word sit in the page's hero ring; this keeps what makes it up.
-    Text(note, style = PawseType.Label, color = grey, modifier = Modifier.padding(top = 16.dp).semantics { contentDescription = "$value $unit, $word. $note" })
-
-    if (type == ScoreType.LOAD && load != null) LoadColumns(load, today)
+/** Sessions: each workout, its load, and how it was counted. */
+@Composable
+private fun Sessions(load: LoadReading, today: Boolean) {
+    val faint = PawseTheme.semantics.faint
+    val pm = LocalContext.current.packageManager
+    Column(Modifier.padding(top = 32.dp)) {
+        Text(tr("Sessions", "활동"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (load.sessions.isEmpty()) {
+            Text(
+                if (today) tr("No workouts logged yet today.", "오늘은 아직 기록된 운동이 없어요.") else tr("A rest day.", "쉬는 날이에요."),
+                style = PawseType.Label,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+        load.sessions.forEach { s ->
+            Column(Modifier.padding(vertical = 8.dp)) {
+                Row {
+                    Text(s.title ?: tr("Workout", "운동"), style = PawseType.BodyStrong, modifier = Modifier.weight(1f))
+                    Text(s.skippedReason ?: tr("${ScoreCopy.load(s.load)} load", "${ScoreCopy.load(s.load)} 부하"), style = PawseType.MetricValue)
+                }
+                Text(
+                    listOfNotNull(
+                        minutesText(s.durationMinutes),
+                        ScoreCopy.provenanceLabel(s.provenance).takeIf { s.skippedReason == null },
+                        s.source.takeIf { it.isNotBlank() }?.let { appName(pm, it) },
+                    ).joinToString(" · "),
+                    style = PawseType.Micro,
+                    color = faint,
+                )
+            }
+        }
+        Text(
+            tr("Counted by heart rate (Banister TRIMP), or steps when there is no heart rate.", "심박수(Banister TRIMP)로 계산하고, 심박수가 없으면 걸음 수를 써요."),
+            style = PawseType.Micro,
+            color = faint,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+    }
 }
 
 /**
@@ -267,21 +298,6 @@ private fun MovedRow(name: String, z: Double, note: String) {
     }
 }
 
-private fun loadNote(load: LoadReading, today: Boolean): String {
-    val low = load.rangeLow
-    val high = load.rangeHigh
-    val whose = if (today) tr("today’s", "오늘") else tr("that day’s", "그날")
-    val where = when {
-        load.rest -> tr("Rest: your overnight heart rate has been high. ", "휴식: 야간 심박수가 높았어요. ")
-        load.todayLoad <= 0.0 -> if (today) tr("No workouts logged yet today. ", "오늘은 아직 기록된 운동이 없어요. ") else tr("A rest day. ", "쉰 날이에요. ")
-        low == null || high == null -> ""
-        load.todayLoad < low -> tr("Under $whose range. ", "$whose 범위보다 적어요. ")
-        load.todayLoad > high -> tr("Over $whose range. ", "$whose 범위를 넘었어요. ")
-        else -> tr("Inside $whose range. ", "$whose 범위 안이에요. ")
-    }
-    return where + tr("Load is training, not a grade, so it stays grey.", "부하는 평가가 아닌 훈련량이라 회색으로 둬요.")
-}
-
 /** Load, fitness and fatigue, and where the day's load sits in its range. */
 @Composable
 private fun LoadColumns(load: LoadReading, today: Boolean) {
@@ -290,62 +306,54 @@ private fun LoadColumns(load: LoadReading, today: Boolean) {
     val grey = scheme.onSurfaceVariant
     val low = load.rangeLow
     val high = load.rangeHigh
-    Columns(
-        listOf(
-            ScoreCopy.load(load.todayLoad) to tr("Load", "부하"),
-            (load.fitness?.let(ScoreCopy::load) ?: "—") to tr("Fitness", "체력"),
-            (load.fatigue?.let(ScoreCopy::load) ?: "—") to tr("Fatigue", "피로"),
-        ),
-    ) {
-        if (low != null && high != null && !load.rest) {
-            val top = maxOf(high * 1.25, load.todayLoad, 1.0)
-            val whose = if (today) tr("today’s", "오늘") else tr("that day’s", "그날")
-            val label = tr(
-                "Load ${ScoreCopy.load(load.todayLoad)} against $whose range of ${ScoreCopy.load(low)} to ${ScoreCopy.load(high)}.",
-                "부하 ${ScoreCopy.load(load.todayLoad)}, $whose 범위는 ${ScoreCopy.load(low)}~${ScoreCopy.load(high)}예요.",
-            )
-            Canvas(Modifier.fillMaxWidth().height(14.dp).semantics { contentDescription = label }) {
-                fun x(v: Double) = (v / top).toFloat().coerceIn(0f, 1f) * size.width
-                val y = 4.dp.toPx()
-                val h = 6.dp.toPx()
-                val r = CornerRadius(3.dp.toPx())
-                drawRoundRect(s.baselineOuter, Offset(0f, y), Size(size.width, h), r)
-                drawRoundRect(s.baselineBand, Offset(x(low), y), Size(x(high) - x(low), h), r)
-                drawRoundRect(grey, Offset(0f, y), Size(x(load.todayLoad), h), r)
-                drawRoundRect(scheme.onSurface, Offset(x(low) - 1.dp.toPx(), 0f), Size(2.dp.toPx(), size.height), CornerRadius(1.dp.toPx()))
-            }
-        }
-        Row(Modifier.padding(top = 6.dp)) {
-            Text(
-                when {
-                    load.rest -> tr("Rest, no range", "휴식, 범위 없음")
-                    low != null && high != null -> tr("Range", "범위") + " ${ScoreCopy.load(low)}–${ScoreCopy.load(high)}"
-                    else -> tr("No range yet", "아직 범위 없음")
-                },
-                style = PawseType.Label,
-                color = grey,
-                modifier = Modifier.weight(1f),
-            )
-            load.typicalDayLoad?.let { Text(tr("Typical day", "평소 하루") + " ${ScoreCopy.load(it)}", style = PawseType.Label, color = grey) }
-        }
-    }
-}
-
-/** A card of figures side by side, hairlines between them, and what they add up to underneath. */
-@Composable
-private fun Columns(cols: List<Pair<String, String>>, foot: @Composable ColumnScope.() -> Unit) {
-    val scheme = MaterialTheme.colorScheme
-    Column(Modifier.padding(top = 16.dp).fillMaxWidth().cardSurface().padding(vertical = 14.dp)) {
-        Row(Modifier.height(IntrinsicSize.Min)) {
-            cols.forEachIndexed { i, (value, key) ->
-                if (i > 0) Box(Modifier.width(1.dp).fillMaxHeight().background(scheme.outlineVariant))
-                Column(Modifier.weight(1f).padding(horizontal = 16.dp)) {
-                    Text(value, style = PawseType.MetricValue, maxLines = 1)
-                    Text(key, style = PawseType.Label, color = scheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
+    val faint = s.faint
+    // The design's Load card: three light figures, the range bar, its ends, and why it stays grey.
+    Column(Modifier.padding(top = 32.dp).fillMaxWidth().cardSurface().padding(16.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(
+                ScoreCopy.load(load.todayLoad) to tr("Load", "부하"),
+                (load.fitness?.roundToInt()?.toString() ?: "—") to tr("Fitness", "체력"),
+                (load.fatigue?.roundToInt()?.toString() ?: "—") to tr("Fatigue", "피로"),
+            ).forEach { (v, k) ->
+                Column(Modifier.weight(1f)) {
+                    Text(v, style = PawseType.Numeral.copy(fontSize = 28.sp, lineHeight = 34.sp), maxLines = 1)
+                    Text(k, style = PawseType.Label, color = grey)
                 }
             }
         }
-        Column(Modifier.padding(start = 16.dp, top = 14.dp, end = 16.dp), content = foot)
+        val ranged = low != null && high != null && !load.rest
+        val top = maxOf((high ?: 0.0) * 1.25, load.todayLoad, 1.0)
+        val whose = if (today) tr("today’s", "오늘") else tr("that day’s", "그날")
+        val label = if (ranged) {
+            tr(
+                "Load ${ScoreCopy.load(load.todayLoad)} against $whose range of ${ScoreCopy.load(low!!)} to ${ScoreCopy.load(high!!)}.",
+                "부하 ${ScoreCopy.load(load.todayLoad)}, $whose 범위는 ${ScoreCopy.load(low!!)}~${ScoreCopy.load(high!!)}예요.",
+            )
+        } else {
+            tr("Load ${ScoreCopy.load(load.todayLoad)}.", "부하 ${ScoreCopy.load(load.todayLoad)}.")
+        }
+        Canvas(Modifier.padding(top = 16.dp).fillMaxWidth().height(14.dp).semantics { contentDescription = label }) {
+            fun x(v: Double) = (v / top).toFloat().coerceIn(0f, 1f) * size.width
+            val r = CornerRadius(7.dp.toPx())
+            drawRoundRect(s.baselineOuter, cornerRadius = r)
+            if (ranged) drawRoundRect(s.baselineBand, Offset(x(low!!), 0f), Size(x(high!!) - x(low), size.height), r)
+            drawRoundRect(grey.copy(alpha = 0.9f), Offset.Zero, Size(x(load.todayLoad), size.height), r)
+            if (ranged) drawRoundRect(scheme.onSurface, Offset(x(low!!) - 1.dp.toPx(), -3.dp.toPx()), Size(2.dp.toPx(), size.height + 6.dp.toPx()), CornerRadius(1.dp.toPx()))
+        }
+        Row(Modifier.padding(top = 8.dp)) {
+            Text(
+                when {
+                    load.rest -> tr("Rest, no range", "휴식, 범위 없음")
+                    ranged -> tr("Range", "범위") + " ${ScoreCopy.load(low!!)}–${ScoreCopy.load(high!!)}"
+                    else -> tr("No range yet", "아직 범위 없음")
+                },
+                style = PawseType.Micro,
+                color = faint,
+                modifier = Modifier.weight(1f),
+            )
+            load.typicalDayLoad?.let { Text(tr("Typical day", "보통의 하루") + " ${ScoreCopy.load(it)}", style = PawseType.Micro, color = faint) }
+        }
+        Text(tr("Load is training, not a grade, so it stays grey.", "부하는 훈련량이지 성적이 아니라서 회색으로 둬요."), style = PawseType.Micro, color = faint, modifier = Modifier.padding(top = 8.dp))
     }
 }
 

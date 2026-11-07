@@ -498,6 +498,10 @@ private fun DetailHero(
             }
         }
         BandDot(color = face.dot, label = face.word, hollow = face.hollow, modifier = Modifier.padding(top = 12.dp).lookIn(look, 2))
+        // Load: the form word under the range word.
+        if (type == ScoreType.LOAD) {
+            day?.load?.formBand?.let { Text(ScoreCopy.form(it), style = PawseType.BodyStrong, modifier = Modifier.padding(top = 8.dp).lookIn(look, 2)) }
+        }
         // Body: how sure the reading is, a chip that opens how the range and confidence are worked out.
         if (type == ScoreType.BODY && day != null) {
             val body = day.body
