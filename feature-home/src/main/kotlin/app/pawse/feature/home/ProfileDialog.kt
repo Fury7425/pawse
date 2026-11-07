@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -276,10 +278,11 @@ private fun Notifications(state: Map<NotifyKind, Boolean>, onNotify: (NotifyKind
         }
     }
     PageHead(tr("Notifications", "알림"), tr("With the defaults Pawse sends one note a week.", "기본 설정에서는 일주일에 한 번만 보내요."), onBack)
-    Column(Modifier.padding(top = 8.dp)) {
+    Text(tr("What Pawse can send", "Pawse가 보낼 수 있는 것"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 20.dp))
+    Column(Modifier.padding(top = 4.dp)) {
         SwitchRow(
             tr("Weekly note", "주간 노트"),
-            tr("Once a week, after the morning read. What changed, in two lines.", "일주일에 한 번, 아침 기록을 읽은 뒤. 바뀐 점을 두 줄로."),
+            tr("Sunday 20:00. What changed this week, in two lines.", "일요일 20:00. 이번 주에 바뀐 점을 두 줄로."),
             state[NotifyKind.WEEKLY] == true,
         ) { flip(NotifyKind.WEEKLY, it) }
         SwitchRow(
@@ -300,7 +303,7 @@ private fun Notifications(state: Map<NotifyKind, Boolean>, onNotify: (NotifyKind
         ) { flip(NotifyKind.WIND_DOWN, it) }
         SwitchRow(
             tr("No new night", "새 수면 기록 없음"),
-            tr("In the morning, if your watch hasn't synced last night.", "워치가 지난밤 기록을 동기화하지 않았으면 아침에."),
+            tr("At 10:00 if your watch hasn’t synced last night.", "워치가 지난밤 기록을 동기화하지 않았으면 10:00에."),
             state[NotifyKind.NO_NIGHT] == true,
         ) { flip(NotifyKind.NO_NIGHT, it) }
     }
@@ -313,6 +316,19 @@ private fun Notifications(state: Map<NotifyKind, Boolean>, onNotify: (NotifyKind
             color = PawseTheme.semantics.faint,
         )
     }
+    Text(
+        tr(
+            "With the defaults Pawse sends one note a week. The illness alert comes only when your overnight heart rate stays high.",
+            "기본 설정에서는 일주일에 한 번만 보내요. 질병 알림은 야간 심박수가 계속 높을 때만 와요.",
+        ),
+        style = PawseType.Label,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .padding(top = 4.dp)
+            .fillMaxWidth()
+            .background(PawseTheme.semantics.baselineOuter, RoundedCornerShape(14.dp))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+    )
 }
 
 /**
