@@ -37,6 +37,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -171,32 +174,19 @@ fun ExplainScreen(
         if (date != null && computedAt != null) viewModel.openNight(date, computedAt)
     }
 
+    // Each page keeps its own scroll; the open one collapses the rail and lifts the header.
+    val lists = PAGES.map { rememberLazyListState() }
+    val density = LocalDensity.current
+    val collapseRange = with(density) { 80.dp.toPx() }
+    val lift = with(density) { 4.dp.toPx() }
+    fun scrolled(): Float = lists[pager.currentPage].let { if (it.firstVisibleItemIndex > 0) Float.MAX_VALUE else it.firstVisibleItemScrollOffset.toFloat() }
+    val collapse = { (scrolled() / collapseRange).coerceIn(0f, 1f) }
+    val lifted by remember { derivedStateOf { scrolled() > lift } }
+
     Scaffold(modifier = modifier, containerColor = MaterialTheme.colorScheme.background) { padding ->
-        Column(
-            Modifier
-                .fillMaxSize()
-                .aura()
-                .padding(top = padding.calculateTopPadding() + 12.dp),
-        ) {
-            // Pinned: back, the switch and the day rail stay while the pages swipe under them.
-            Row(Modifier.padding(horizontal = 12.dp).heightIn(min = 56.dp).lookIn(look, 0), verticalAlignment = Alignment.CenterVertically) {
-                GlyphButton(Glyphs.ChevronLeft, tr("Back to Scores", "점수로 돌아가기"), onClick = onBack)
-                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    Segmented(
-                        options = PAGES,
-                        selected = shown,
-                        onSelect = ::show,
-                        label = ScoreCopy::name,
-                        modifier = Modifier.width(240.dp),
-                        position = { pager.currentPage + pager.currentPageOffsetFraction },
-                    )
-                }
-                GlyphButton(Glyphs.Info, tr("How Pawse calculates ${ScoreCopy.name(shown)}", "${ScoreCopy.name(shown)} 계산 방법"), onClick = { mathFor = shown })
-            }
-            if (snapshot != null) {
-                DateStrip(snapshot, shown, back, onPick = { back = it }, modifier = Modifier.padding(start = 24.dp, top = 8.dp, end = 24.dp).lookIn(look, 1))
-            }
-            HorizontalPager(state = pager, modifier = Modifier.weight(1f), beyondViewportPageCount = if (warm) 1 else 0) { page ->
+        val top = padding.calculateTopPadding()
+        Box(Modifier.fillMaxSize().aura()) {
+            HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = if (warm) 1 else 0) { page ->
                 ScorePage(
                     look = look,
                     type = PAGES[page],
@@ -209,12 +199,56 @@ fun ExplainScreen(
                     onRange = { range = it; if (back >= it) back = 0 },
                     night = night?.takeIf { it.date == date },
                     onBody = { show(ScoreType.BODY) },
+                    // Pages start under the 56 dp header and the 64 dp rail, and scroll under both.
+                    top = top + 128.dp,
                     bottom = padding.calculateBottomPadding(),
+                    list = lists[page],
                     pin = pin,
                     onCompare = { daySheet = true },
                     onUnpin = { pin = null },
                     onCalendar = { daySheet = false },
                 )
+            }
+            // Pinned: back, the switch and the day rail stay while the pages swipe and scroll under them.
+            Column(Modifier.fillMaxWidth()) {
+                val fade = MaterialTheme.colorScheme.background.copy(alpha = 0.92f)
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(if (lifted) fade else Color.Transparent)
+                        .padding(start = 12.dp, top = top, end = 12.dp, bottom = 8.dp)
+                        .height(48.dp)
+                        .lookIn(look, 0),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    GlyphButton(Glyphs.ChevronLeft, tr("Back to Scores", "점수로 돌아가기"), onClick = onBack)
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        Segmented(
+                            options = PAGES,
+                            selected = shown,
+                            onSelect = ::show,
+                            label = ScoreCopy::name,
+                            modifier = Modifier.width(240.dp),
+                            position = { pager.currentPage + pager.currentPageOffsetFraction },
+                        )
+                    }
+                    GlyphButton(Glyphs.Info, tr("How Pawse calculates ${ScoreCopy.name(shown)}", "${ScoreCopy.name(shown)} 계산 방법"), onClick = { mathFor = shown })
+                }
+                if (snapshot != null) {
+                    DayRail(
+                        snapshot = snapshot,
+                        type = shown,
+                        back = back,
+                        pin = pin,
+                        collapse = collapse,
+                        lifted = lifted,
+                        onPick = { back = it },
+                        onPin = { pin = if (pin == it) null else it },
+                        onCompare = { daySheet = true },
+                        onUnpin = { pin = null },
+                        modifier = Modifier.lookIn(look, 1),
+                    )
+                }
             }
         }
     }
@@ -268,7 +302,9 @@ private fun ScorePage(
     onRange: (Int) -> Unit,
     night: NightDetail?,
     onBody: () -> Unit,
+    top: Dp,
     bottom: Dp,
+    list: LazyListState,
     pin: Int?,
     onCompare: () -> Unit,
     onUnpin: () -> Unit,
@@ -277,7 +313,7 @@ private fun ScorePage(
     var open by rememberSaveable { mutableIntStateOf(0) }
     var mathOpen by rememberSaveable { mutableStateOf(false) }
     val pad = Modifier.padding(horizontal = 24.dp)
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = bottom + 48.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(top = top, bottom = bottom + 48.dp)) {
         if (snapshot == null || date == null) {
             item {
                 Text(
@@ -354,57 +390,6 @@ private fun ScorePage(
         }
 
         item { Provenance(snapshot, pad.padding(top = 28.dp).lookIn(look, 4)) }
-    }
-}
-
-/**
- * The day rail: seven chips ending at the newest day, each with the open page's
- * mark and no number, so it never reads as a scoreboard. Body is its band dot,
- * Sleep a bar against need, Load a bar against the ring's 16 points.
- */
-@Composable
-private fun DateStrip(snapshot: ScoringSnapshot, type: ScoreType, back: Int, onPick: (Int) -> Unit, modifier: Modifier = Modifier) {
-    val byDate = snapshot.history.associateBy { it.date }
-    val s = PawseTheme.semantics
-    val grey = MaterialTheme.colorScheme.onSurfaceVariant
-    val raised = MaterialTheme.colorScheme.surfaceContainerHigh
-    val ring = ScoringConfig.DEFAULT.points.ringPoints
-    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        for (d in 6 downTo 0) {
-            val date = snapshot.date.minusDays(d.toLong())
-            val day = if (d == 0) snapshot.today else byDate[date]
-            val picked = d == back
-            val dot = day?.body?.let { bodyColor(it.band, day.illness.level) }
-            val bar = when (type) {
-                ScoreType.SLEEP -> day?.sleep?.let { sl -> sl.lastNightMinutes?.let { it / (sl.needHours * 60.0) } }
-                ScoreType.LOAD -> day?.load?.points?.let { it / ring }
-                ScoreType.BODY -> null
-            }?.toFloat()?.coerceIn(0.08f, 1f)
-            Column(
-                Modifier
-                    .weight(1f)
-                    .height(64.dp)
-                    .pressable(enabled = day != null, role = Role.Tab) { onPick(d) }
-                    .background(if (picked) raised else Color.Transparent, RoundedCornerShape(12.dp))
-                    .semantics(mergeDescendants = true) { selected = picked }
-                    .padding(top = 8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(date.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, Locale.getDefault()), style = PawseType.Micro, color = s.faint)
-                Text(date.dayOfMonth.toString(), style = PawseType.Heading)
-                Canvas(Modifier.padding(top = 2.dp).size(12.dp)) {
-                    when {
-                        day == null -> Unit
-                        type == ScoreType.BODY && dot != null -> drawCircle(dot, 3.dp.toPx())
-                        type == ScoreType.BODY -> drawCircle(grey, 2.75.dp.toPx(), style = Stroke(1.5.dp.toPx()))
-                        bar != null -> {
-                            val h = bar * size.height
-                            drawRoundRect(grey, Offset(4.5.dp.toPx(), size.height - h), Size(3.dp.toPx(), h), CornerRadius(1.5.dp.toPx()))
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 

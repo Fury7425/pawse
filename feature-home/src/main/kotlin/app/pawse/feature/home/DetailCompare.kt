@@ -22,6 +22,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.pawse.core.data.scoring.ScoringSnapshot
 import app.pawse.core.ui.component.Glyph
@@ -50,12 +51,12 @@ import kotlin.math.roundToInt
 
 /** The Compare chip: "Compare" until a day is pinned, then "vs Fri 23" with its own ×. */
 @Composable
-internal fun CompareChip(pinned: LocalDate?, onOpen: () -> Unit, onUnpin: () -> Unit, modifier: Modifier = Modifier) {
+internal fun CompareChip(pinned: LocalDate?, onOpen: () -> Unit, onUnpin: () -> Unit, modifier: Modifier = Modifier, height: Dp = 36.dp) {
     val s = PawseTheme.semantics
     val raised = MaterialTheme.colorScheme.surfaceContainerHigh
     Row(modifier.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
         Row(
-            Modifier.height(36.dp).background(if (pinned != null) s.selection else raised, RoundedCornerShape(12.dp)),
+            Modifier.height(height).background(if (pinned != null) s.selection else raised, RoundedCornerShape(12.dp)),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
