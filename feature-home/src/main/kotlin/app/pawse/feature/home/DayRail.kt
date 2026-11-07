@@ -46,6 +46,10 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
@@ -136,6 +140,21 @@ internal fun DayRail(
             fingerPaged = false
         }
     }
+    // Past the first data week or this week the rail rubber-bands, with one REJECT per drag.
+    var rejected by remember { mutableStateOf(false) }
+    LaunchedEffect(dragging) { if (!dragging) rejected = false }
+    val reject by rememberUpdatedState { haptic(PawseHaptic.Reject) }
+    val edge = remember {
+        object : NestedScrollConnection {
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput && abs(available.x) > 0.5f && !rejected) {
+                    rejected = true
+                    reject()
+                }
+                return Offset.Zero
+            }
+        }
+    }
     val labelOn by remember { derivedStateOf { dragging || pager.isScrollInProgress && fingerPaged } }
     val labelAlpha by animateFloatAsState(if (labelOn) 1f else 0f, tween(if (labelOn) 120 else 150, easing = EaseOut), label = "weekLabel")
     val chipsLive by remember { derivedStateOf { collapse() < 0.3f } }
@@ -153,7 +172,8 @@ internal fun DayRail(
                 layout(p.width, h) { p.place(0, 0) }
             }
             .background(bg.copy(alpha = 0.92f))
-            .drawBehind { if (lifted) drawLine(hair, Offset(0f, size.height - 0.5f), Offset(size.width, size.height - 0.5f), 1.dp.toPx()) },
+            .drawBehind { if (lifted) drawLine(hair, Offset(0f, size.height - 0.5f), Offset(size.width, size.height - 0.5f), 1.dp.toPx()) }
+            .nestedScroll(edge),
     ) {
         HorizontalPager(
             state = pager,
