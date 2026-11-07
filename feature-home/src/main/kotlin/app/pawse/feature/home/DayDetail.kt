@@ -1,7 +1,11 @@
 package app.pawse.feature.home
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import app.pawse.core.ui.component.BandDot
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -107,8 +111,23 @@ internal fun DayTab(
     val today = picked.date == LocalDate.now()
     val pick: (Int) -> Unit = { i -> onPick(span - 1 - i) }
 
+    val pm = LocalContext.current.packageManager
+    val lines = if (type == ScoreType.BODY) bodyLines(snapshot, rows, selI) else loadLines(rows, selI) { appName(pm, it) }
+    @Composable
+    fun signalRows(title: String, aside: String) {
+        Row(Modifier.padding(top = 28.dp, bottom = 2.dp)) {
+            Text(title, style = PawseType.Label, color = grey, modifier = Modifier.weight(1f))
+            Text(aside, style = PawseType.Micro, color = PawseTheme.semantics.faint)
+        }
+        lines.forEachIndexed { i, line ->
+            SignalRow(line, selI, expanded = open == i, onToggle = { onOpen(if (open == i) -1 else i) })
+        }
+    }
+
     Column(modifier) {
         DayFigure(type, picked.day, today)
+        // Body: Against your normal sits under What moved it, before Over time, as on the canvas.
+        if (type == ScoreType.BODY) signalRows(tr("Against your normal", "내 평소와 비교"), tr("track ±3σ · band ±1σ", "트랙 ±3σ · 음영 ±1σ"))
 
         Row(Modifier.padding(top = 32.dp).fillMaxWidth()) {
             Text(tr("Over time", "기간별 추이"), style = PawseType.Heading, modifier = Modifier.weight(1f).alignByBaseline())
@@ -132,20 +151,7 @@ internal fun DayTab(
         }
         Legend(type)
 
-        Row(Modifier.padding(top = 28.dp, bottom = 2.dp)) {
-            Text(
-                if (type == ScoreType.BODY) tr("Its signals, same days", "같은 날들의 신호") else tr("Load, fitness and form, same days", "같은 날들의 부하·체력·폼"),
-                style = PawseType.Label,
-                color = grey,
-                modifier = Modifier.weight(1f),
-            )
-            Text(shortDate(picked.date), style = PawseType.Label, color = grey, modifier = Modifier.padding(end = 30.dp))
-        }
-        val pm = LocalContext.current.packageManager
-        val lines = if (type == ScoreType.BODY) bodyLines(snapshot, rows, selI) else loadLines(rows, selI) { appName(pm, it) }
-        lines.forEachIndexed { i, line ->
-            SignalRow(line, selI, expanded = open == i, onToggle = { onOpen(if (open == i) -1 else i) })
-        }
+        if (type != ScoreType.BODY) signalRows(tr("Load, fitness and form, same days", "같은 날들의 부하·체력·폼"), shortDate(picked.date))
     }
 }
 
@@ -164,20 +170,14 @@ private fun DayFigure(type: ScoreType, day: DayReport?, today: Boolean) {
     var dot = neutral
     var word = tr("No reading", "값 없음")
     var note = tr("No reading for this day.", "이날은 기록이 없어요.")
-    if (type == ScoreType.BODY && day != null) {
-        if (body != null) {
-            value = body.score.toString()
-            dot = bodyColor(body.band, day.illness.level)
-            word = ScoreCopy.bandWord(body.band)
-            val measured = listOfNotNull(body.hrv?.tonight, body.sleepingHr?.tonight).size
-            note = listOf(
-                tr("Likely", "범위") + " ${body.low}–${body.high}",
-                ScoreCopy.confidence(body.confidence),
-                tr("$measured of 2 signals", "신호 2개 중 ${measured}개"),
-            ).joinToString(" · ")
-        } else {
-            ScoreCopy.bodyStatus(day.bodyStatus, day.validNights, ScoringConfig.DEFAULT.body.minValidNights).takeIf { it.isNotEmpty() }?.let { note = it }
+    if (type == ScoreType.BODY) {
+        // The design's What moved it: each signal's pull in SD, then the sum and the shares.
+        if (body != null) WhatMoved(body) else {
+            day?.let { ScoreCopy.bodyStatus(it.bodyStatus, it.validNights, ScoringConfig.DEFAULT.body.minValidNights) }?.takeIf { it.isNotEmpty() }?.let {
+                Text(it, style = PawseType.Label, color = grey, modifier = Modifier.padding(top = 32.dp))
+            }
         }
+        return
     }
     if (type == ScoreType.LOAD && load != null) {
         value = ScoreCopy.load(load.todayLoad)
@@ -189,8 +189,82 @@ private fun DayFigure(type: ScoreType, day: DayReport?, today: Boolean) {
     // The number and its word sit in the page's hero ring; this keeps what makes it up.
     Text(note, style = PawseType.Label, color = grey, modifier = Modifier.padding(top = 16.dp).semantics { contentDescription = "$value $unit, $word. $note" })
 
-    if (type == ScoreType.BODY && body != null) BodyColumns(body)
     if (type == ScoreType.LOAD && load != null) LoadColumns(load, today)
+}
+
+/**
+ * What moved it: HRV and sleeping heart rate as bars from your normal (the zero
+ * line), in SD, signed so each points the way it pushed Body; then the combined z
+ * and the score it gave, and the two signals' shares.
+ */
+@Composable
+private fun WhatMoved(body: BodyScore) {
+    val scheme = MaterialTheme.colorScheme
+    val s = PawseTheme.semantics
+    val faint = s.faint
+    val w = body.hrvWeight
+    Column(Modifier.padding(top = 32.dp)) {
+        Row {
+            Text(tr("What moved it", "움직인 것"), style = PawseType.Label, color = scheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            Text(tr("SD from your normal", "평소에서 떨어진 정도(SD)"), style = PawseType.Micro, color = faint)
+        }
+        body.hrv?.let { h ->
+            MovedRow(
+                tr("HRV ${h.tonight?.roundToInt() ?: "—"} ms", "HRV ${h.tonight?.roundToInt() ?: "—"} ms"),
+                h.z,
+                tr("Higher is better", "높을수록 좋아요"),
+            )
+        }
+        body.sleepingHr?.let { r ->
+            MovedRow(
+                tr("Sleeping HR ${r.tonight?.roundToInt() ?: "—"} bpm", "수면 중 심박수 ${r.tonight?.roundToInt() ?: "—"} bpm"),
+                r.z,
+                tr("Lower is better, so the bar points the way it pushes Body", "낮을수록 좋아서 막대는 컨디션을 미는 방향을 가리켜요"),
+            )
+        }
+        HorizontalDivider(color = scheme.outlineVariant, modifier = Modifier.padding(top = 12.dp))
+        Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(tr("Combined z ${signed(body.z, 2)} →", "합친 z ${signed(body.z, 2)} →"), style = PawseType.Label, color = scheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            Text(body.score.toString(), style = PawseType.MetricValue)
+        }
+        Text(tr("Your normal reads 50 · Typical is 31–69", "내 평소는 50 · 평소 수준은 31–69"), style = PawseType.Micro, color = faint, modifier = Modifier.padding(top = 4.dp))
+        SplitBar(listOf(w.toFloat() to scheme.onSurfaceVariant, (1 - w).toFloat() to s.mark), Modifier.padding(top = 12.dp))
+        Row(Modifier.padding(top = 8.dp)) {
+            BandDot(color = scheme.onSurfaceVariant, label = tr("HRV, ${pct(w)} of Body", "HRV, 컨디션의 ${pct(w)}"), modifier = Modifier.weight(1f))
+            BandDot(color = s.mark, label = tr("Sleeping HR, ${pct(1 - w)}", "수면 중 심박수, ${pct(1 - w)}"))
+        }
+    }
+}
+
+/** One signal's pull: a bar from the centre line, a third of the track per SD, at most 3 SD. */
+@Composable
+private fun MovedRow(name: String, z: Double, note: String) {
+    val s = PawseTheme.semantics
+    val track = s.baselineOuter
+    val stroke = MaterialTheme.colorScheme.outline
+    val color = when {
+        z > 0.5 -> s.bandHigh
+        z < -0.5 -> s.bandModerate
+        else -> s.neutral
+    }
+    val grow = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { grow.animateTo(1f, tween(400, easing = EaseOut)) }
+    Column(Modifier.padding(top = 8.dp).padding(vertical = 8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(name, style = PawseType.BodyStrong, modifier = Modifier.weight(1f))
+            Text("${signed(z, 2)} SD", style = PawseType.MetricValue)
+        }
+        Canvas(Modifier.padding(top = 4.dp).fillMaxWidth().height(14.dp).semantics { contentDescription = "$name, ${signed(z, 2)} SD" }) {
+            val y = 4.dp.toPx()
+            val h = 6.dp.toPx()
+            val mid = size.width / 2f
+            drawRoundRect(track, Offset(0f, y), Size(size.width, h), CornerRadius(3.dp.toPx()))
+            val len = (minOf(3.0, abs(z)) / 3.0 * mid).toFloat() * grow.value
+            drawRoundRect(color, Offset(if (z >= 0) mid else mid - len, y), Size(len, h), CornerRadius(3.dp.toPx()))
+            drawRoundRect(stroke, Offset(mid - 1.dp.toPx(), 0f), Size(2.dp.toPx(), size.height), CornerRadius(1.dp.toPx()))
+        }
+        Text(note, style = PawseType.Micro, color = s.faint, modifier = Modifier.padding(top = 4.dp))
+    }
 }
 
 private fun loadNote(load: LoadReading, today: Boolean): String {
@@ -206,33 +280,6 @@ private fun loadNote(load: LoadReading, today: Boolean): String {
         else -> tr("Inside $whose range. ", "$whose 범위 안이에요. ")
     }
     return where + tr("Load is training, not a grade, so it stays grey.", "부하는 평가가 아닌 훈련량이라 회색으로 둬요.")
-}
-
-/** HRV and sleeping heart rate side by side, and their shares of Body. */
-@Composable
-private fun BodyColumns(body: BodyScore) {
-    val scheme = MaterialTheme.colorScheme
-    val w = body.hrvWeight
-    fun z(s: SignalDetail?) = s?.let { " · ${signed(it.z, 2)} SD" }.orEmpty()
-    Columns(
-        listOf(
-            (body.hrv?.tonight?.let { "${it.roundToInt()} ms" } ?: "—") to "HRV" + z(body.hrv),
-            (body.sleepingHr?.tonight?.let { "${it.roundToInt()} bpm" } ?: "—") to tr("Sleeping HR", "수면 중 심박수") + z(body.sleepingHr),
-        ),
-    ) {
-        val label = tr(
-            "HRV counts for ${pct(w)} of Body and sleeping heart rate for ${pct(1 - w)}.",
-            "컨디션에서 HRV는 ${pct(w)}, 수면 중 심박수는 ${pct(1 - w)}를 차지해요.",
-        )
-        SplitBar(
-            listOf(w.toFloat() to scheme.onSurface, (1 - w).toFloat() to scheme.onSurfaceVariant),
-            Modifier.semantics { contentDescription = label },
-        )
-        Keys {
-            KeySwatch(scheme.onSurface, tr("HRV, ${pct(w)} of Body", "HRV, 컨디션의 ${pct(w)}"))
-            KeySwatch(scheme.onSurfaceVariant, tr("Sleeping HR, ${pct(1 - w)}", "수면 중 심박수, ${pct(1 - w)}"))
-        }
-    }
 }
 
 /** Load, fitness and fatigue, and where the day's load sits in its range. */

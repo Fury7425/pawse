@@ -206,6 +206,7 @@ fun ExplainScreen(
                     onCompare = { daySheet = true },
                     onUnpin = { pin = null },
                     onCalendar = { daySheet = false },
+                    onBasis = { onOpenCalc(CalcSection.LIKELY) },
                 )
             }
             // Pinned: back, the switch and the day rail stay while the pages swipe and scroll under them.
@@ -297,6 +298,7 @@ private fun ScorePage(
     onCompare: () -> Unit,
     onUnpin: () -> Unit,
     onCalendar: () -> Unit,
+    onBasis: () -> Unit,
 ) {
     var open by rememberSaveable { mutableIntStateOf(0) }
     var mathOpen by rememberSaveable { mutableStateOf(false) }
@@ -332,6 +334,7 @@ private fun ScorePage(
                 onCompare = onCompare,
                 onUnpin = onUnpin,
                 onCalendar = onCalendar,
+                onBasis = onBasis,
                 modifier = pad,
             )
         }
@@ -401,6 +404,7 @@ private fun DetailHero(
     onCompare: () -> Unit,
     onUnpin: () -> Unit,
     onCalendar: () -> Unit,
+    onBasis: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val s = PawseTheme.semantics
@@ -494,6 +498,41 @@ private fun DetailHero(
             }
         }
         BandDot(color = face.dot, label = face.word, hollow = face.hollow, modifier = Modifier.padding(top = 12.dp).lookIn(look, 2))
+        // Body: how sure the reading is, a chip that opens how the range and confidence are worked out.
+        if (type == ScoreType.BODY && day != null) {
+            val body = day.body
+            val signals = listOfNotNull(body?.hrv?.tonight, body?.sleepingHr?.tonight).size
+            Row(
+                Modifier
+                    .padding(top = 12.dp)
+                    .lookIn(look, 2)
+                    .heightIn(min = 48.dp)
+                    .pressable(onClick = onBasis),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    Modifier
+                        .height(36.dp)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(12.dp))
+                        .padding(horizontal = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Glyph(Glyphs.Shield, size = 16.dp, color = grey)
+                    Text(
+                        when {
+                            body == null -> tr("Learning your normal", "평소 상태를 배우는 중")
+                            body.confidence == app.pawse.scoring.model.Confidence.HIGH -> tr("High confidence · $signals of 2 signals", "신뢰도 높음 · 신호 2개 중 ${signals}개")
+                            signals < 2 -> tr("Low confidence · $signals of 2 signals", "신뢰도 낮음 · 신호 2개 중 ${signals}개")
+                            else -> tr("Low confidence · few nights so far", "신뢰도 낮음 · 아직 밤이 적어요")
+                        },
+                        style = PawseType.Label,
+                        color = grey,
+                    )
+                    Glyph(Glyphs.ChevronRight, size = 16.dp, color = grey)
+                }
+            }
+        }
         Text(face.sentence, style = PawseType.Body, color = grey, modifier = Modifier.fillMaxWidth().padding(top = 16.dp).lookIn(look, 2))
     }
 }
