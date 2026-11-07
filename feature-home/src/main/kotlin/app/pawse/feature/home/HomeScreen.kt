@@ -721,6 +721,10 @@ private fun ringFace(type: ScoreType, day: DayReport?, showNumbers: Boolean): Ri
             val body = day.body
             val color = bodyColor(body?.band, day.illness.level)
             // The first week: seven segments fill a night at a time, and the numeral counts them.
+            // States board: sleep came from the phone with no overnight heart rate.
+            if (body == null && day.validNights == 0 && day.sleep.lastNightMinutes != null) {
+                return RingFace(null, grey, false, "—", "", neutral, true, tr("Needs a watch", "워치가 필요해요"))
+            }
             if (body == null && day.bodyStatus == BodyStatus.WARMING_UP) {
                 val nights = day.validNights.coerceIn(0, 7)
                 return RingFace(
@@ -1334,7 +1338,19 @@ private fun WorthKnowingCard(snapshot: ScoringSnapshot) {
                 Text(tr("${items.size} of $measured signals", "신호 ${measured}개 중 ${items.size}개"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        if (items.isEmpty()) {
+        // States board: a watch with no HRV is named once, calmly; nothing reads as zero.
+        val body = snapshot.today.body
+        val noHrv = body != null && body.hrv == null && body.sleepingHr != null &&
+            series.first { it.signal == Watched.HRV }.usualNights.isEmpty()
+        if (noHrv) {
+            Text(tr("Body is working from heart rate and sleep", "컨디션은 심박수와 수면으로 계산 중이에요"), style = PawseType.BodyStrong, modifier = Modifier.padding(top = 12.dp))
+            Text(
+                tr("This watch does not record HRV, so scores are a little less sure. Nothing for you to do.", "이 워치는 HRV를 기록하지 않아서 점수가 조금 덜 확실해요. 따로 할 일은 없어요."),
+                style = PawseType.Label,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        } else if (items.isEmpty()) {
             Text(tr("All within your usual.", "모두 평소 범위예요."), style = PawseType.BodyStrong, modifier = Modifier.padding(top = 12.dp))
         }
         items.forEach { WorthRow(it, series.first { s -> s.signal == it.signal }.usualNights.size) }
