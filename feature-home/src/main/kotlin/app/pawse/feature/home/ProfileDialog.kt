@@ -20,8 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
+import app.pawse.core.ui.component.PawseSwitch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -113,13 +112,11 @@ fun ProfileDialog(state: ProfileState, actions: ProfileActions, onDismiss: () ->
 
 @Composable
 private fun Main(state: ProfileState, actions: ProfileActions, onDismiss: () -> Unit, onOpen: (ProfilePage) -> Unit, onOpenCalc: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(tr("Profile", "프로필"), style = PawseType.Heading, modifier = Modifier.weight(1f))
-        GlyphButton(Glyphs.Close, tr("Close", "닫기"), onClick = onDismiss)
-    }
-    Text(tr("Customising lives here, not on the page.", "화면 편집은 여기에서 해요."), style = PawseType.Micro, color = PawseTheme.semantics.faint)
+    // As on the canvas: the title and one line under it; the sheet closes by its handle or the scrim.
+    Text(tr("Profile", "프로필"), style = PawseType.Heading)
+    Text(tr("Customising lives here, not on the page.", "화면 편집은 여기에서 해요."), style = PawseType.Micro, color = PawseTheme.semantics.faint, modifier = Modifier.padding(top = 4.dp))
 
-    Column(Modifier.padding(top = 8.dp)) {
+    Column(Modifier.padding(top = 16.dp)) {
         SwitchRow(
             tr("Bedside mode", "침대 모드"),
             tr("True black, dimmer colours, no glow", "완전한 검정, 더 어두운 색, 빛 번짐 없음"),
@@ -155,18 +152,25 @@ private fun Main(state: ProfileState, actions: ProfileActions, onDismiss: () -> 
         )
     }
 
+    // Card order and Language as the canvas has them: two segmented switches in place.
+    Text(tr("Card order", "카드 순서"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 16.dp, bottom = 8.dp))
+    Segmented(
+        options = listOf(false, true),
+        selected = state.cardOrder != null,
+        onSelect = { mine -> actions.onCardOrder(if (mine) ScoresCard.complete(ScoresCard.automatic(evening = false)) else null) },
+        label = { if (it) tr("My order", "직접 정렬") else tr("Automatic", "자동") },
+    )
+    if (state.cardOrder != null) {
+        LinkRow(tr("Arrange the cards", "카드 배치"), tr("Their order and which show", "순서와 표시할 카드")) { onOpen(ProfilePage.CARDS) }
+    }
+
     if (Build.VERSION.SDK_INT >= 33) Language()
 
-    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(top = 16.dp))
     val on = state.notifications.count { it.value }
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(top = 16.dp))
     LinkRow(tr("Notifications", "알림"), tr("$on on · one note a week by default", "${on}개 켜짐 · 기본은 일주일에 한 번")) { onOpen(ProfilePage.NOTIFICATIONS) }
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-    LinkRow(
-        tr("Card order", "카드 순서"),
-        if (state.cardOrder == null) tr("Automatic · follows the time of day", "자동 · 시간대에 따라") else tr("My order", "내 순서"),
-    ) { onOpen(ProfilePage.CARDS) }
-    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-    LinkRow(tr("How Pawse calculates", "Pawse 계산 방법"), tr("Every equation, in plain words", "모든 계산식을 쉬운 말로"), onClick = onOpenCalc)
+    LinkRow(tr("How Pawse calculates", "Pawse 계산 방법"), tr("Every equation, with today’s numbers", "모든 계산식과 오늘의 숫자"), onClick = onOpenCalc)
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
     You(state.profile, actions.onSaveProfile)
@@ -191,7 +195,6 @@ private fun Language() {
             manager.applicationLocales = LocaleList.forLanguageTags(if (it) "ko" else "en")
         },
         label = { if (it) "한국어" else "English" },
-        height = 32.dp,
     )
 }
 
@@ -216,24 +219,10 @@ private fun SwitchRow(title: String, sub: String, checked: Boolean, enabled: Boo
             Text(sub, style = PawseType.Micro, color = s.faint)
         }
         Spacer(Modifier.width(12.dp))
-        Switch(
-            checked = checked,
-            onCheckedChange = null,
-            enabled = enabled,
-            colors = switchColors(),
-        )
+        PawseSwitch(checked = checked, enabled = enabled)
     }
 }
 
-@Composable
-private fun switchColors() = SwitchDefaults.colors(
-    checkedTrackColor = PawseTheme.semantics.selection,
-    checkedThumbColor = PawseTheme.semantics.onSelection,
-    checkedBorderColor = Color.Transparent,
-    uncheckedTrackColor = PawseTheme.semantics.baselineBand,
-    uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-    uncheckedBorderColor = Color.Transparent,
-)
 
 @Composable
 private fun LinkRow(title: String, sub: String, onClick: () -> Unit) {
@@ -364,10 +353,9 @@ private fun CardOrder(order: List<ScoresCard>?, hidden: Set<ScoresCard>, actions
                     color = if (card in hidden) PawseTheme.semantics.faint else MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f).padding(start = 8.dp),
                 )
-                Switch(
+                PawseSwitch(
                     checked = card !in hidden,
-                    onCheckedChange = { actions.onHidden(card, !it) },
-                    colors = switchColors(),
+                    onChange = { actions.onHidden(card, !it) },
                     modifier = Modifier.semantics { contentDescription = tr("Show ${card.label}", "${card.label} 표시") },
                 )
             }

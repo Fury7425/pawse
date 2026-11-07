@@ -31,8 +31,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
+import app.pawse.core.ui.component.PawseSwitch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -375,19 +374,12 @@ internal fun ModelSettingsSection(viewModel: AssistantViewModel = hiltViewModel(
 
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(MODEL_TITLE, style = PawseType.Heading, modifier = Modifier.weight(1f))
-        Switch(
+        PawseSwitch(
             checked = state != ModelState.Off,
-            onCheckedChange = { on ->
+            onChange = { on ->
                 viewModel.setModel(on)
                 sheet = on
             },
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = colors.background,
-                checkedTrackColor = colors.onSurface,
-                uncheckedThumbColor = colors.onSurfaceVariant,
-                uncheckedTrackColor = colors.surfaceContainerHigh,
-                uncheckedBorderColor = colors.outline,
-            ),
         )
     }
     Spacer(Modifier.height(6.dp))

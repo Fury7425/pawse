@@ -32,8 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
+import app.pawse.core.ui.component.PawseSwitch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -654,17 +653,6 @@ private fun SettingRow(title: String, body: String, checked: Boolean, onCheckedC
             Text(body, style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
         }
         Spacer(Modifier.width(16.dp))
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            colors = SwitchDefaults.colors(
-                checkedTrackColor = s.selection,
-                checkedThumbColor = s.onSelection,
-                checkedBorderColor = Color.Transparent,
-                uncheckedTrackColor = s.baselineBand,
-                uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                uncheckedBorderColor = Color.Transparent,
-            ),
-        )
+        PawseSwitch(checked = checked, onChange = onCheckedChange)
     }
 }

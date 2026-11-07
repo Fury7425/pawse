@@ -194,6 +194,32 @@ fun Modifier.pressable(enabled: Boolean = true, role: Role = Role.Button, onClic
 }
 
 /**
+ * The design's switch: a 44 × 26 track, band grey off and the selection colour on,
+ * with a 20 dp thumb that slides 18 dp in 160 ms. Drawn only; the row it sits in
+ * takes the tap, or [onChange] makes the switch itself the target, 48 dp tall.
+ */
+@Composable
+fun PawseSwitch(checked: Boolean, modifier: Modifier = Modifier, enabled: Boolean = true, onChange: ((Boolean) -> Unit)? = null) {
+    val s = PawseTheme.semantics
+    val off = MaterialTheme.colorScheme.onSurfaceVariant
+    val x by animateFloatAsState(if (checked) 1f else 0f, tween(160, easing = EaseOut), label = "switch")
+    val track by animateColorAsState(if (checked) s.selection else s.baselineBand, tween(160), label = "switchTrack")
+    val thumb by animateColorAsState(if (checked) s.onSelection else off, tween(160), label = "switchThumb")
+    Box(
+        modifier
+            .then(if (onChange != null) Modifier.heightIn(min = 48.dp).pressable(enabled = enabled, role = Role.Switch) { onChange(!checked) } else Modifier)
+            .alpha(if (enabled) 1f else 0.38f),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.size(44.dp, 26.dp)) {
+            drawRoundRect(track, cornerRadius = androidx.compose.ui.geometry.CornerRadius(13.dp.toPx()))
+            val r = 10.dp.toPx()
+            drawCircle(thumb, r, Offset(3.dp.toPx() + r + 18.dp.toPx() * x, size.height / 2f))
+        }
+    }
+}
+
+/**
  * A card: one fill step up from the page, lit softly from above, and one hairline.
  * Depth comes from lightness, not lines and shadows: shadows are kept for things
  * that float. Bedside drops the light.
