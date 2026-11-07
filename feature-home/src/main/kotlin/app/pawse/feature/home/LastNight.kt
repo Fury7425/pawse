@@ -78,6 +78,7 @@ import app.pawse.core.ui.component.Segmented
 import app.pawse.core.ui.component.UsualRangeKey
 import app.pawse.core.ui.component.cardSurface
 import app.pawse.core.ui.component.pressable
+import app.pawse.core.ui.component.PawseSheet
 import app.pawse.core.ui.component.rememberHaptic
 import app.pawse.core.ui.component.rememberSwap
 import app.pawse.core.ui.component.swapIn
@@ -146,35 +147,34 @@ internal fun SleepTab(
     val night = snapshot.row(back)
 
     Column(modifier.padding(top = 16.dp)) {
-        Column(Modifier.swapIn(swap)) {
-            val open = figure
-            if (open == null) {
-                NightPage(
-                    snapshot = snapshot,
-                    row = night,
-                    latest = back == 0,
-                    detail = detail,
-                    stage = stage,
-                    onStage = { stage = it },
-                    cursor = cursor,
-                    onCursor = { cursor = it },
-                    onOpen = { figure = it; picked = back },
-                )
-            } else {
-                Trend(
-                    snapshot = snapshot,
-                    figure = open,
-                    range = range,
-                    onRange = { range = it },
-                    sel = picked.takeIf { it < range } ?: back.takeIf { it < range } ?: 0,
-                    onSel = { picked = it },
-                    page = night,
-                    pageBack = back,
-                    onClose = { figure = null },
-                    onOpenNight = onOpenNight,
-                    onBody = onBody,
-                )
-            }
+        NightPage(
+            snapshot = snapshot,
+            row = night,
+            latest = back == 0,
+            detail = detail,
+            stage = stage,
+            onStage = { stage = it },
+            cursor = cursor,
+            onCursor = { cursor = it },
+            onOpen = { figure = it; picked = back },
+        )
+        // Over time sits under the night, as on the canvas: one figure at a time, picked
+        // from Showing ▾ or by tapping a figure above, with the shared 7 / 30 / 90 range.
+        Column(Modifier.padding(top = 32.dp).swapIn(swap)) {
+            Trend(
+                snapshot = snapshot,
+                figure = figure ?: NightFigure.ASLEEP,
+                range = range,
+                onRange = { range = it },
+                sel = picked.takeIf { it < range } ?: back.takeIf { it < range } ?: 0,
+                onSel = { picked = it },
+                page = night,
+                pageBack = back,
+                onClose = { figure = null },
+                onOpenNight = onOpenNight,
+                onBody = onBody,
+                onFigure = { figure = it },
+            )
         }
     }
 }
@@ -861,6 +861,7 @@ private fun Trend(
     onClose: () -> Unit,
     onOpenNight: (Int) -> Unit,
     onBody: () -> Unit,
+    onFigure: (NightFigure) -> Unit,
 ) {
     val grey = MaterialTheme.colorScheme.onSurfaceVariant
     val rows = snapshot.rows(range)
@@ -869,16 +870,60 @@ private fun Trend(
     val usual = snapshot.usual(figure::of)
     val need = (page.day?.sleep?.needHours ?: snapshot.today.sleep.needHours) * 60.0
     val reading = readingOf(figure, selRow, usual, need)
+    var picking by remember { mutableStateOf(false) }
 
-    BackLink(nightTitle(page.date, pageBack == 0), onClick = onClose)
-    Text(figure.title(), style = PawseType.Title, modifier = Modifier.padding(top = 12.dp))
-    Text(figure.lead(), style = PawseType.Body, color = grey, modifier = Modifier.padding(top = 4.dp))
+    Row(Modifier.fillMaxWidth().heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(tr("Over time", "기간별 추이"), style = PawseType.Heading, modifier = Modifier.weight(1f))
+        // Showing ▾: which figure the trend draws.
+        Row(
+            Modifier
+                .heightIn(min = 48.dp)
+                .pressable { picking = true }
+                .semantics { contentDescription = tr("Showing ${figure.title()}. Change", "${figure.title()} 표시 중. 바꾸기") },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                Modifier
+                    .height(36.dp)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(12.dp))
+                    .padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(figure.title(), style = PawseType.Label, color = grey)
+                Glyph(Glyphs.ChevronDown, size = 14.dp, color = grey)
+            }
+        }
+    }
+    if (picking) {
+        PawseSheet(onDismiss = { picking = false }) {
+            Text(tr("Showing", "표시할 항목"), style = PawseType.Heading)
+            Column(Modifier.padding(top = 8.dp)) {
+                NightFigure.entries.forEach { f ->
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 52.dp)
+                            .pressable {
+                                onFigure(f)
+                                picking = false
+                            },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(f.title(), style = PawseType.BodyStrong, modifier = Modifier.weight(1f))
+                        if (f == figure) Glyph(Glyphs.Check, size = 20.dp, color = MaterialTheme.colorScheme.onSurface)
+                    }
+                }
+            }
+        }
+    }
     Segmented(
         options = RANGES,
         selected = range,
         onSelect = onRange,
         label = { tr("$it nights", "${it}밤") },
-        modifier = Modifier.padding(top = 20.dp),
+        modifier = Modifier.padding(top = 12.dp),
     )
 
     Text(
