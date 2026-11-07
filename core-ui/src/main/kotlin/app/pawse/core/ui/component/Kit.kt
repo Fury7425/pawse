@@ -547,6 +547,8 @@ fun ScoreRing(
     reveal: Float = 0f,
     /** The day's first fill was already seen (a tab return): start at the value, no sweep from zero. */
     skipFirstDraw: Boolean = false,
+    /** How long a changed value glides: 400 ms on Scores, 220 ms for a day step in the detail. */
+    changeMillis: Int = PawseMotion.VALUE,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val track = PawseTheme.semantics.baselineOuter
@@ -555,7 +557,7 @@ fun ScoreRing(
     val targetColor = MaterialTheme.colorScheme.onSurface
     val reduce = LocalReduceMotion.current
     // A new day's band crossfades its colour with the sweep; colour uses plain ease.
-    val arcColor by animateColorAsState(color, tween(PawseMotion.VALUE), label = "ringColor")
+    val arcColor by animateColorAsState(color, tween(changeMillis), label = "ringColor")
     val sweep = remember { Animatable(if (skipFirstDraw) (fraction ?: 0f).coerceIn(0f, 1f) else 0f) }
     // The first fill draws in 700 ms on EaseOut; a changed value glides 400 ms on EaseInOut.
     var drawn by remember { mutableStateOf(skipFirstDraw) }
@@ -563,7 +565,7 @@ fun ScoreRing(
         val to = (fraction ?: 0f).coerceIn(0f, 1f)
         when {
             reduce -> sweep.snapTo(to)
-            drawn -> sweep.animateTo(to, tween(PawseMotion.VALUE, easing = EaseInOut))
+            drawn -> sweep.animateTo(to, tween(changeMillis, easing = EaseInOut))
             else -> sweep.animateTo(to, tween(PawseMotion.FIRST_DRAW, easing = EaseOut))
         }
         drawn = true

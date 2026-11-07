@@ -495,6 +495,8 @@ private fun DetailHero(
             range = face.range,
             stroke = 6f,
             ghost = pinDate?.let { heroFace(type, pinned, showNumbers).fraction },
+            // A day step sweeps old → new in 220 ms, no refill.
+            changeMillis = 220,
             modifier = Modifier.padding(top = 4.dp).flightTarget(type),
         ) {
             // Another day keeps everything in place: the arc sweeps, the numeral swaps.
