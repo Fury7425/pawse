@@ -134,7 +134,10 @@ class ScannerViewModel @Inject constructor(
         _state.value = ScanState.LookingUp(raw)
 
         viewModelScope.launch {
-            when (val result = repository.lookup(raw)) {
+            val result = repository.lookup(raw)
+            // Cancelled while looking: the answer is still cached, but not shown.
+            if (_state.value != ScanState.LookingUp(raw)) return@launch
+            when (result) {
                 is FoodLookupResult.Found ->
                     _state.value = ScanState.Found(result.resolution.product, result.resolution.fromCache)
 

@@ -1,5 +1,6 @@
 package app.pawse.core.data.activity
 
+import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.StepsRecord
@@ -38,6 +39,8 @@ data class MovingSnapshot(
     val energyDay: ThroughDay? = null,
     /** The package whose steps are shown: the writer that counted the most. */
     val stepsWriter: String? = null,
+    /** False when steps were declined in Health Connect: the card says so instead of reading zero. */
+    val stepsShared: Boolean = true,
 )
 
 /**
@@ -137,6 +140,7 @@ class MovingRepository @Inject constructor(private val gateway: HealthConnectGat
             stepsDay = through(steps),
             energyDay = through(energy),
             stepsWriter = shownWriter,
+            stepsShared = HealthPermission.getReadPermission(StepsRecord::class) in gateway.grantedPermissions(),
         ).also { last = it }
     }
 }

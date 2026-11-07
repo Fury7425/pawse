@@ -42,7 +42,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -87,6 +86,7 @@ import app.pawse.core.ui.component.PawseCard
 import app.pawse.core.ui.component.PawseField
 import app.pawse.core.ui.component.PawseHaptic
 import app.pawse.core.ui.component.PrimaryButton
+import app.pawse.core.ui.component.PullLine
 import app.pawse.core.ui.component.SecondaryButton
 import app.pawse.core.ui.component.cardSurface
 import app.pawse.core.ui.component.lift
@@ -487,10 +487,16 @@ private fun ScanStatePanel(
                 GhostButton(tr("Type it in instead", "대신 직접 입력"), onClick = onManualEntry, glyph = Glyphs.Pencil)
             }
 
-            is ScanState.LookingUp -> Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onSurface)
-                Spacer(Modifier.width(12.dp))
-                Text(tr("Looking up ${state.barcode}", "${state.barcode} 찾는 중"), style = PawseType.Body)
+            // States board: the line, never a spinner; the row fills when the answer arrives.
+            is ScanState.LookingUp -> Column {
+                PullLine(running = true)
+                Spacer(Modifier.height(14.dp))
+                Text(tr("Looking up ${state.barcode}", "${state.barcode} 찾는 중"), style = PawseType.Heading)
+                Muted("Open Food Facts")
+                Spacer(Modifier.height(6.dp))
+                Text(tr("Usually a second. Recent foods below still work.", "보통 1초면 돼요. 아래 최근 음식은 그대로 쓸 수 있어요."), style = PawseType.Body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(16.dp))
+                SecondaryButton(tr("Cancel", "취소"), onClick = onScanAgain, modifier = Modifier.fillMaxWidth())
             }
 
             is ScanState.Found -> {
@@ -697,15 +703,13 @@ private fun CameraUnavailable(
     onManualEntry: () -> Unit,
 ) {
     Column {
-        Text(if (hasCamera) tr("Camera access", "카메라 접근") else tr("No camera on this phone", "이 휴대폰에는 카메라가 없어요"), style = PawseType.Heading)
+        Text(if (hasCamera) tr("Pawse needs the camera to scan", "스캔하려면 카메라가 필요해요") else tr("No camera on this phone", "이 휴대폰에는 카메라가 없어요"), style = PawseType.Heading)
         Spacer(Modifier.height(6.dp))
         Text(
             text = if (hasCamera) {
                 tr(
-                    "The camera reads barcodes and nutrition panels on this phone. No photo is " +
-                        "saved and no frame leaves the device.",
-                    "카메라로 이 휴대폰에서 바코드와 영양성분표를 읽어요. 사진은 저장되지 않고 어떤 화면도 " +
-                        "기기 밖으로 나가지 않아요.",
+                    "Barcodes and labels are read on the phone. No photo is kept or sent.",
+                    "바코드와 라벨은 휴대폰에서 읽어요. 사진은 저장하거나 보내지 않아요.",
                 )
             } else {
                 tr(

@@ -98,7 +98,11 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.PermissionController
+import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.StepsRecord
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pawse.core.data.activity.HeartHour
@@ -115,6 +119,7 @@ import app.pawse.core.ui.component.PawseCard
 import app.pawse.core.ui.component.PawseHaptic
 import app.pawse.core.ui.component.PawseMotion
 import app.pawse.core.ui.component.PrimaryButton
+import app.pawse.core.ui.component.PullLine
 import app.pawse.core.ui.component.RangeTrack
 import app.pawse.core.ui.component.RevealEnter
 import app.pawse.core.ui.component.RevealExit
@@ -191,6 +196,7 @@ fun HomeScreen(
     val firstWeek by viewModel.firstWeek.collectAsStateWithLifecycle()
     val hiddenToday by viewModel.hiddenToday.collectAsStateWithLifecycle()
     var editingProfile by remember { mutableStateOf(false) }
+    val shareSteps = rememberLauncherForActivityResult(PermissionController.createRequestPermissionResultContract()) { viewModel.refresh() }
 
     Scaffold(modifier = modifier, containerColor = MaterialTheme.colorScheme.background) { padding ->
         when (val current = state) {
@@ -436,7 +442,7 @@ private fun Scores(
                         onProfile = onSettings,
                         modifier = pad,
                     )
-                    PullLine(running = running, fraction = pull.distanceFraction)
+                    PullLine(running = running, fraction = pull.distanceFraction, modifier = Modifier.padding(horizontal = 24.dp))
                     WeekStrip(
                         days = weekOf(snapshot),
                         selected = 6 - back,
@@ -548,7 +554,7 @@ private fun Scores(
                         // Check-in and Moving today stand apart; the cards between sit closer.
                         val top = if (card == ScoresCard.MOVING || card == ScoresCard.CHECK_IN) 32.dp else 16.dp
                         when (card) {
-                            ScoresCard.MOVING -> if (moving != null) item { MovingToday(moving, onOpenActivity, pad.padding(top = top)) }
+                            ScoresCard.MOVING -> if (moving != null) item { MovingToday(moving, onOpenActivity, onShareSteps = { shareSteps.launch(setOf(HealthPermission.getReadPermission(StepsRecord::class))) }, modifier = pad.padding(top = top)) }
                             ScoresCard.WORTH -> if (day.bodyStatus != BodyStatus.WARMING_UP) item { Box(pad.padding(top = top)) { WorthKnowingCard(snapshot) } }
                             ScoresCard.YOUR_DAY -> if (energy != null) item { Box(pad.padding(top = top)) { YourDay(energy) } }
                             ScoresCard.TONIGHT -> if (tonight != null) item { Box(pad.padding(top = top)) { TonightCard(tonight, snapshot) } }
@@ -632,38 +638,6 @@ private fun Header(title: String, sync: String, onProfile: () -> Unit, modifier:
             contentAlignment = Alignment.Center,
         ) {
             Glyph(Glyphs.Person, color = MaterialTheme.colorScheme.onSurface)
-        }
-    }
-}
-
-/**
- * The 2 dp line under the header: it follows a pull, then runs while Health
- * Connect is read. Never a spinner.
- */
-@Composable
-private fun PullLine(running: Boolean, fraction: Float) {
-    val ink = MaterialTheme.colorScheme.onSurfaceVariant
-    val reduce = LocalReduceMotion.current
-    val loop = rememberInfiniteTransition(label = "pull")
-    // A 40% segment crosses on the in-out curve, 1400 ms a pass.
-    val sweep by loop.animateFloat(
-        initialValue = -0.4f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1400, easing = EaseInOut), RepeatMode.Restart),
-        label = "sweep",
-    )
-    // Reduce motion: the whole line pulses its opacity instead.
-    val pulse by loop.animateFloat(
-        initialValue = 0.35f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(700, easing = LinearEasing), RepeatMode.Reverse),
-        label = "pulse",
-    )
-    Canvas(Modifier.fillMaxWidth().padding(horizontal = 24.dp).height(2.dp).clip(RoundedCornerShape(1.dp))) {
-        when {
-            running && reduce -> drawRect(ink.copy(alpha = pulse))
-            running -> drawRect(ink, Offset(sweep * size.width, 0f), Size(size.width * 0.4f, size.height))
-            fraction > 0f -> drawRect(ink, Offset.Zero, Size(size.width * fraction.coerceIn(0f, 1f), size.height))
         }
     }
 }
@@ -1118,7 +1092,7 @@ private fun pointsOf(day: DayReport): String {
  * keeps none of it. No goal, no score, grey only.
  */
 @Composable
-private fun MovingToday(m: MovingSnapshot, onOpen: (ActivityFigure) -> Unit, modifier: Modifier = Modifier) {
+private fun MovingToday(m: MovingSnapshot, onOpen: (ActivityFigure) -> Unit, onShareSteps: () -> Unit, modifier: Modifier = Modifier) {
     Column(modifier) {
         SplitRow {
             Text(tr("Moving today", "오늘의 움직임"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
@@ -1128,12 +1102,38 @@ private fun MovingToday(m: MovingSnapshot, onOpen: (ActivityFigure) -> Unit, mod
                 color = PawseTheme.semantics.faint,
             )
         }
-        Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        // States board: steps declined is one cause with one action; nothing reads as zero.
+        if (!m.stepsShared) {
+            PawseCard(modifier = Modifier.padding(top = 8.dp)) {
+                Text(tr("Steps aren’t shared with Pawse", "걸음 수가 Pawse와 공유되지 않아요"), style = PawseType.BodyStrong)
+                Text(
+                    tr("Active energy and heart rate still show below.", "활동 에너지와 심박수는 아래에 그대로 나와요."),
+                    style = PawseType.Label,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                SecondaryButton(tr("Share steps", "걸음 수 공유"), onClick = onShareSteps, modifier = Modifier.padding(top = 12.dp))
+            }
+        }
+        Row(Modifier.padding(top = if (m.stepsShared) 8.dp else 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             // Each card opens the Activity detail on its own figure.
-            MovingCard(tr("Steps", "걸음 수"), m.steps, unit = "", per = "", onClick = { onOpen(ActivityFigure.STEPS) }, modifier = Modifier.weight(1f))
+            if (m.stepsShared) MovingCard(tr("Steps", "걸음 수"), m.steps, unit = "", per = "", onClick = { onOpen(ActivityFigure.STEPS) }, modifier = Modifier.weight(1f))
             MovingCard(tr("Active energy", "활동 에너지"), m.energy, unit = "kcal", per = " kcal", onClick = { onOpen(ActivityFigure.ENERGY) }, modifier = Modifier.weight(1f))
         }
-        if (m.heart.isNotEmpty()) HeartToday(m, onClick = { onOpen(ActivityFigure.HEART) }, modifier = Modifier.padding(top = 12.dp))
+        if (m.heart.isNotEmpty()) {
+            HeartToday(m, onClick = { onOpen(ActivityFigure.HEART) }, modifier = Modifier.padding(top = 12.dp))
+        } else {
+            // Watch off or charging: say so instead of drawing an empty chart.
+            PawseCard(modifier = Modifier.padding(top = 12.dp)) {
+                Text(tr("No heart rate since you woke", "기상 이후 심박수가 없어요"), style = PawseType.BodyStrong)
+                Text(
+                    tr("Your watch hasn’t written any today. The steps above are from the phone.", "오늘 워치가 기록하지 않았어요. 위 걸음 수는 휴대폰에서 왔어요."),
+                    style = PawseType.Label,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+        }
         Text(
             tr("Health Connect’s own totals, read when Scores opens. Pawse keeps none of it.", "헬스 커넥트의 합계를 점수 화면을 열 때 읽어요. Pawse는 저장하지 않아요."),
             style = PawseType.Micro,

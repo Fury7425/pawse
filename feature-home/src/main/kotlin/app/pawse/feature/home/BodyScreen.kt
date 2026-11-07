@@ -193,7 +193,7 @@ private fun statusLine(s: BodySnapshot): String {
     // Back after a long gap: the status line names it, as the States board does.
     val dates = s.series[Metric.BODY_WEIGHT].orEmpty().map { it.date }.distinct().sorted()
     val gap = dates.takeLast(2).takeIf { it.size == 2 }?.let { (a, b) -> java.time.temporal.ChronoUnit.DAYS.between(a, b) } ?: 0L
-    if (days == 0L && gap >= 14) return tr("Weighed today after ${gap / 7} weeks · $kg kg on the scale", "${gap / 7}주 만에 오늘 측정 · 체중계 $kg kg")
+    if (days == 0L && gap >= 14) return tr("Weighed today after ${gap / 7} weeks", "${gap / 7}주 만에 오늘 측정")
     return when (days) {
         0L -> tr("Weighed today ${ScoreCopy.clock(weight.atEpochMs)} · $kg kg on the scale", "오늘 ${ScoreCopy.clock(weight.atEpochMs)} 측정 · 체중계 $kg kg")
         1L -> tr("Weighed yesterday · $kg kg on the scale", "어제 측정 · 체중계 $kg kg")

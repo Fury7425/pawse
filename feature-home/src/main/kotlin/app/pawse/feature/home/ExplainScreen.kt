@@ -855,7 +855,15 @@ private fun BodyCards(today: DayReport, insights: List<Insight>) {
     }
     Text(tr("What moves your Body", "컨디션을 움직이는 것"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 32.dp))
     PawseCard(Modifier.padding(top = 12.dp)) {
-        if (insights.isEmpty()) {
+        val nights = today.body?.validNights ?: 0
+        if (insights.isEmpty() && nights < 30) {
+            // States board: say how far along it is instead of hiding the section.
+            Text(
+                tr("Patterns appear after about 30 nights. $nights so far.", "패턴은 약 30일 밤 뒤에 나타나요. 지금까지 ${nights}일."),
+                style = PawseType.Label,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else if (insights.isEmpty()) {
             Text(
                 tr(
                     "Nothing clear yet. An effect shows after at least 8 days of exposure, and only when its 90% range excludes zero.",

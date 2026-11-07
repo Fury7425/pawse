@@ -526,7 +526,14 @@ private fun ColumnScope.DownloadProgress(
 ) {
     val grey = MaterialTheme.colorScheme.onSurfaceVariant
     val done = (state.bytes.toDouble() / PawseModel.BYTES).coerceIn(0.0, 1.0).toFloat()
-    Text(tr("Getting the model ready", "모델 준비 중"), style = PawseType.Heading)
+    Text(
+        when {
+            !state.waiting -> tr("Getting the model ready", "모델 준비 중")
+            state.wifiOnly -> tr("Paused · waiting for Wi-Fi", "일시 중지 · Wi-Fi를 기다리는 중")
+            else -> tr("Paused · waiting for a connection", "일시 중지 · 연결을 기다리는 중")
+        },
+        style = PawseType.Heading,
+    )
     Spacer(Modifier.height(16.dp))
     Row {
         Text(PawseModel.downloaded(state.bytes), style = PawseType.Label, modifier = Modifier.weight(1f))
@@ -561,7 +568,7 @@ private fun ColumnScope.DownloadProgress(
 private fun timeLeft(state: ModelState.Downloading): String {
     val start = remember(state.waiting) { System.currentTimeMillis() to state.bytes }
     if (state.waiting) {
-        return if (state.wifiOnly) tr("Waiting for Wi-Fi", "Wi-Fi를 기다리는 중") else tr("Waiting for a connection", "연결을 기다리는 중")
+        return if (state.wifiOnly) tr("It resumes on its own when Wi-Fi is back.", "Wi-Fi가 돌아오면 저절로 이어서 받아요.") else tr("It resumes on its own when you’re back online.", "다시 연결되면 저절로 이어서 받아요.")
     }
     val got = state.bytes - start.second
     val ms = System.currentTimeMillis() - start.first
