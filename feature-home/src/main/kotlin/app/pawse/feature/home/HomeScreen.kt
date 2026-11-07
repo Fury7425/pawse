@@ -196,7 +196,6 @@ fun HomeScreen(
     val firstWeek by viewModel.firstWeek.collectAsStateWithLifecycle()
     val hiddenToday by viewModel.hiddenToday.collectAsStateWithLifecycle()
     var editingProfile by remember { mutableStateOf(false) }
-    val shareSteps = rememberLauncherForActivityResult(PermissionController.createRequestPermissionResultContract()) { viewModel.refresh() }
 
     Scaffold(modifier = modifier, containerColor = MaterialTheme.colorScheme.background) { padding ->
         when (val current = state) {
@@ -356,6 +355,8 @@ private fun Scores(
     onShow: () -> Unit,
 ) {
     val context = LocalContext.current
+    // Share steps: Health Connect's own sheet, then a fresh sync reads them.
+    val shareSteps = rememberLauncherForActivityResult(PermissionController.createRequestPermissionResultContract()) { onSyncNow() }
     // The picked day, as days before the newest. Today is 0.
     var back by rememberSaveable { mutableIntStateOf(0) }
     val date = snapshot.date.minusDays(back.toLong())
