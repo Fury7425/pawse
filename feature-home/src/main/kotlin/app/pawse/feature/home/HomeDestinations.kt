@@ -34,6 +34,16 @@ object HomeDestinations {
 
     fun activityFigureOf(raw: String?): ActivityFigure =
         raw?.let { runCatching { ActivityFigure.valueOf(it) }.getOrNull() } ?: ActivityFigure.STEPS
+
+    /** How Pawse calculates, opened at one section from a detail's ⓘ, or at the top from Profile. */
+    const val CALC_ARG = "section"
+    const val CALC = "calc?$CALC_ARG={$CALC_ARG}"
+
+    fun calc(section: CalcSection? = null): String = "calc?$CALC_ARG=${section?.name.orEmpty()}"
+
+    fun calcSectionOf(raw: String?): CalcSection? = raw?.let { runCatching { CalcSection.valueOf(it) }.getOrNull() }
 }
+
+enum class CalcSection { BODY, LIKELY, SLEEP, LOAD, USUAL, SAME }
 
 enum class ActivityFigure { STEPS, ENERGY, HEART }

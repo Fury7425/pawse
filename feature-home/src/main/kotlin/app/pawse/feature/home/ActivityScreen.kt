@@ -10,6 +10,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import app.pawse.core.ui.component.Glyph
+import app.pawse.core.ui.component.pressable
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -81,6 +84,10 @@ fun ActivityScreen(
     initial: ActivityFigure,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    /** The ⓘ: How Pawse calculates, at Your usual. */
+    onOpenCalc: () -> Unit = {},
+    /** A Where it counts row: the score it feeds. */
+    onOpenScore: (app.pawse.scoring.model.ScoreType) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val moving by viewModel.moving.collectAsStateWithLifecycle()
@@ -101,7 +108,7 @@ fun ActivityScreen(
                         modifier = Modifier.width(264.dp),
                     )
                 }
-                Spacer(Modifier.size(48.dp))
+                GlyphButton(Glyphs.Info, tr("How your usual is worked out", "내 평소 계산 방법"), onClick = onOpenCalc)
             }
             val m = moving
             Column(
@@ -128,6 +135,24 @@ fun ActivityScreen(
                                 energy = energy,
                             )
                         }
+                    }
+                    if (m != null) {
+                        // Where it counts: heart rate feeds Body overnight; steps and energy are shown only.
+                        val body = snapshot?.today?.body
+                        val sleeping = body?.sleepingHr
+                        if (figure == ActivityFigure.HEART && body != null && sleeping?.tonight != null) {
+                            WhereItCounts(
+                                title = tr("Sleeping heart rate", "수면 중 심박수"),
+                                meta = tr("${sleeping.tonight!!.roundToInt()} bpm against your usual ${sleeping.baseline.roundToInt()}", "${sleeping.tonight!!.roundToInt()} bpm, 평소 ${sleeping.baseline.roundToInt()}"),
+                                value = tr("Body ${body.score}", "컨디션 ${body.score}"),
+                                onClick = { onOpenScore(app.pawse.scoring.model.ScoreType.BODY) },
+                            )
+                        }
+                        Sources(
+                            writtenBy = if (figure == ActivityFigure.STEPS) m.stepsWriter?.let { writer(it) } else null,
+                            readAt = m.asOfEpochMs,
+                            note = shownNote(figure),
+                        )
                     }
                 }
             }
@@ -206,16 +231,6 @@ private fun AmountPage(reading: MovingReading, day: ThroughDay?, asOf: Long, ene
 
     SectionHead(tr("Last 7 days", "지난 7일"), if (day.usualHigh.isNotEmpty()) tr("shaded is a usual whole day", "음영은 평소 하루 전체") else "")
     WeekBars(day)
-    Text(
-        if (energy) {
-            tr("Shown, never scored. Food compares what you ate with active plus resting energy.", "보여주기만 하고 점수에는 넣지 않아요. 음식 화면에서 먹은 양을 활동과 휴식 에너지의 합과 비교해요.")
-        } else {
-            tr("Shown, never scored. Health Connect’s own totals; Pawse keeps none of it.", "보여주기만 하고 점수에는 넣지 않아요. 헬스 커넥트의 합계이고 Pawse는 저장하지 않아요.")
-        },
-        style = PawseType.Micro,
-        color = PawseTheme.semantics.faint,
-        modifier = Modifier.padding(top = 24.dp),
-    )
 }
 
 /** Heart rate since waking, hour by hour: low to high as a stick, the average as a dot. */
@@ -276,12 +291,53 @@ private fun HeartPage(m: MovingSnapshot, sleepingBpm: Double?) {
             Triple(tr("Now", "지금"), "${m.heart.last().mean} bpm", hh(m.heart.last().hour)),
         ),
     )
-    Text(
-        tr("Shown, never scored. Sleeping heart rate feeds Body; workouts count under Load.", "보여주기만 하고 점수에는 넣지 않아요. 수면 중 심박수는 컨디션에, 운동은 부하에 반영돼요."),
-        style = PawseType.Micro,
-        color = PawseTheme.semantics.faint,
-        modifier = Modifier.padding(top = 24.dp),
-    )
+}
+
+/** One row under Where it counts: what feeds a score, its value there, and a way to it. */
+@Composable
+private fun WhereItCounts(title: String, meta: String, value: String, onClick: () -> Unit) {
+    Text(tr("Where it counts", "반영되는 곳"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 32.dp))
+    androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(top = 8.dp))
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 52.dp)
+            .pressable(onClick = onClick)
+            .padding(top = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = PawseType.Body)
+            Text(meta, style = PawseType.Micro, color = PawseTheme.semantics.faint)
+        }
+        Text(value, style = PawseType.MetricValue, modifier = Modifier.padding(horizontal = 8.dp))
+        Glyph(Glyphs.ChevronRight, size = 16.dp, color = PawseTheme.semantics.faint)
+    }
+}
+
+/** Where it comes from: who wrote it, when Pawse read it, and that Pawse keeps none of it. */
+@Composable
+private fun Sources(writtenBy: String?, readAt: Long, note: String) {
+    val faint = PawseTheme.semantics.faint
+    Text(tr("Where it comes from", "데이터 출처"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 32.dp))
+    listOfNotNull(
+        writtenBy?.let { tr("Written by", "기록한 앱") to it },
+        tr("Read", "읽은 때") to tr("From Health Connect at ${ScoreCopy.clock(readAt)}", "${ScoreCopy.clock(readAt)}에 헬스 커넥트에서"),
+        tr("Kept", "보관") to tr("Nothing. Pawse reads it again each time Scores opens.", "없음. 점수 화면을 열 때마다 다시 읽어요."),
+    ).forEach { (k, v) ->
+        androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(top = 8.dp))
+        Row(Modifier.padding(top = 10.dp)) {
+            Text(k, style = PawseType.Micro, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.widthIn(min = 84.dp).padding(end = 8.dp))
+            Text(v, style = PawseType.Micro, color = faint, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
+        }
+    }
+    Text(note, style = PawseType.Micro, color = faint, modifier = Modifier.padding(top = 16.dp))
+}
+
+private fun shownNote(figure: ActivityFigure): String = when (figure) {
+    ActivityFigure.STEPS -> tr("Shown, never scored. Steps stand in for Load only when a walk has no heart rate.", "보여주기만 하고 점수에는 넣지 않아요. 심박수가 없는 걷기만 걸음 수로 부하에 반영해요.")
+    ActivityFigure.ENERGY -> tr("Shown, never scored. Food compares what you ate with active plus resting energy.", "보여주기만 하고 점수에는 넣지 않아요. 음식 화면에서 먹은 양을 활동과 휴식 에너지의 합과 비교해요.")
+    ActivityFigure.HEART -> tr("Shown, never scored. Sleeping heart rate feeds Body; workouts count under Load.", "보여주기만 하고 점수에는 넣지 않아요. 수면 중 심박수는 컨디션에, 운동은 부하에 반영돼요.")
 }
 
 @Composable

@@ -175,6 +175,8 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
     /** Moving today's cards: the Activity detail on the tapped figure. */
     onOpenActivity: (ActivityFigure) -> Unit = {},
+    /** Profile's How Pawse calculates, a push of its own. */
+    onOpenCalc: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -267,6 +269,10 @@ fun HomeScreen(
                 onHideToday = viewModel::setHiddenToday,
             ),
             onDismiss = { editingProfile = false },
+            onOpenCalc = {
+                editingProfile = false
+                onOpenCalc()
+            },
         )
     }
 }

@@ -128,6 +128,7 @@ fun ExplainScreen(
     modifier: Modifier = Modifier,
     /** The day the Scores strip had picked, as days before the newest. */
     initialBack: Int = 0,
+    onOpenCalc: (CalcSection) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -160,8 +161,6 @@ fun ExplainScreen(
     var back by rememberSaveable { mutableIntStateOf(initialBack) }
     // Body and Load's Over time range, shared by both pages.
     var range by rememberSaveable { mutableIntStateOf(30) }
-    // The ⓘ opens how the open page's number is worked out, as a sheet.
-    var mathFor by remember { mutableStateOf<ScoreType?>(null) }
     // One pinned day to compare against, as days before the newest; your usual is always on.
     var pin by rememberSaveable { mutableStateOf<Int?>(null) }
     // The day sheet: true picks a day to pin, false moves the window day (the calendar).
@@ -232,7 +231,16 @@ fun ExplainScreen(
                             position = { pager.currentPage + pager.currentPageOffsetFraction },
                         )
                     }
-                    GlyphButton(Glyphs.Info, tr("How Pawse calculates ${ScoreCopy.name(shown)}", "${ScoreCopy.name(shown)} 계산 방법"), onClick = { mathFor = shown })
+                    GlyphButton(Glyphs.Info, tr("How Pawse calculates ${ScoreCopy.name(shown)}", "${ScoreCopy.name(shown)} 계산 방법"), onClick = {
+                        // The ⓘ opens How Pawse calculates at the open page's number.
+                        onOpenCalc(
+                            when (shown) {
+                                ScoreType.BODY -> CalcSection.BODY
+                                ScoreType.SLEEP -> CalcSection.SLEEP
+                                ScoreType.LOAD -> CalcSection.LOAD
+                            },
+                        )
+                    })
                 }
                 if (snapshot != null) {
                     DayRail(
@@ -266,26 +274,6 @@ fun ExplainScreen(
             },
             onDismiss = { daySheet = null },
         )
-    }
-
-    mathFor?.let { type ->
-        val day = snapshot?.history?.lastOrNull { it.date == date }
-        PawseSheet(onDismiss = { mathFor = null }) {
-            Text(tr("How Pawse calculates ${ScoreCopy.name(type)}", "${ScoreCopy.name(type)} 계산 방법"), style = PawseType.Heading)
-            if (day != null && type != ScoreType.SLEEP) {
-                Combiner(combiner = combinerOf(type, day), mathOpen = true, onToggleMath = {}, modifier = Modifier.padding(top = 16.dp))
-            } else {
-                Text(
-                    tr(
-                        "Sleep is hours asleep against your need. Need comes from your nights off and rises a little after a hard day. Stages are shown, never scored.",
-                        "수면은 필요한 잠에 대한 실제 수면 시간이에요. 필요한 잠은 쉬는 날 밤에서 배우고, 힘든 날 뒤에는 조금 늘어요. 수면 단계는 보여주기만 하고 점수에 넣지 않아요.",
-                    ),
-                    style = PawseType.Body,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 12.dp),
-                )
-            }
-        }
     }
 }
 

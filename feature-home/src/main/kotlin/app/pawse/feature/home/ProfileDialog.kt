@@ -90,7 +90,7 @@ class ProfileActions(
     val onHideToday: (Boolean) -> Unit = {},
 )
 
-private enum class ProfilePage { MAIN, NOTIFICATIONS, CARDS, CALCULATES }
+private enum class ProfilePage { MAIN, NOTIFICATIONS, CARDS }
 
 /**
  * Profile: customising lives here, not on the page. Display switches that apply
@@ -98,22 +98,21 @@ private enum class ProfilePage { MAIN, NOTIFICATIONS, CARDS, CALCULATES }
  * Health Connect cannot tell us.
  */
 @Composable
-fun ProfileDialog(state: ProfileState, actions: ProfileActions, onDismiss: () -> Unit) {
+fun ProfileDialog(state: ProfileState, actions: ProfileActions, onDismiss: () -> Unit, onOpenCalc: () -> Unit = {}) {
     var page by remember { mutableStateOf(ProfilePage.MAIN) }
     PawseSheet(onDismiss = onDismiss) {
         Column(Modifier.verticalScroll(rememberScrollState())) {
             when (page) {
-                ProfilePage.MAIN -> Main(state, actions, onDismiss, onOpen = { page = it })
+                ProfilePage.MAIN -> Main(state, actions, onDismiss, onOpen = { page = it }, onOpenCalc = onOpenCalc)
                 ProfilePage.NOTIFICATIONS -> Notifications(state.notifications, actions.onNotify, onBack = { page = ProfilePage.MAIN })
                 ProfilePage.CARDS -> CardOrder(state.cardOrder, state.hiddenCards, actions, onBack = { page = ProfilePage.MAIN })
-                ProfilePage.CALCULATES -> Calculates(onBack = { page = ProfilePage.MAIN })
             }
         }
     }
 }
 
 @Composable
-private fun Main(state: ProfileState, actions: ProfileActions, onDismiss: () -> Unit, onOpen: (ProfilePage) -> Unit) {
+private fun Main(state: ProfileState, actions: ProfileActions, onDismiss: () -> Unit, onOpen: (ProfilePage) -> Unit, onOpenCalc: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(tr("Profile", "프로필"), style = PawseType.Heading, modifier = Modifier.weight(1f))
         GlyphButton(Glyphs.Close, tr("Close", "닫기"), onClick = onDismiss)
@@ -167,7 +166,7 @@ private fun Main(state: ProfileState, actions: ProfileActions, onDismiss: () -> 
         if (state.cardOrder == null) tr("Automatic · follows the time of day", "자동 · 시간대에 따라") else tr("My order", "내 순서"),
     ) { onOpen(ProfilePage.CARDS) }
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-    LinkRow(tr("How Pawse calculates", "Pawse 계산 방법"), tr("Every equation, in plain words", "모든 계산식을 쉬운 말로")) { onOpen(ProfilePage.CALCULATES) }
+    LinkRow(tr("How Pawse calculates", "Pawse 계산 방법"), tr("Every equation, in plain words", "모든 계산식을 쉬운 말로"), onClick = onOpenCalc)
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
     You(state.profile, actions.onSaveProfile)
@@ -374,39 +373,6 @@ private fun CardOrder(order: List<ScoresCard>?, hidden: Set<ScoresCard>, actions
             }
         }
     }
-}
-
-/** One calm page: each number's equation, what goes in, and where the data comes from. */
-@Composable
-private fun Calculates(onBack: () -> Unit) {
-    PageHead(tr("How Pawse calculates", "Pawse 계산 방법"), tr("Every number, in plain words", "모든 숫자를 쉬운 말로"), onBack)
-    listOf(
-        tr("Body", "컨디션") to tr(
-            "Last night's HRV and sleeping heart rate, each smoothed by a filter that trusts a night as much as its quality allows, then set against your normal: the median of the 60 nights ending a week ago. The two are combined without counting the same nervous system twice, and Body = 100 × Φ(z), so your normal reads 50. Typical is 31–69. The likely range is the filter's own uncertainty.",
-            "지난밤 HRV와 수면 중 심박수를 밤의 품질만큼만 믿는 필터로 다듬은 뒤, 일주일 전에 끝나는 60일 밤의 중앙값인 내 평소와 비교해요. 같은 신경계를 두 번 세지 않게 둘을 합치고, 컨디션 = 100 × Φ(z)라서 평소는 50이에요. 평소 범위는 31–69예요. 예상 범위는 필터 자체의 불확실성이에요.",
-        ),
-        tr("Sleep", "수면") to tr(
-            "Hours asleep against your need. Need is learned from nights off and rises a little after a hard day: 4 minutes a load point above your usual day, at most 30. Stages are shown, never scored. The optional Sleep score weighs duration 45, regularity 35 and continuity 20.",
-            "필요한 잠에 대한 실제 수면 시간이에요. 필요한 잠은 쉬는 날 밤에서 배우고, 힘든 날 뒤에는 평소보다 부하 1점마다 4분, 최대 30분 늘어요. 수면 단계는 보여주기만 하고 점수에 넣지 않아요. 선택 항목인 수면 점수는 길이 45, 규칙성 35, 연속성 20으로 계산해요.",
-        ),
-        tr("Load", "부하") to tr(
-            "Each session's TRIMP from heart rate (Banister), scaled so your typical active day is 10 points. Today's range is r to r + 5 with r = round(5 + Body ÷ 20). With the illness alert, or Body strained two mornings running, it drops to 0–5. Fitness and fatigue are 42- and 7-day averages; form is the gap between them.",
-            "운동마다 심박수로 TRIMP(Banister)를 구하고, 평소 활동한 날이 10점이 되게 맞춰요. 오늘의 범위는 r = round(5 + 컨디션 ÷ 20)일 때 r에서 r + 5까지예요. 질병 알림이 있거나 이틀 연속 컨디션이 크게 낮으면 0–5로 내려가요. 체력과 피로는 42일과 7일 평균이고, 폼은 그 차이예요.",
-        ),
-        tr("Your usual and ≈", "평소 범위와 ≈") to tr(
-            "Your usual is the median ± 1.4826 × MAD of the last 60 days, so one sick week can't widen it. A change is named only when it is bigger than half the usual day-to-day change; otherwise it reads about the same.",
-            "평소 범위는 최근 60일의 중앙값 ± 1.4826 × MAD라서, 아픈 한 주가 범위를 넓히지 못해요. 변화는 평소 하루 사이 변화의 절반보다 클 때만 말하고, 아니면 거의 같다고 해요.",
-        ),
-    ).forEach { (title, body) ->
-        Text(title, style = PawseType.BodyStrong, modifier = Modifier.padding(top = 20.dp))
-        Text(body, style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
-    }
-    Text(
-        tr("Every default is a reasoned starting point, not a validated value.", "모든 기본값은 근거 있는 출발점이지, 검증된 값은 아니에요."),
-        style = PawseType.Micro,
-        color = PawseTheme.semantics.faint,
-        modifier = Modifier.padding(top = 20.dp),
-    )
 }
 
 /**

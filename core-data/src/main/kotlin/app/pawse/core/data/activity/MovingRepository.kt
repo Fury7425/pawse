@@ -36,6 +36,8 @@ data class MovingSnapshot(
     /** The Activity detail's "Through the day" and "Last 7 days", one per figure. */
     val stepsDay: ThroughDay? = null,
     val energyDay: ThroughDay? = null,
+    /** The package whose steps are shown: the writer that counted the most. */
+    val stepsWriter: String? = null,
 )
 
 /**
@@ -93,7 +95,11 @@ class MovingRepository @Inject constructor(private val gateway: HealthConnectGat
             .mapValues { (_, records) -> records.sumOf { it.count } }
             .maxByOrNull { it.value }?.key
         var steps = stepSlices(setOfNotNull(stepsWriter))
-        if (stepsWriter != null && steps.values.none { it > 0.0 }) steps = stepSlices()
+        var shownWriter = stepsWriter
+        if (stepsWriter != null && steps.values.none { it > 0.0 }) {
+            steps = stepSlices()
+            shownWriter = null
+        }
         val energy = gateway.slices(setOf(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL), start, end, slice)
             .associate { it.startTime.toEpochMilli() to (it.result[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories ?: 0.0) }
         if (steps.isEmpty() && energy.isEmpty()) return@withContext null
@@ -130,6 +136,7 @@ class MovingRepository @Inject constructor(private val gateway: HealthConnectGat
             reading(steps), reading(energy), from, wake != null, heart, end.toEpochMilli(), untilBed,
             stepsDay = through(steps),
             energyDay = through(energy),
+            stepsWriter = shownWriter,
         ).also { last = it }
     }
 }

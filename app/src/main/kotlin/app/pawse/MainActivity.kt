@@ -104,6 +104,8 @@ import app.pawse.feature.food.ManualEntryScreen
 import app.pawse.feature.food.ScannerScreen
 import app.pawse.feature.home.ActivityScreen
 import app.pawse.feature.home.BodyScreen
+import app.pawse.feature.home.CalcScreen
+import app.pawse.feature.home.CalcSection
 import app.pawse.feature.home.ExplainScreen
 import app.pawse.feature.home.HomeDestinations
 import app.pawse.feature.home.HomeScreen
@@ -188,6 +190,7 @@ private const val BODY = "body"
 private val PUSHED = setOf(
     HomeDestinations.EXPLAIN,
     HomeDestinations.ACTIVITY,
+    HomeDestinations.CALC,
     HomeDestinations.WEIGH_IN,
     FoodDestinations.SCAN,
     FoodDestinations.ADD,
@@ -291,7 +294,19 @@ private fun PawseNavGraph(initialRoute: String?) {
                 HomeScreen(
                     onOpenExplain = { type, back -> navController.navigate(HomeDestinations.explain(type, back)) },
                     onOpenActivity = { navController.navigate(HomeDestinations.activity(it)) },
+                    onOpenCalc = { navController.navigate(HomeDestinations.calc()) },
                 )
+            }
+
+            composable(
+                route = HomeDestinations.CALC,
+                arguments = listOf(navArgument(HomeDestinations.CALC_ARG) { type = NavType.StringType; defaultValue = "" }),
+                enterTransition = { push },
+            ) { backStackEntry ->
+                val pop = popOnce(navController)
+                PredictiveBack(pop) {
+                    CalcScreen(section = HomeDestinations.calcSectionOf(backStackEntry.arguments?.getString(HomeDestinations.CALC_ARG)), onBack = pop)
+                }
             }
 
             composable(
@@ -304,6 +319,8 @@ private fun PawseNavGraph(initialRoute: String?) {
                     ActivityScreen(
                         initial = HomeDestinations.activityFigureOf(backStackEntry.arguments?.getString(HomeDestinations.ACTIVITY_ARG)),
                         onBack = pop,
+                        onOpenCalc = { navController.navigate(HomeDestinations.calc(CalcSection.USUAL)) },
+                        onOpenScore = { navController.navigate(HomeDestinations.explain(it)) },
                     )
                 }
             }
@@ -323,6 +340,7 @@ private fun PawseNavGraph(initialRoute: String?) {
                         type = HomeDestinations.scoreTypeOf(backStackEntry.arguments?.getString(HomeDestinations.EXPLAIN_ARG)),
                         initialBack = backStackEntry.arguments?.getInt(HomeDestinations.EXPLAIN_BACK_ARG) ?: 0,
                         onBack = pop,
+                        onOpenCalc = { navController.navigate(HomeDestinations.calc(it)) },
                     )
                 }
             }
