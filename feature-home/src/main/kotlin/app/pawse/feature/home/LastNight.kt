@@ -1121,8 +1121,8 @@ private fun Parts(rows: List<NightRow>, selI: Int, need: Double) {
             tr("Continuity", "연속성"),
             config.scoreContinuityWeight,
             tr(
-                "Half efficiency against ${config.efficiencyTargetPercent.roundToInt()}%, half time awake against ${config.wasoLimitMinutes.roundToInt()} minutes.",
-                "절반은 수면 효율 ${config.efficiencyTargetPercent.roundToInt()}% 대비, 절반은 깬 시간 ${config.wasoLimitMinutes.roundToInt()}분 대비예요.",
+                "100 × asleep ÷ (asleep + awake in bed): the night's efficiency.",
+                "100 × 잠 ÷ (잠 + 누운 동안 깬 시간): 그 밤의 수면 효율이에요.",
             ),
         ) { it.continuity },
     )
@@ -1217,7 +1217,8 @@ internal class Usual(val mid: Double, val sd: Double, val nights: Int) {
 
 internal fun ScoringSnapshot.usual(get: (NightRow) -> Double?): Usual? {
     val xs = rows(USUAL_END).take(USUAL_NIGHTS).mapNotNull(get)
-    if (xs.size < 2) return null
+    // v2.5: a usual needs at least 4 nights.
+    if (xs.size < 4) return null
     return Usual(Stats.median(xs)!!, Stats.robustSpread(xs)!!, xs.size)
 }
 
@@ -1461,12 +1462,12 @@ private fun NightFigure.about(): String {
                 "살피는 신호 중 하나이며, 생리 주기도 영향을 줘요.",
         )
         NightFigure.EFFICIENCY -> tr(
-            "The share of your time in bed spent asleep, lights out to final wake. It is half of the Sleep score’s " +
-                "continuity part, against ${sleep.efficiencyTargetPercent.roundToInt()}%. A low night is usually a long time " +
-                "falling asleep or a long wake in the night; the Awake card says which.",
-            "누운 시간 중 실제로 잠든 시간의 비율로, 불 끈 시각부터 마지막으로 깬 시각까지예요. 수면 점수 연속성 항목의 " +
-                "절반이며 기준은 ${sleep.efficiencyTargetPercent.roundToInt()}%예요. 낮은 밤은 대개 잠들기까지 오래 걸렸거나 " +
-                "밤사이 오래 깨어 있었던 경우예요. 어느 쪽인지는 ‘깬 시간’ 카드에서 볼 수 있어요.",
+            "The share of your time in bed spent asleep, lights out to final wake. It is the Sleep score’s " +
+                "continuity part. A low night is usually a long time falling asleep or a long wake in the night; " +
+                "the Awake card says which.",
+            "누운 시간 중 실제로 잠든 시간의 비율로, 불 끈 시각부터 마지막으로 깬 시각까지예요. 수면 점수의 연속성 " +
+                "항목이에요. 낮은 밤은 대개 잠들기까지 오래 걸렸거나 밤사이 오래 깨어 있었던 경우예요. 어느 쪽인지는 " +
+                "‘깬 시간’ 카드에서 볼 수 있어요.",
         )
         NightFigure.DEEP_REM -> tr(
             "Deep and REM sleep added together, from your watch’s stages, against your own usual rather than a target. " +
