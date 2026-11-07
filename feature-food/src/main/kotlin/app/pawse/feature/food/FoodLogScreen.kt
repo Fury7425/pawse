@@ -550,60 +550,86 @@ private fun EntryRow(entry: FoodLogEntry, onClick: () -> Unit, modifier: Modifie
     }
 }
 
-private val PORTIONS = listOf(0.5, 1.0, 1.5, 2.0)
+private val PORTIONS = listOf(0.5, 1.0, 2.0)
 
-/** Portion presets and grams, meal, then Save or Delete. Delete is grey and undoable, never red. */
+/**
+ * The design's edit sheet: name and where it came from, the amount and its kcal
+ * as two light figures, ½ · 1 · 2 portions, the macros, the meal (a tap moves to
+ * the next), then Delete on the left and Save on the right. Delete is grey and
+ * undoable, never red.
+ */
 @Composable
 private fun EditSheet(entry: FoodLogEntry, onDismiss: () -> Unit, onSave: (Double, Meal) -> Unit, onDelete: () -> Unit) {
     var factor by remember { mutableDoubleStateOf(1.0) }
     var meal by remember { mutableStateOf(entry.meal) }
     val fromHc = entry.source == FoodSource.HEALTH_CONNECT
+    val grey = MaterialTheme.colorScheme.onSurfaceVariant
+    val faint = PawseTheme.semantics.faint
     PawseSheet(onDismiss = onDismiss) {
-        Text(entry.name, style = PawseType.Heading)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(entry.name, style = PawseType.Heading, modifier = Modifier.weight(1f))
+            Text(FoodCopy.source(entry.source), style = PawseType.Micro, color = faint, modifier = Modifier.padding(start = 8.dp))
+        }
         val per100 = entry.nutrients.kcal?.takeIf { entry.quantityGrams > 0 }?.let { it / entry.quantityGrams * 100 }
-        Text(
-            listOfNotNull(FoodCopy.source(entry.source), per100?.let { tr("per 100 g: ${it.roundToInt()} kcal", "100g당 ${it.roundToInt()}kcal") }).joinToString(" · "),
-            style = PawseType.Micro,
-            color = PawseTheme.semantics.faint,
-        )
+        per100?.let { Text(tr("per 100 g: ${it.roundToInt()} kcal", "100g당 ${it.roundToInt()}kcal"), style = PawseType.Micro, color = faint, modifier = Modifier.padding(top = 4.dp)) }
         if (fromHc) {
             Text(
                 tr("Logged in another app. Edit or remove it there.", "다른 앱에서 기록했어요. 그 앱에서 수정하거나 삭제하세요."),
                 style = PawseType.Label,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = grey,
                 modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
             )
             return@PawseSheet
+        }
+        val grams = entry.quantityGrams * factor
+        val kcal = entry.nutrients.kcal?.times(factor)
+        Row(Modifier.padding(top = 24.dp), verticalAlignment = Alignment.Bottom) {
+            if (entry.quantityGrams > 0) {
+                Text("${grams.roundToInt()}", style = PawseType.Numeral)
+                Text("g", style = PawseType.Label, color = grey, modifier = Modifier.padding(start = 8.dp, bottom = 8.dp))
+            }
+            Spacer(Modifier.weight(1f))
+            Text(kcal?.roundToInt()?.toString() ?: "—", style = PawseType.Numeral)
+            Text("kcal", style = PawseType.Label, color = grey, modifier = Modifier.padding(start = 8.dp, bottom = 8.dp))
         }
         Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             PORTIONS.forEach { p ->
                 SelectChip(portionLabel(p), selected = abs(factor - p) < 1e-9, onClick = { factor = p })
             }
         }
-        val grams = entry.quantityGrams * factor
-        val kcal = entry.nutrients.kcal?.times(factor)
-        Text(
-            listOfNotNull(FoodCopy.grams(grams).takeIf { entry.quantityGrams > 0 }, kcal?.let { "${it.roundToInt()} kcal" }).joinToString(" · "),
-            style = PawseType.Label,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 4.dp),
-        )
-        Text(tr("Meal", "식사"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 16.dp, bottom = 8.dp))
-        ChoiceRow(Meal.entries, meal, onSelect = { meal = it }, label = FoodCopy::meal)
-        PrimaryButton(
-            if (kcal != null && (factor != 1.0 || meal != entry.meal)) tr("Save · ${kcal.roundToInt()} kcal", "저장 · ${kcal.roundToInt()}kcal") else tr("Save", "저장"),
-            onClick = { onSave(factor, meal) },
-            modifier = Modifier.padding(top = 24.dp),
-        )
-        GhostButton(tr("Delete", "삭제"), onClick = onDelete, glyph = Glyphs.Trash, modifier = Modifier.padding(top = 8.dp))
+        fun macro(en: String, ko: String, g: Double?) = tr("$en ", "$ko ") + (g?.let { "${(it * factor).roundToInt()} g" } ?: "—")
+        Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(macro("Protein", "단백질", entry.nutrients.proteinGrams), style = PawseType.Micro, color = faint)
+            Text(macro("Carbs", "탄수화물", entry.nutrients.carbsGrams), style = PawseType.Micro, color = faint)
+            Text(macro("Fat", "지방", entry.nutrients.fatGrams), style = PawseType.Micro, color = faint)
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(top = 16.dp))
+        // The meal: a tap moves to the next one.
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .pressable { meal = Meal.entries[(meal.ordinal + 1) % Meal.entries.size] }
+                .semantics { contentDescription = tr("Meal: ${FoodCopy.meal(meal)}. Change", "식사: ${FoodCopy.meal(meal)}. 변경") }
+                .padding(top = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Glyph(Glyphs.Clock, size = 20.dp, color = grey)
+            Text(FoodCopy.meal(meal), style = PawseType.Body, modifier = Modifier.weight(1f).padding(start = 12.dp).swapIn(rememberSwap(meal)))
+            Glyph(Glyphs.ChevronRight, size = 16.dp, color = faint)
+        }
+        Row(Modifier.padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            GhostButton(tr("Delete", "삭제"), onClick = onDelete, glyph = Glyphs.Trash, modifier = Modifier.weight(1f, fill = false))
+            Spacer(Modifier.weight(1f))
+            PrimaryButton(tr("Save", "저장"), onClick = { onSave(factor, meal) }, modifier = Modifier.width(140.dp))
+        }
     }
 }
 
 private fun portionLabel(p: Double): String = when (p) {
-    0.5 -> "½×"
-    1.0 -> "1×"
-    1.5 -> "1½×"
-    else -> "${p.roundToInt()}×"
+    0.5 -> tr("½ portion", "½인분")
+    1.0 -> tr("1 portion", "1인분")
+    else -> tr("${p.roundToInt()} portions", "${p.roundToInt()}인분")
 }
 
 /** Two switches that apply at once. No Save button, nothing to forget. */
