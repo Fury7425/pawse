@@ -304,6 +304,7 @@ private fun PawseNavGraph(initialRoute: String?) {
                     onOpenExplain = { type, back -> navController.navigate(HomeDestinations.explain(type, back)) },
                     onOpenActivity = { navController.navigate(HomeDestinations.activity(it)) },
                     onOpenCalc = { navController.navigate(HomeDestinations.calc()) },
+                    openAsk = initialRoute == ROUTE_ASK,
                 )
             }
 

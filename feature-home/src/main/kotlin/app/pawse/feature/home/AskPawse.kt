@@ -90,8 +90,10 @@ import kotlin.math.ceil
  * time Pawse opens after the night, and Ask Pawse. One call from the screen.
  */
 @Composable
-internal fun ModelSheets(viewModel: AssistantViewModel = hiltViewModel()) {
+internal fun ModelSheets(openAsk: Boolean = false, viewModel: AssistantViewModel = hiltViewModel()) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
+    // The Ask Pawse widget opens straight into the chat, disclaimer first.
+    LaunchedEffect(openAsk) { if (openAsk) viewModel.openAsk() }
     val summary = ui.summary
     var rising by remember(summary?.date) { mutableStateOf(false) }
     LaunchedEffect(summary?.date, ui.rises) {

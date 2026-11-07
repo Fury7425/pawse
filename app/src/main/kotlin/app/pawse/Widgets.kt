@@ -6,6 +6,10 @@ import android.appwidget.AppWidgetProviderInfo
 import android.content.ComponentName
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
+import app.pawse.core.model.ModelState
+import app.pawse.core.model.PawseModel
+import kotlinx.coroutines.flow.first
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -388,6 +392,75 @@ class FoodWidget : AppWidgetProvider() {
             }
             manager.updateAppWidget(ids, views)
         }
+    }
+}
+
+/**
+ * This morning's summary at 4×2, word for word as in the app, with its tag. In the
+ * picker only once the model is on this phone; without it, one sentence and a way in.
+ */
+class SummaryWidget : AppWidgetProvider() {
+
+    override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
+        val pending = goAsync()
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            try {
+                render(context, manager, ids)
+            } finally {
+                pending.finish()
+            }
+        }
+    }
+
+    @EntryPoint
+    @InstallIn(SingletonComponent::class)
+    interface ModelEntryPoint {
+        fun model(): PawseModel
+    }
+
+    companion object {
+        fun refresh(context: Context) {
+            val ids = Widgets.ids(context, SummaryWidget::class.java)
+            if (ids.isEmpty()) return
+            CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { render(context, AppWidgetManager.getInstance(context), ids) }
+        }
+
+        private suspend fun render(context: Context, manager: AppWidgetManager, ids: IntArray) {
+            val model = EntryPointAccessors.fromApplication(context, ModelEntryPoint::class.java).model()
+            val on = model.state.first() is ModelState.Ready
+            val summary = model.summary(LocalDate.now()).first()
+            val text = when {
+                summary != null -> summary.text
+                !on -> tr("The summary needs the model on this phone. Turn it on in Pawse.", "요약에는 휴대폰 속 모델이 필요해요. Pawse에서 켜 주세요.")
+                else -> tr("This morning's summary comes once the night is read.", "오늘 아침 요약은 밤 기록을 읽은 뒤에 나와요.")
+            }
+            val views = RemoteViews(context.packageName, R.layout.widget_summary).apply {
+                setTextViewText(R.id.widget_read_at, summary?.let { Widgets.age(it.writtenAtEpochMs) }.orEmpty())
+                setTextViewText(R.id.widget_summary_text, text)
+                setTextColor(R.id.widget_summary_text, context.getColor(if (summary != null) R.color.widget_on else R.color.widget_faint))
+                setViewVisibility(R.id.widget_summary_tag, if (summary?.written == true) android.view.View.VISIBLE else android.view.View.GONE)
+                setOnClickPendingIntent(R.id.widget_root, openApp(context, route = null, requestCode = 15))
+            }
+            manager.updateAppWidget(ids, views)
+        }
+
+        /** The model's widgets join the picker when the model is on, and leave it when it is off. */
+        fun offer(context: Context, on: Boolean) {
+            val state = if (on) PackageManager.COMPONENT_ENABLED_STATE_ENABLED else PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+            listOf(SummaryWidget::class.java, AskWidget::class.java).forEach {
+                context.packageManager.setComponentEnabledSetting(ComponentName(context, it), state, PackageManager.DONT_KILL_APP)
+            }
+        }
+    }
+}
+
+/** Ask Pawse at 4×1: only a way in. It opens the chat, disclaimer first, and never answers here. */
+class AskWidget : AppWidgetProvider() {
+    override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
+        val views = RemoteViews(context.packageName, R.layout.widget_ask).apply {
+            setOnClickPendingIntent(R.id.widget_root, openApp(context, route = ROUTE_ASK, requestCode = 16))
+        }
+        manager.updateAppWidget(ids, views)
     }
 }
 

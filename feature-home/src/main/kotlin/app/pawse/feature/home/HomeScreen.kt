@@ -177,6 +177,8 @@ fun HomeScreen(
     onOpenActivity: (ActivityFigure) -> Unit = {},
     /** Profile's How Pawse calculates, a push of its own. */
     onOpenCalc: () -> Unit = {},
+    /** Opened from the Ask Pawse widget: the chat comes up at once. */
+    openAsk: Boolean = false,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -233,7 +235,7 @@ fun HomeScreen(
         }
     }
 
-    ModelSheets()
+    ModelSheets(openAsk = openAsk)
 
     if (editingProfile) {
         val snapshot = (state as? HomeUiState.Ready)?.snapshot
