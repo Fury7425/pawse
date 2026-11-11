@@ -29,6 +29,23 @@ class NightAssemblerTest {
     }
 
     @Test
+    fun `two apps writing the same night count it once`() {
+        val watch = Rows.night(1, "2026-03-01", "23:00", "2026-03-02", "07:00", source = "watch")
+        val mirror = Rows.night(2, "2026-03-01", "23:05", "2026-03-02", "06:55", source = "mirror")
+        val phoneNap = Rows.nap(3, "2026-03-02", "13:00", "13:30").copy(sourceApp = "phone")
+
+        // No priority: the app that wrote the most night wins.
+        val kept = NightAssembler.oneWriter(listOf(mirror, watch, phoneNap), emptyList())
+        kept shouldBe listOf(watch)
+        NightAssembler.summarise("2026-03-02", kept, emptyMap()).asleepMinutes shouldBe (480.0 plusOrMinus tolerance)
+
+        // The user's order wins, and a nap-only app never displaces a night.
+        NightAssembler.oneWriter(listOf(watch, mirror, phoneNap), listOf("phone", "mirror")) shouldBe listOf(mirror)
+        // One writer is left alone, naps and all.
+        NightAssembler.oneWriter(listOf(watch, Rows.nap(4, "2026-03-02", "13:00", "13:30").copy(sourceApp = "watch")), emptyList()).size shouldBe 2
+    }
+
+    @Test
     fun `split sleep is one night with a hole in it`() {
         // 23:00-03:00, awake half an hour, 03:30-07:00.
         val sessions = listOf(

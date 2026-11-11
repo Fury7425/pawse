@@ -8,7 +8,15 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.animation.core.animate
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.lifecycle.compose.dropUnlessResumed
+import app.pawse.core.ui.component.REDUCED_FADE
+import kotlin.coroutines.cancellation.CancellationException
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -56,6 +64,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.clip
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.hazeChild
+import dev.chrisbanes.haze.haze
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
@@ -74,7 +88,11 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import app.pawse.core.data.profile.Appearance
 import app.pawse.core.data.profile.UserProfilePreferences
+import app.pawse.core.data.sync.SyncCoordinator
 import app.pawse.core.data.sync.SyncPreferences
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import app.pawse.core.ui.component.EaseDrawer
 import app.pawse.core.ui.component.EaseInOut
 import app.pawse.core.ui.component.EaseOut
@@ -90,7 +108,10 @@ import app.pawse.feature.food.FoodDestinations
 import app.pawse.feature.food.FoodLogScreen
 import app.pawse.feature.food.ManualEntryScreen
 import app.pawse.feature.food.ScannerScreen
+import app.pawse.feature.home.ActivityScreen
 import app.pawse.feature.home.BodyScreen
+import app.pawse.feature.home.CalcScreen
+import app.pawse.feature.home.CalcSection
 import app.pawse.feature.home.ExplainScreen
 import app.pawse.feature.home.HomeDestinations
 import app.pawse.feature.home.HomeScreen
@@ -106,6 +127,19 @@ class MainActivity : ComponentActivity() {
 
     @Inject lateinit var syncPreferences: SyncPreferences
     @Inject lateinit var profilePreferences: UserProfilePreferences
+    @Inject lateinit var syncCoordinator: SyncCoordinator
+
+    /**
+     * Every return to the app, not only a cold start, reads Health Connect when the
+     * last read is stale: a phone left with Pawse in the background overnight
+     * otherwise opens on yesterday's numbers.
+     */
+    override fun onStart() {
+        super.onStart()
+        lifecycleScope.launch {
+            if (syncPreferences.onboardingComplete.first()) syncCoordinator.runIfStale()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Edge-to-edge and predictive back are platform mechanics, not style
@@ -161,6 +195,8 @@ private const val BODY = "body"
 /** Screens opened on top of a tab. They slide in; the tabs themselves never move. */
 private val PUSHED = setOf(
     HomeDestinations.EXPLAIN,
+    HomeDestinations.ACTIVITY,
+    HomeDestinations.CALC,
     HomeDestinations.WEIGH_IN,
     FoodDestinations.SCAN,
     FoodDestinations.ADD,
@@ -175,6 +211,47 @@ private val pushIn = fadeIn(tween(300, easing = EaseDrawer)) +
 private val scanIn = fadeIn(tween(280, easing = EaseOut)) +
     scaleIn(tween(280, easing = EaseOut), initialScale = 0.94f, transformOrigin = TransformOrigin(0.88f, 0.96f))
 
+/** Reduce motion: anything that travels arrives in place with a 150 ms fade. */
+private val arriveIn = fadeIn(tween(REDUCED_FADE, easing = EaseOut))
+
+/**
+ * Predictive back on a pushed screen: while the edge swipe decides, the screen
+ * shrinks to 92% toward its right edge, slides 24 dp and rounds to 32 dp, so the
+ * screen below shows where back goes. The commit itself stays a cut; a cancel
+ * settles back in 200 ms. Reduce motion keeps the commit only.
+ */
+@Composable
+private fun PredictiveBack(onBack: () -> Unit, content: @Composable () -> Unit) {
+    val reduce = LocalReduceMotion.current
+    val scope = rememberCoroutineScope()
+    var progress by remember { mutableFloatStateOf(0f) }
+    PredictiveBackHandler { events ->
+        try {
+            events.collect { progress = it.progress }
+            progress = 0f
+            onBack()
+        } catch (cancelled: CancellationException) {
+            val from = progress
+            scope.launch { animate(from, 0f, animationSpec = tween(200, easing = EaseOut)) { v, _ -> progress = v } }
+            throw cancelled
+        }
+    }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                val p = if (reduce) 0f else progress
+                if (p == 0f) return@graphicsLayer
+                scaleX = 1f - 0.08f * p
+                scaleY = scaleX
+                translationX = 24.dp.toPx() * p
+                transformOrigin = TransformOrigin(1f, 0.5f)
+                shape = RoundedCornerShape(32.dp * p)
+                clip = true
+            },
+    ) { content() }
+}
+
 /** Keeps the screen underneath in place while a pushed one slides over it. */
 private val holdUnder = fadeOut(tween(300), targetAlpha = 1f)
 
@@ -188,6 +265,9 @@ private fun PawseNavGraph(initialRoute: String?) {
     val entry by navController.currentBackStackEntryAsState()
     val current = entry?.destination?.route
     val showDock = current in setOf(HomeDestinations.HOME, FoodDestinations.LOG, BODY)
+    val reduce = LocalReduceMotion.current
+    val push = if (reduce) arriveIn else pushIn
+    val scan = if (reduce) arriveIn else scanIn
 
     LaunchedEffect(initialRoute) {
         when (initialRoute) {
@@ -205,19 +285,54 @@ private fun PawseNavGraph(initialRoute: String?) {
         }
     }
 
+    // The dock's glass blurs whatever scrolls under it.
+    val haze = remember { HazeState() }
     Box(Modifier.fillMaxSize()) {
         // Tabs swap at once, because they are switched many times a day. Back is
         // instant too: leaving a screen should never wait on an animation.
         NavHost(
             navController = navController,
             startDestination = HomeDestinations.HOME,
+            modifier = Modifier.haze(haze),
             enterTransition = { EnterTransition.None },
             exitTransition = { if (targetState.destination.route in PUSHED) holdUnder else ExitTransition.None },
             popEnterTransition = { EnterTransition.None },
             popExitTransition = { ExitTransition.None },
         ) {
             composable(HomeDestinations.HOME) {
-                HomeScreen(onOpenExplain = { type, back -> navController.navigate(HomeDestinations.explain(type, back)) })
+                HomeScreen(
+                    onOpenExplain = { type, back -> navController.navigate(HomeDestinations.explain(type, back)) },
+                    onOpenActivity = { navController.navigate(HomeDestinations.activity(it)) },
+                    onOpenCalc = { navController.navigate(HomeDestinations.calc()) },
+                    openAsk = initialRoute == ROUTE_ASK,
+                )
+            }
+
+            composable(
+                route = HomeDestinations.CALC,
+                arguments = listOf(navArgument(HomeDestinations.CALC_ARG) { type = NavType.StringType; defaultValue = "" }),
+                enterTransition = { push },
+            ) { backStackEntry ->
+                val pop = popOnce(navController)
+                PredictiveBack(pop) {
+                    CalcScreen(section = HomeDestinations.calcSectionOf(backStackEntry.arguments?.getString(HomeDestinations.CALC_ARG)), onBack = pop)
+                }
+            }
+
+            composable(
+                route = HomeDestinations.ACTIVITY,
+                arguments = listOf(navArgument(HomeDestinations.ACTIVITY_ARG) { type = NavType.StringType }),
+                enterTransition = { push },
+            ) { backStackEntry ->
+                val pop = popOnce(navController)
+                PredictiveBack(pop) {
+                    ActivityScreen(
+                        initial = HomeDestinations.activityFigureOf(backStackEntry.arguments?.getString(HomeDestinations.ACTIVITY_ARG)),
+                        onBack = pop,
+                        onOpenCalc = { navController.navigate(HomeDestinations.calc(CalcSection.USUAL)) },
+                        onOpenScore = { navController.navigate(HomeDestinations.explain(it)) },
+                    )
+                }
             }
 
             composable(
@@ -227,13 +342,17 @@ private fun PawseNavGraph(initialRoute: String?) {
                     navArgument(HomeDestinations.EXPLAIN_BACK_ARG) { type = NavType.IntType; defaultValue = 0 },
                 ),
                 // The look-in: the layer only fades, so the ring's flight lands where the ring is measured.
-                enterTransition = { fadeIn(tween(200, easing = EaseOut)) },
+                enterTransition = { if (reduce) arriveIn else fadeIn(tween(200, easing = EaseOut)) },
             ) { backStackEntry ->
-                ExplainScreen(
-                    type = HomeDestinations.scoreTypeOf(backStackEntry.arguments?.getString(HomeDestinations.EXPLAIN_ARG)),
-                    initialBack = backStackEntry.arguments?.getInt(HomeDestinations.EXPLAIN_BACK_ARG) ?: 0,
-                    onBack = { navController.popBackStack() },
-                )
+                val pop = popOnce(navController)
+                PredictiveBack(pop) {
+                    ExplainScreen(
+                        type = HomeDestinations.scoreTypeOf(backStackEntry.arguments?.getString(HomeDestinations.EXPLAIN_ARG)),
+                        initialBack = backStackEntry.arguments?.getInt(HomeDestinations.EXPLAIN_BACK_ARG) ?: 0,
+                        onBack = pop,
+                        onOpenCalc = { navController.navigate(HomeDestinations.calc(it)) },
+                    )
+                }
             }
 
             composable(FoodDestinations.LOG) {
@@ -246,16 +365,16 @@ private fun PawseNavGraph(initialRoute: String?) {
 
             composable(BODY) { BodyScreen(onAddWeighIn = { navController.navigate(HomeDestinations.WEIGH_IN) }) }
 
-            composable(HomeDestinations.WEIGH_IN, enterTransition = { pushIn }) {
-                WeighInScreen(
-                    onDone = { navController.popBackStack() },
-                    onBack = { navController.popBackStack() },
-                )
+            composable(HomeDestinations.WEIGH_IN, enterTransition = { push }) {
+                val pop = popOnce(navController)
+                PredictiveBack(pop) {
+                    WeighInScreen(onDone = pop, onBack = pop)
+                }
             }
 
-            composable(FoodDestinations.SCAN, enterTransition = { scanIn }) {
+            composable(FoodDestinations.SCAN, enterTransition = { scan }) {
                 ScannerScreen(
-                    onBack = { navController.popBackStack() },
+                    onBack = popOnce(navController),
                     onProductChosen = { productId ->
                         // The scanner is replaced rather than stacked under the add
                         // screen: coming back from "added" should land on the log, not
@@ -279,19 +398,25 @@ private fun PawseNavGraph(initialRoute: String?) {
             composable(
                 route = FoodDestinations.ADD,
                 arguments = listOf(navArgument(FoodDestinations.PRODUCT_ARG) { type = NavType.StringType }),
-                enterTransition = { pushIn },
+                enterTransition = { push },
             ) {
-                AddFoodScreen(
-                    onDone = { navController.switchTab(FoodDestinations.LOG) },
-                    onBack = { navController.popBackStack() },
-                )
+                val pop = popOnce(navController)
+                PredictiveBack(pop) {
+                    AddFoodScreen(
+                        onDone = { navController.switchTab(FoodDestinations.LOG) },
+                        onBack = pop,
+                    )
+                }
             }
 
-            composable(FoodDestinations.MANUAL, enterTransition = { pushIn }) {
-                ManualEntryScreen(
-                    onDone = { navController.switchTab(FoodDestinations.LOG) },
-                    onBack = { navController.popBackStack() },
-                )
+            composable(FoodDestinations.MANUAL, enterTransition = { push }) {
+                val pop = popOnce(navController)
+                PredictiveBack(pop) {
+                    ManualEntryScreen(
+                        onDone = { navController.switchTab(FoodDestinations.LOG) },
+                        onBack = pop,
+                    )
+                }
             }
         }
 
@@ -300,11 +425,19 @@ private fun PawseNavGraph(initialRoute: String?) {
                 current = current,
                 onTab = navController::switchTab,
                 onScan = { navController.navigate(FoodDestinations.SCAN) },
+                haze = haze,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
     }
 }
+
+/**
+ * Back from a pushed screen, once. A second tap while the pop is under way would
+ * otherwise pop again and take the tab underneath with it.
+ */
+@Composable
+private fun popOnce(nav: NavController): () -> Unit = dropUnlessResumed { nav.popBackStack() }
 
 /** Tabs keep their own scroll and state; tapping the one you are on does nothing. */
 private fun NavController.switchTab(route: String) {
@@ -332,6 +465,7 @@ private fun Dock(
     current: String?,
     onTab: (String) -> Unit,
     onScan: () -> Unit,
+    haze: HazeState,
     modifier: Modifier = Modifier,
 ) {
     val background = MaterialTheme.colorScheme.background
@@ -353,7 +487,9 @@ private fun Dock(
                     .weight(1f)
                     .height(64.dp)
                     .lift(RoundedCornerShape(32.dp))
-                    .background(semantics.glass, RoundedCornerShape(32.dp))
+                    .clip(RoundedCornerShape(32.dp))
+                    // Real glass: the page behind blurred 24 dp under the design's 62% tint.
+                    .hazeChild(haze, HazeStyle(backgroundColor = background, tints = listOf(HazeTint(semantics.glass)), blurRadius = 24.dp, noiseFactor = 0f))
                     .border(1.dp, semantics.glassLine, RoundedCornerShape(32.dp))
                     .padding(6.dp),
             ) {

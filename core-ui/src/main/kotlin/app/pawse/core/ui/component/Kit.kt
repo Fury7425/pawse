@@ -19,6 +19,13 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -88,7 +95,13 @@ import androidx.compose.ui.unit.dp
 import app.pawse.core.ui.theme.PawseTheme
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.scoring.tr
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import kotlin.math.cos
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
@@ -118,6 +131,7 @@ object Glyphs {
     const val Food = "M3 11h18a9 9 0 0 1-18 0zM8 7.5c0-1.4 1-1.8 1-3.2M12 7.5c0-1.4 1-1.8 1-3.2M16 7.5c0-1.4 1-1.8 1-3.2"
     const val Body = "M6 3h12a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3zM8.5 10a3.5 3.5 0 0 1 7 0M12 10l1.6-1.6"
     const val Scan = "M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M10 8v8M13.5 8v8M17 8v8"
+    const val Search = "M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14zM20 20l-4-4"
     const val Camera = "M4 8h3l2-3h6l2 3h3v11H4zM12 10a3.5 3.5 0 1 0 0 7a3.5 3.5 0 1 0 0-7z"
     const val Sheet = "M7 3h10l2 2v16H5V5zM9 9h6M9 13h6M9 17h3"
     const val Check = "M5 12.5l4.5 4.5L19 7"
@@ -177,6 +191,32 @@ fun Modifier.pressable(enabled: Boolean = true, role: Role = Role.Button, onClic
     return this
         .graphicsLayer { scaleX = scale; scaleY = scale }
         .clickable(interactionSource = source, indication = null, enabled = enabled, role = role, onClick = onClick)
+}
+
+/**
+ * The design's switch: a 44 × 26 track, band grey off and the selection colour on,
+ * with a 20 dp thumb that slides 18 dp in 160 ms. Drawn only; the row it sits in
+ * takes the tap, or [onChange] makes the switch itself the target, 48 dp tall.
+ */
+@Composable
+fun PawseSwitch(checked: Boolean, modifier: Modifier = Modifier, enabled: Boolean = true, onChange: ((Boolean) -> Unit)? = null) {
+    val s = PawseTheme.semantics
+    val off = MaterialTheme.colorScheme.onSurfaceVariant
+    val x by animateFloatAsState(if (checked) 1f else 0f, tween(160, easing = EaseOut), label = "switch")
+    val track by animateColorAsState(if (checked) s.selection else s.baselineBand, tween(160), label = "switchTrack")
+    val thumb by animateColorAsState(if (checked) s.onSelection else off, tween(160), label = "switchThumb")
+    Box(
+        modifier
+            .then(if (onChange != null) Modifier.heightIn(min = 48.dp).pressable(enabled = enabled, role = Role.Switch) { onChange(!checked) } else Modifier)
+            .alpha(if (enabled) 1f else 0.38f),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.size(44.dp, 26.dp)) {
+            drawRoundRect(track, cornerRadius = androidx.compose.ui.geometry.CornerRadius(13.dp.toPx()))
+            val r = 10.dp.toPx()
+            drawCircle(thumb, r, Offset(3.dp.toPx() + r + 18.dp.toPx() * x, size.height / 2f))
+        }
+    }
 }
 
 /**
@@ -349,6 +389,12 @@ fun <T> Segmented(
     modifier: Modifier = Modifier,
     height: Dp = 40.dp,
     glyph: ((T) -> String)? = null,
+    /**
+     * A pager's live position (page plus offset). Given, the thumb follows the
+     * finger exactly instead of sliding after the page lands: the thumb and the
+     * page are one object. Read in layout only.
+     */
+    position: (() -> Float)? = null,
 ) {
     val index = options.indexOf(selected)
     val thumb = PawseTheme.semantics.segmentThumb
@@ -360,11 +406,18 @@ fun <T> Segmented(
             .padding(4.dp),
     ) {
         val segment = maxWidth / options.size
-        val offset by animateDpAsState(segment * index.coerceAtLeast(0), tween(240, easing = EaseInOut), label = "thumb")
+        val reduce = LocalReduceMotion.current
+        val offset by animateDpAsState(segment * index.coerceAtLeast(0), if (reduce) snap() else tween(240, easing = EaseInOut), label = "thumb")
         if (index >= 0) {
             Box(
                 Modifier
-                    .offset(x = offset)
+                    .then(
+                        if (position != null) {
+                            Modifier.offset { IntOffset((segment.toPx() * position().coerceIn(0f, options.size - 1f)).roundToInt(), 0) }
+                        } else {
+                            Modifier.offset(x = offset)
+                        },
+                    )
                     .width(segment)
                     .height(height)
                     .background(thumb, RoundedCornerShape(8.dp))
@@ -377,7 +430,7 @@ fun <T> Segmented(
                 val color by animateColorAsState(
                     if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                     // In step with the thumb, so label and pill arrive together.
-                    tween(240),
+                    tween(if (reduce) REDUCED_FADE else 240),
                     label = "segment",
                 )
                 Row(
@@ -512,6 +565,16 @@ fun ScoreRing(
     range: ClosedFloatingPointRange<Float>? = null,
     /** A pinned day's value: a grey tick just outside the ring, the one ghost style. */
     ghost: Float? = null,
+    /** First week: nights learned of seven, drawn as seven segments in place of the arc. */
+    segments: Int? = null,
+    /** The seventh night, once ever: 0 → 1 as the segments grow into one ring. */
+    join: Float = 0f,
+    /** Then 0 → 1 as the joined segments give way to the arc. */
+    reveal: Float = 0f,
+    /** The day's first fill was already seen (a tab return): start at the value, no sweep from zero. */
+    skipFirstDraw: Boolean = false,
+    /** How long a changed value glides: 400 ms on Scores, 220 ms for a day step in the detail. */
+    changeMillis: Int = PawseMotion.VALUE,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val track = PawseTheme.semantics.baselineOuter
@@ -519,14 +582,16 @@ fun ScoreRing(
     val ghostColor = MaterialTheme.colorScheme.onSurfaceVariant
     val targetColor = MaterialTheme.colorScheme.onSurface
     val reduce = LocalReduceMotion.current
-    val sweep = remember { Animatable(0f) }
+    // A new day's band crossfades its colour with the sweep; colour uses plain ease.
+    val arcColor by animateColorAsState(color, tween(changeMillis), label = "ringColor")
+    val sweep = remember { Animatable(if (skipFirstDraw) (fraction ?: 0f).coerceIn(0f, 1f) else 0f) }
     // The first fill draws in 700 ms on EaseOut; a changed value glides 400 ms on EaseInOut.
-    var drawn by remember { mutableStateOf(false) }
+    var drawn by remember { mutableStateOf(skipFirstDraw) }
     LaunchedEffect(fraction) {
         val to = (fraction ?: 0f).coerceIn(0f, 1f)
         when {
             reduce -> sweep.snapTo(to)
-            drawn -> sweep.animateTo(to, tween(PawseMotion.VALUE, easing = EaseInOut))
+            drawn -> sweep.animateTo(to, tween(changeMillis, easing = EaseInOut))
             else -> sweep.animateTo(to, tween(PawseMotion.FIRST_DRAW, easing = EaseOut))
         }
         drawn = true
@@ -543,12 +608,28 @@ fun ScoreRing(
                 val from = r.start.coerceIn(0f, 1f)
                 drawArc(band, -90f + 360f * from, 360f * (r.endInclusive.coerceIn(0f, 1f) - from), false, topLeft, arcSize, style = Stroke(stroke * unit))
             }
-            if (sweep.value > 0f) {
-                if (glow) {
-                    drawArc(color.copy(alpha = 0.12f), -90f, 360f * sweep.value, false, topLeft, arcSize, style = Stroke((stroke + 8f) * unit, cap = StrokeCap.Round))
-                    drawArc(color.copy(alpha = 0.16f), -90f, 360f * sweep.value, false, topLeft, arcSize, style = Stroke((stroke + 3f) * unit, cap = StrokeCap.Round))
+            // Seven segments, a 6 dp gap between their round ends, that close up as they join.
+            segments?.let { done ->
+                val alpha = 1f - reveal.coerceIn(0f, 1f)
+                val gapDeg = (6.dp.toPx() + stroke * unit) * (1f - join) / radius * (180f / Math.PI.toFloat())
+                for (i in 0 until 7) {
+                    val tint = if (join > 0f || i < done) ghostColor else band
+                    drawArc(
+                        tint.copy(alpha = tint.alpha * alpha),
+                        -90f + i * 360f / 7f + gapDeg / 2f,
+                        (360f / 7f - gapDeg).coerceAtLeast(0.01f),
+                        false, topLeft, arcSize,
+                        style = Stroke(stroke * unit, cap = StrokeCap.Round),
+                    )
                 }
-                drawArc(color, -90f, 360f * sweep.value, false, topLeft, arcSize, style = Stroke(stroke * unit, cap = StrokeCap.Round))
+            }
+            val arcAlpha = if (segments != null) reveal.coerceIn(0f, 1f) else 1f
+            if (sweep.value > 0f && arcAlpha > 0f) {
+                if (glow) {
+                    drawArc(arcColor.copy(alpha = 0.12f * arcAlpha), -90f, 360f * sweep.value, false, topLeft, arcSize, style = Stroke((stroke + 8f) * unit, cap = StrokeCap.Round))
+                    drawArc(arcColor.copy(alpha = 0.16f * arcAlpha), -90f, 360f * sweep.value, false, topLeft, arcSize, style = Stroke((stroke + 3f) * unit, cap = StrokeCap.Round))
+                }
+                drawArc(arcColor.copy(alpha = arcColor.alpha * arcAlpha), -90f, 360f * sweep.value, false, topLeft, arcSize, style = Stroke(stroke * unit, cap = StrokeCap.Round))
             }
             fun tick(at: Float, from: Float, to: Float, width: Float, tint: Color) {
                 val angle = Math.toRadians(at * 360.0)
@@ -604,13 +685,26 @@ fun SplitBar(parts: List<Pair<Float, Color>>, modifier: Modifier = Modifier, hei
     }
 }
 
-/** The raised graphite toast that confirms an action and offers to take it back. */
+/**
+ * The raised graphite toast that confirms an action and offers to take it back.
+ * Read out politely; a finger on it holds it ([onHold] true until let go).
+ */
 @Composable
-fun UndoToast(text: String, onUndo: () -> Unit, modifier: Modifier = Modifier) {
+fun UndoToast(text: String, onUndo: () -> Unit, modifier: Modifier = Modifier, onHold: (Boolean) -> Unit = {}) {
     val semantics = PawseTheme.semantics
+    val hold by rememberUpdatedState(onHold)
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .semantics { liveRegion = LiveRegionMode.Polite }
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    hold(true)
+                    waitForUpOrCancellation()
+                    hold(false)
+                }
+            }
             .heightIn(min = 52.dp)
             .lift(RoundedCornerShape(16.dp))
             .background(semantics.toast, RoundedCornerShape(16.dp))
@@ -645,11 +739,14 @@ fun BoxScope.BottomAction(
     above: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     val background = MaterialTheme.colorScheme.background
+    // The fade lives in the top padding only: whatever sits in the panel (the InBody
+    // ruler and its label) is on solid page, never over rows scrolling behind it.
+    val fade = with(LocalDensity.current) { 48.dp.toPx() }
     Column(
         Modifier
             .align(Alignment.BottomCenter)
             .fillMaxWidth()
-            .background(Brush.verticalGradient(0f to background.copy(alpha = 0f), 0.45f to background, 1f to background))
+            .background(Brush.verticalGradient(listOf(background.copy(alpha = 0f), background), startY = 0f, endY = fade))
             .navigationBarsPadding()
             .padding(start = 16.dp, end = 16.dp, top = 48.dp, bottom = 20.dp),
     ) {
@@ -681,6 +778,19 @@ fun PawseSheet(onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Uni
         CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
             Column(Modifier.padding(start = 24.dp, end = 24.dp, bottom = 28.dp)) { content() }
         }
+    }
+}
+
+/**
+ * The page's colour behind the status bar, fading out just under it, so content
+ * scrolled up never runs under the clock. Drawn last in a full-screen Box.
+ */
+@Composable
+fun BoxScope.StatusBarScrim() {
+    val bg = MaterialTheme.colorScheme.background
+    Column(Modifier.align(Alignment.TopCenter).fillMaxWidth()) {
+        Box(Modifier.fillMaxWidth().windowInsetsTopHeight(WindowInsets.statusBars).background(bg))
+        Box(Modifier.fillMaxWidth().height(12.dp).background(Brush.verticalGradient(listOf(bg, bg.copy(alpha = 0f)))))
     }
 }
 
@@ -716,23 +826,32 @@ fun rememberSwap(key: Any?): Animatable<Float, AnimationVector1D> {
     var last by remember { mutableStateOf(key) }
     val reduce = LocalReduceMotion.current
     LaunchedEffect(key) {
-        if (key == last || reduce) return@LaunchedEffect
+        if (key == last) return@LaunchedEffect
         last = key
         reveal.snapTo(0f)
-        reveal.animateTo(1f, tween(PawseMotion.SWAP, easing = EaseOut))
+        // Reduce motion keeps the fade, shortened; [swapIn] drops the rise and blur.
+        reveal.animateTo(1f, tween(if (reduce) REDUCED_FADE else PawseMotion.SWAP, easing = EaseOut))
     }
     return reveal
 }
 
+/** Under reduce motion, movement gives way to a fade this long. */
+const val REDUCED_FADE = 150
+
 /** Applies [rememberSwap] in the draw phase only, so a swap never recomposes what it moves. */
-fun Modifier.swapIn(reveal: Animatable<Float, AnimationVector1D>): Modifier = graphicsLayer {
-    val hidden = 1f - reveal.value
-    alpha = reveal.value
-    translationY = hidden * 4.dp.toPx()
-    // Blur needs Android 12; older phones get the fade and the lift alone.
-    renderEffect = if (hidden > 0f && Build.VERSION.SDK_INT >= 31) {
-        BlurEffect(hidden * 2.dp.toPx(), hidden * 2.dp.toPx(), TileMode.Decal)
-    } else {
-        null
+@Composable
+fun Modifier.swapIn(reveal: Animatable<Float, AnimationVector1D>): Modifier {
+    val still = LocalReduceMotion.current
+    return graphicsLayer {
+        val hidden = 1f - reveal.value
+        alpha = reveal.value
+        if (still) return@graphicsLayer
+        translationY = hidden * 4.dp.toPx()
+        // Blur needs Android 12; older phones get the fade and the lift alone.
+        renderEffect = if (hidden > 0f && Build.VERSION.SDK_INT >= 31) {
+            BlurEffect(hidden * 2.dp.toPx(), hidden * 2.dp.toPx(), TileMode.Decal)
+        } else {
+            null
+        }
     }
 }

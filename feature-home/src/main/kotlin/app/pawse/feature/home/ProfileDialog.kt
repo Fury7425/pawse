@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -20,8 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
+import app.pawse.core.ui.component.PawseSwitch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -50,6 +51,8 @@ import app.pawse.core.ui.component.PawseSheet
 import app.pawse.core.ui.component.PrimaryButton
 import app.pawse.core.ui.component.Segmented
 import app.pawse.core.ui.component.pressable
+import app.pawse.core.ui.component.rememberHaptic
+import app.pawse.core.ui.component.toggleHaptic
 import app.pawse.core.ui.theme.PawseTheme
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.scoring.model.BiologicalSex
@@ -71,6 +74,10 @@ class ProfileState(
     /** Null is Automatic. */
     val cardOrder: List<ScoresCard>?,
     val hiddenCards: Set<ScoresCard>,
+    /** The rings are swapped for one line until tomorrow morning. */
+    val hiddenToday: Boolean = false,
+    /** What was sent in the last 30 days, newest first. */
+    val recent: List<app.pawse.core.data.profile.SentNote> = emptyList(),
 )
 
 class ProfileActions(
@@ -83,9 +90,10 @@ class ProfileActions(
     val onResetModel: () -> Unit,
     val onCardOrder: (List<ScoresCard>?) -> Unit,
     val onHidden: (ScoresCard, Boolean) -> Unit,
+    val onHideToday: (Boolean) -> Unit = {},
 )
 
-private enum class ProfilePage { MAIN, NOTIFICATIONS, CARDS, CALCULATES }
+private enum class ProfilePage { MAIN, NOTIFICATIONS, CARDS }
 
 /**
  * Profile: customising lives here, not on the page. Display switches that apply
@@ -93,29 +101,26 @@ private enum class ProfilePage { MAIN, NOTIFICATIONS, CARDS, CALCULATES }
  * Health Connect cannot tell us.
  */
 @Composable
-fun ProfileDialog(state: ProfileState, actions: ProfileActions, onDismiss: () -> Unit) {
+fun ProfileDialog(state: ProfileState, actions: ProfileActions, onDismiss: () -> Unit, onOpenCalc: () -> Unit = {}) {
     var page by remember { mutableStateOf(ProfilePage.MAIN) }
     PawseSheet(onDismiss = onDismiss) {
         Column(Modifier.verticalScroll(rememberScrollState())) {
             when (page) {
-                ProfilePage.MAIN -> Main(state, actions, onDismiss, onOpen = { page = it })
-                ProfilePage.NOTIFICATIONS -> Notifications(state.notifications, actions.onNotify, onBack = { page = ProfilePage.MAIN })
+                ProfilePage.MAIN -> Main(state, actions, onDismiss, onOpen = { page = it }, onOpenCalc = onOpenCalc)
+                ProfilePage.NOTIFICATIONS -> Notifications(state.notifications, actions.onNotify, onBack = { page = ProfilePage.MAIN }, recent = state.recent)
                 ProfilePage.CARDS -> CardOrder(state.cardOrder, state.hiddenCards, actions, onBack = { page = ProfilePage.MAIN })
-                ProfilePage.CALCULATES -> Calculates(onBack = { page = ProfilePage.MAIN })
             }
         }
     }
 }
 
 @Composable
-private fun Main(state: ProfileState, actions: ProfileActions, onDismiss: () -> Unit, onOpen: (ProfilePage) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(tr("Profile", "프로필"), style = PawseType.Heading, modifier = Modifier.weight(1f))
-        GlyphButton(Glyphs.Close, tr("Close", "닫기"), onClick = onDismiss)
-    }
-    Text(tr("Customising lives here, not on the page.", "화면 편집은 여기에서 해요."), style = PawseType.Micro, color = PawseTheme.semantics.faint)
+private fun Main(state: ProfileState, actions: ProfileActions, onDismiss: () -> Unit, onOpen: (ProfilePage) -> Unit, onOpenCalc: () -> Unit) {
+    // As on the canvas: the title and one line under it; the sheet closes by its handle or the scrim.
+    Text(tr("Profile", "프로필"), style = PawseType.Heading)
+    Text(tr("Customising lives here, not on the page.", "화면 편집은 여기에서 해요."), style = PawseType.Micro, color = PawseTheme.semantics.faint, modifier = Modifier.padding(top = 4.dp))
 
-    Column(Modifier.padding(top = 8.dp)) {
+    Column(Modifier.padding(top = 16.dp)) {
         SwitchRow(
             tr("Bedside mode", "침대 모드"),
             tr("True black, dimmer colours, no glow", "완전한 검정, 더 어두운 색, 빛 번짐 없음"),
@@ -126,6 +131,12 @@ private fun Main(state: ProfileState, actions: ProfileActions, onDismiss: () -> 
             tr("Dark is the reference; light is tuned to match", "기본은 어두운 테마예요"),
             state.appearance == Appearance.LIGHT,
         ) { actions.onAppearance(if (it) Appearance.LIGHT else Appearance.DARK) }
+        SwitchRow(
+            tr("Hide scores today", "오늘 점수 숨기기"),
+            tr("Comes back tomorrow morning", "내일 아침 다시 보여요"),
+            state.hiddenToday,
+            onChange = actions.onHideToday,
+        )
         SwitchRow(
             tr("Hide Body's number", "컨디션 숫자 숨기기"),
             tr("Words only on Scores; the detail still shows the arithmetic", "점수 화면에는 말로만, 자세히 보기에는 계산이 그대로 나와요"),
@@ -145,18 +156,25 @@ private fun Main(state: ProfileState, actions: ProfileActions, onDismiss: () -> 
         )
     }
 
+    // Card order and Language as the canvas has them: two segmented switches in place.
+    Text(tr("Card order", "카드 순서"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 16.dp, bottom = 8.dp))
+    Segmented(
+        options = listOf(false, true),
+        selected = state.cardOrder != null,
+        onSelect = { mine -> actions.onCardOrder(if (mine) ScoresCard.complete(ScoresCard.automatic(evening = false)) else null) },
+        label = { if (it) tr("My order", "직접 정렬") else tr("Automatic", "자동") },
+    )
+    if (state.cardOrder != null) {
+        LinkRow(tr("Arrange the cards", "카드 배치"), tr("Their order and which show", "순서와 표시할 카드")) { onOpen(ProfilePage.CARDS) }
+    }
+
     if (Build.VERSION.SDK_INT >= 33) Language()
 
-    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(top = 16.dp))
     val on = state.notifications.count { it.value }
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(top = 16.dp))
     LinkRow(tr("Notifications", "알림"), tr("$on on · one note a week by default", "${on}개 켜짐 · 기본은 일주일에 한 번")) { onOpen(ProfilePage.NOTIFICATIONS) }
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-    LinkRow(
-        tr("Card order", "카드 순서"),
-        if (state.cardOrder == null) tr("Automatic · follows the time of day", "자동 · 시간대에 따라") else tr("My order", "내 순서"),
-    ) { onOpen(ProfilePage.CARDS) }
-    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-    LinkRow(tr("How Pawse calculates", "Pawse 계산 방법"), tr("Every equation, in plain words", "모든 계산식을 쉬운 말로")) { onOpen(ProfilePage.CALCULATES) }
+    LinkRow(tr("How Pawse calculates", "Pawse 계산 방법"), tr("Every equation, with today’s numbers", "모든 계산식과 오늘의 숫자"), onClick = onOpenCalc)
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
     You(state.profile, actions.onSaveProfile)
@@ -181,18 +199,22 @@ private fun Language() {
             manager.applicationLocales = LocaleList.forLanguageTags(if (it) "ko" else "en")
         },
         label = { if (it) "한국어" else "English" },
-        height = 32.dp,
     )
 }
 
 @Composable
 private fun SwitchRow(title: String, sub: String, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
     val s = PawseTheme.semantics
+    // Settings are rare, so they can carry a haptic.
+    val haptic = rememberHaptic()
     Row(
         Modifier
             .fillMaxWidth()
             .heightIn(min = 56.dp)
-            .pressable(enabled = enabled, role = Role.Switch) { onChange(!checked) }
+            .pressable(enabled = enabled, role = Role.Switch) {
+                haptic(toggleHaptic(!checked))
+                onChange(!checked)
+            }
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -201,24 +223,10 @@ private fun SwitchRow(title: String, sub: String, checked: Boolean, enabled: Boo
             Text(sub, style = PawseType.Micro, color = s.faint)
         }
         Spacer(Modifier.width(12.dp))
-        Switch(
-            checked = checked,
-            onCheckedChange = null,
-            enabled = enabled,
-            colors = switchColors(),
-        )
+        PawseSwitch(checked = checked, enabled = enabled)
     }
 }
 
-@Composable
-private fun switchColors() = SwitchDefaults.colors(
-    checkedTrackColor = PawseTheme.semantics.selection,
-    checkedThumbColor = PawseTheme.semantics.onSelection,
-    checkedBorderColor = Color.Transparent,
-    uncheckedTrackColor = PawseTheme.semantics.baselineBand,
-    uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-    uncheckedBorderColor = Color.Transparent,
-)
 
 @Composable
 private fun LinkRow(title: String, sub: String, onClick: () -> Unit) {
@@ -254,7 +262,7 @@ private fun PageHead(title: String, sub: String, onBack: () -> Unit) {
  * overnight heart rate alert passes them.
  */
 @Composable
-private fun Notifications(state: Map<NotifyKind, Boolean>, onNotify: (NotifyKind, Boolean) -> Unit, onBack: () -> Unit) {
+private fun Notifications(state: Map<NotifyKind, Boolean>, onNotify: (NotifyKind, Boolean) -> Unit, onBack: () -> Unit, recent: List<app.pawse.core.data.profile.SentNote> = emptyList()) {
     val context = LocalContext.current
     var pending by remember { mutableStateOf<NotifyKind?>(null) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -272,10 +280,11 @@ private fun Notifications(state: Map<NotifyKind, Boolean>, onNotify: (NotifyKind
         }
     }
     PageHead(tr("Notifications", "알림"), tr("With the defaults Pawse sends one note a week.", "기본 설정에서는 일주일에 한 번만 보내요."), onBack)
-    Column(Modifier.padding(top = 8.dp)) {
+    Text(tr("What Pawse can send", "Pawse가 보낼 수 있는 것"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 20.dp))
+    Column(Modifier.padding(top = 4.dp)) {
         SwitchRow(
             tr("Weekly note", "주간 노트"),
-            tr("Once a week, after the morning read. What changed, in two lines.", "일주일에 한 번, 아침 기록을 읽은 뒤. 바뀐 점을 두 줄로."),
+            tr("Sunday 20:00. What changed this week, in two lines.", "일요일 20:00. 이번 주에 바뀐 점을 두 줄로."),
             state[NotifyKind.WEEKLY] == true,
         ) { flip(NotifyKind.WEEKLY, it) }
         SwitchRow(
@@ -296,7 +305,7 @@ private fun Notifications(state: Map<NotifyKind, Boolean>, onNotify: (NotifyKind
         ) { flip(NotifyKind.WIND_DOWN, it) }
         SwitchRow(
             tr("No new night", "새 수면 기록 없음"),
-            tr("In the morning, if your watch hasn't synced last night.", "워치가 지난밤 기록을 동기화하지 않았으면 아침에."),
+            tr("At 10:00 if your watch hasn’t synced last night.", "워치가 지난밤 기록을 동기화하지 않았으면 10:00에."),
             state[NotifyKind.NO_NIGHT] == true,
         ) { flip(NotifyKind.NO_NIGHT, it) }
     }
@@ -307,6 +316,42 @@ private fun Notifications(state: Map<NotifyKind, Boolean>, onNotify: (NotifyKind
             tr("From your usual bedtime to wake. Only the overnight heart rate alert comes through.", "평소 취침부터 기상까지. 야간 심박수 알림만 울려요."),
             style = PawseType.Micro,
             color = PawseTheme.semantics.faint,
+        )
+    }
+    Text(
+        tr(
+            "With the defaults Pawse sends one note a week. The illness alert comes only when your overnight heart rate stays high.",
+            "기본 설정에서는 일주일에 한 번만 보내요. 질병 알림은 야간 심박수가 계속 높을 때만 와요.",
+        ),
+        style = PawseType.Label,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .padding(top = 4.dp)
+            .fillMaxWidth()
+            .background(PawseTheme.semantics.baselineOuter, RoundedCornerShape(14.dp))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+    )
+    // Recent: what was sent, so a swiped-away note can be read again. No badge, no count.
+    if (recent.isNotEmpty()) {
+        Text(tr("Recent", "최근"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 20.dp))
+        recent.forEach { n ->
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(top = 12.dp))
+            Row(Modifier.padding(top = 12.dp)) {
+                Text(n.title, style = PawseType.BodyStrong, modifier = Modifier.weight(1f))
+                Text(
+                    java.time.Instant.ofEpochMilli(n.atEpochMs).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+                        .format(DateTimeFormatter.ofPattern(tr("EEE d MMM", "M월 d일 (E)"), Locale.getDefault())),
+                    style = PawseType.Micro,
+                    color = PawseTheme.semantics.faint,
+                )
+            }
+            Text(n.text, style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
+        }
+        Text(
+            tr("Kept on this phone for 30 days. Nothing here has a badge or a count.", "이 휴대폰에 30일 동안 보관해요. 배지나 개수는 없어요."),
+            style = PawseType.Micro,
+            color = PawseTheme.semantics.faint,
+            modifier = Modifier.padding(top = 12.dp),
         )
     }
 }
@@ -323,7 +368,6 @@ private fun CardOrder(order: List<ScoresCard>?, hidden: Set<ScoresCard>, actions
         selected = order != null,
         onSelect = { mine -> actions.onCardOrder(if (mine) ScoresCard.complete(ScoresCard.automatic(evening = false)) else null) },
         label = { if (it) tr("My order", "내 순서") else tr("Automatic", "자동") },
-        height = 32.dp,
         modifier = Modifier.padding(top = 16.dp),
     )
     if (order == null) {
@@ -350,48 +394,14 @@ private fun CardOrder(order: List<ScoresCard>?, hidden: Set<ScoresCard>, actions
                     color = if (card in hidden) PawseTheme.semantics.faint else MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f).padding(start = 8.dp),
                 )
-                Switch(
+                PawseSwitch(
                     checked = card !in hidden,
-                    onCheckedChange = { actions.onHidden(card, !it) },
-                    colors = switchColors(),
+                    onChange = { actions.onHidden(card, !it) },
                     modifier = Modifier.semantics { contentDescription = tr("Show ${card.label}", "${card.label} 표시") },
                 )
             }
         }
     }
-}
-
-/** One calm page: each number's equation, what goes in, and where the data comes from. */
-@Composable
-private fun Calculates(onBack: () -> Unit) {
-    PageHead(tr("How Pawse calculates", "Pawse 계산 방법"), tr("Every number, in plain words", "모든 숫자를 쉬운 말로"), onBack)
-    listOf(
-        tr("Body", "컨디션") to tr(
-            "Last night's HRV and sleeping heart rate, each smoothed by a filter that trusts a night as much as its quality allows, then set against your normal: the median of the 60 nights ending a week ago. The two are combined without counting the same nervous system twice, and Body = 100 × Φ(z), so your normal reads 50. Typical is 31–69. The likely range is the filter's own uncertainty.",
-            "지난밤 HRV와 수면 중 심박수를 밤의 품질만큼만 믿는 필터로 다듬은 뒤, 일주일 전에 끝나는 60일 밤의 중앙값인 내 평소와 비교해요. 같은 신경계를 두 번 세지 않게 둘을 합치고, 컨디션 = 100 × Φ(z)라서 평소는 50이에요. 평소 범위는 31–69예요. 예상 범위는 필터 자체의 불확실성이에요.",
-        ),
-        tr("Sleep", "수면") to tr(
-            "Hours asleep against your need. Need is learned from nights off and rises a little after a hard day: 4 minutes a load point above your usual day, at most 30. Stages are shown, never scored. The optional Sleep score weighs duration 45, regularity 35 and continuity 20.",
-            "필요한 잠에 대한 실제 수면 시간이에요. 필요한 잠은 쉬는 날 밤에서 배우고, 힘든 날 뒤에는 평소보다 부하 1점마다 4분, 최대 30분 늘어요. 수면 단계는 보여주기만 하고 점수에 넣지 않아요. 선택 항목인 수면 점수는 길이 45, 규칙성 35, 연속성 20으로 계산해요.",
-        ),
-        tr("Load", "부하") to tr(
-            "Each session's TRIMP from heart rate (Banister), scaled so your typical active day is 10 points. Today's range is r to r + 5 with r = round(5 + Body ÷ 20). With the illness alert, or Body strained two mornings running, it drops to 0–5. Fitness and fatigue are 42- and 7-day averages; form is the gap between them.",
-            "운동마다 심박수로 TRIMP(Banister)를 구하고, 평소 활동한 날이 10점이 되게 맞춰요. 오늘의 범위는 r = round(5 + 컨디션 ÷ 20)일 때 r에서 r + 5까지예요. 질병 알림이 있거나 이틀 연속 컨디션이 크게 낮으면 0–5로 내려가요. 체력과 피로는 42일과 7일 평균이고, 폼은 그 차이예요.",
-        ),
-        tr("Your usual and ≈", "평소 범위와 ≈") to tr(
-            "Your usual is the median ± 1.4826 × MAD of the last 60 days, so one sick week can't widen it. A change is named only when it is bigger than half the usual day-to-day change; otherwise it reads about the same.",
-            "평소 범위는 최근 60일의 중앙값 ± 1.4826 × MAD라서, 아픈 한 주가 범위를 넓히지 못해요. 변화는 평소 하루 사이 변화의 절반보다 클 때만 말하고, 아니면 거의 같다고 해요.",
-        ),
-    ).forEach { (title, body) ->
-        Text(title, style = PawseType.BodyStrong, modifier = Modifier.padding(top = 20.dp))
-        Text(body, style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
-    }
-    Text(
-        tr("Every default is a reasoned starting point, not a validated value.", "모든 기본값은 근거 있는 출발점이지, 검증된 값은 아니에요."),
-        style = PawseType.Micro,
-        color = PawseTheme.semantics.faint,
-        modifier = Modifier.padding(top = 20.dp),
-    )
 }
 
 /**

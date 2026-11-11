@@ -105,8 +105,9 @@ object SleepMath {
      *
      *   Sleep = 100 (0.45 min(1, TST/N) + 0.35 clip((SRI - 50)/40, 0, 1) + 0.20 Q)
      *
-     * Q is continuity: half efficiency against 90%, half WASO against 60 minutes.
-     * A part that cannot be measured is dropped and the rest renormalised.
+     * Q is continuity, v2.5's C: asleep ÷ (asleep + awake in bed), the night's
+     * efficiency. Without it, WASO against 60 minutes stands in. A part that cannot
+     * be measured is dropped and the rest renormalised.
      */
     fun score(
         asleepMinutes: Double,
@@ -118,11 +119,8 @@ object SleepMath {
     ): Pair<Int, SleepScoreParts> {
         val duration = min(1.0, asleepMinutes / 60.0 / needHours)
         val regularity = sri?.let { ((it - 50.0) / 40.0).coerceIn(0.0, 1.0) }
-        val continuityParts = listOfNotNull(
-            efficiencyPercent?.let { (it / config.efficiencyTargetPercent).coerceIn(0.0, 1.0) },
-            wasoMinutes?.let { (1.0 - it / config.wasoLimitMinutes).coerceIn(0.0, 1.0) },
-        )
-        val continuity = if (continuityParts.isEmpty()) null else continuityParts.average()
+        val continuity = efficiencyPercent?.let { (it / 100.0).coerceIn(0.0, 1.0) }
+            ?: wasoMinutes?.let { (1.0 - it / config.wasoLimitMinutes).coerceIn(0.0, 1.0) }
 
         var weighted = config.scoreDurationWeight * duration
         var weights = config.scoreDurationWeight

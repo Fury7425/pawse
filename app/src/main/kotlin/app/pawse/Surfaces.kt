@@ -31,6 +31,8 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import java.time.LocalDate
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -43,16 +45,29 @@ import javax.inject.Singleton
 class AppSurfaces @Inject constructor(
     @ApplicationContext private val context: Context,
     private val notifications: NotificationSettings,
+    private val model: app.pawse.core.model.PawseModel,
 ) : ScoreSurfaces {
     override fun onScored(snapshot: ScoringSnapshot, inBackground: Boolean) {
         TodayWidget.save(context, snapshot)
         TodayWidget.refresh(context)
         MovingWidget.update(context)
+        // The model's widgets: offered while the model is on, and the summary kept current.
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            runCatching {
+                SummaryWidget.offer(context, model.state.first() is app.pawse.core.model.ModelState.Ready)
+                SummaryWidget.refresh(context)
+            }
+        }
         if (notifications.isOn(NotifyKind.ILLNESS)) Notes.illness(context, snapshot)
         if (notifications.isOn(NotifyKind.WIND_DOWN)) Notes.scheduleWindDown(context, snapshot) else Notes.cancelWindDown(context)
         // Only the nightly read sends the weekly note and the no-new-night note.
         if (inBackground && notifications.isOn(NotifyKind.WEEKLY)) WeeklyNotification.maybePost(context, snapshot)
         if (inBackground && notifications.isOn(NotifyKind.NO_NIGHT)) Notes.noNight(context, snapshot)
+    }
+
+    override fun onAccess(readable: Boolean) {
+        TodayWidget.setReadable(context, readable)
+        TodayWidget.refresh(context)
     }
 }
 
@@ -144,6 +159,7 @@ object Notes {
             .setOnlyAlertOnce(true)
             .build()
         runCatching { NotificationManagerCompat.from(context).notify(id, notification) }
+            .onSuccess { NotificationSettings.record(context, title, text) }
         prefs.edit { putBoolean(onceKey, true) }
     }
 }
@@ -234,6 +250,7 @@ object WeeklyNotification {
             .build()
 
         runCatching { NotificationManagerCompat.from(context).notify(ID, notification) }
+            .onSuccess { NotificationSettings.record(context, tr("Your week", "이번 주 요약"), text) }
         prefs.edit { putString("last_weekly", today.toString()) }
     }
 }
@@ -243,6 +260,7 @@ const val ROUTE_FOOD = "food"
 const val ROUTE_SCAN = "scan"
 const val ROUTE_ADD_FOOD = "add_food"
 const val ROUTE_EXPLAIN_BODY = "explain_body"
+const val ROUTE_ASK = "ask"
 
 internal fun openApp(context: Context, route: String?, requestCode: Int): PendingIntent =
     PendingIntent.getActivity(

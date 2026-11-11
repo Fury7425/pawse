@@ -42,13 +42,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -84,11 +84,16 @@ import app.pawse.core.ui.component.Glyph
 import app.pawse.core.ui.component.Glyphs
 import app.pawse.core.ui.component.PawseCard
 import app.pawse.core.ui.component.PawseField
+import app.pawse.core.ui.component.PawseHaptic
 import app.pawse.core.ui.component.PrimaryButton
+import app.pawse.core.ui.component.PullLine
 import app.pawse.core.ui.component.SecondaryButton
 import app.pawse.core.ui.component.cardSurface
 import app.pawse.core.ui.component.lift
+import app.pawse.core.ui.component.rememberSwap
+import app.pawse.core.ui.component.swapIn
 import app.pawse.core.ui.component.pressable
+import app.pawse.core.ui.component.rememberHaptic
 import app.pawse.core.ui.theme.PawseTheme
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.feature.food.camera.BarcodeFrameReader
@@ -132,6 +137,17 @@ fun ScannerScreen(
     val mode by viewModel.mode.collectAsStateWithLifecycle()
     val consentRequested by viewModel.consentRequested.collectAsStateWithLifecycle()
 
+    // A scan resolving is felt, so the eyes can stay on the food: yes for a code or a
+    // label read, a gentle no for a code nobody knows.
+    val haptic = rememberHaptic()
+    LaunchedEffect(state::class) {
+        when (state) {
+            is ScanState.Found, is ScanState.LabelRead -> haptic(PawseHaptic.Confirm)
+            is ScanState.NotFound -> haptic(PawseHaptic.Reject)
+            else -> Unit
+        }
+    }
+
     var granted by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
@@ -142,6 +158,18 @@ fun ScannerScreen(
         ActivityResultContracts.RequestPermission(),
     ) { result -> granted = result }
     val cameraOn = granted && hasCamera(context)
+
+    // States board: a label that yields no table after a while gets a tip, a retry and typing.
+    // ponytail: a fixed 8 s, not a signal from the recogniser; tune if it fires on slow reads.
+    var labelTries by remember { mutableStateOf(0) }
+    var labelStuck by remember { mutableStateOf(false) }
+    LaunchedEffect(mode, state, labelTries) {
+        labelStuck = false
+        if (mode == ScanMode.LABEL && state is ScanState.Scanning) {
+            kotlinx.coroutines.delay(8_000)
+            labelStuck = true
+        }
+    }
 
     Box(modifier = modifier.fillMaxSize().background(Color(0xFF0A0B0C))) {
         if (cameraOn) {
@@ -230,6 +258,8 @@ fun ScannerScreen(
                     ScanStatePanel(
                         state = current,
                         mode = mode,
+                        labelStuck = labelStuck,
+                        onLabelRetry = { labelTries++ },
                         onAdd = onProductChosen,
                         onScanAgain = viewModel::scanAgain,
                         onReadLabel = { viewModel.setMode(ScanMode.LABEL) },
@@ -251,10 +281,12 @@ fun ScannerScreen(
  */
 @Composable
 private fun Logger(viewModel: ScannerViewModel, onManualEntry: () -> Unit, onLogged: () -> Unit) {
+    val haptic = rememberHaptic()
     val foods by viewModel.foods.collectAsStateWithLifecycle()
     val query by viewModel.query.collectAsStateWithLifecycle()
     val plate by viewModel.plate.collectAsStateWithLifecycle()
     val meal by viewModel.meal.collectAsStateWithLifecycle()
+    val today by viewModel.todayKcal.collectAsStateWithLifecycle()
     val s = PawseTheme.semantics
     Column(Modifier.fillMaxWidth()) {
         PawseField(value = query, onValueChange = viewModel::search, placeholder = tr("Search foods", "음식 검색"), height = 48.dp, textStyle = PawseType.Body)
@@ -309,17 +341,24 @@ private fun Logger(viewModel: ScannerViewModel, onManualEntry: () -> Unit, onLog
                     .semantics { contentDescription = tr("Meal: ${FoodCopy.meal(meal)}. Tap to change.", "식사: ${FoodCopy.meal(meal)}. 눌러서 바꾸기.") },
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(FoodCopy.meal(meal), style = PawseType.Micro, color = s.faint)
+                    val now = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+                    Text("${FoodCopy.meal(meal)} · $now", style = PawseType.Micro, color = s.faint)
                     Glyph(Glyphs.ChevronDown, size = 12.dp, color = s.faint)
                 }
+                // As on the canvas: what to do while empty, then the day's total once these are logged.
+                val after = String.format(java.util.Locale.getDefault(), "%,d", ((today ?: 0.0) + total).roundToInt())
                 Text(
-                    if (plate.isEmpty()) tr("Plate is empty", "아직 담은 게 없어요") else tr("${plate.size} on the plate", "${plate.size}개 담음"),
+                    if (plate.isEmpty()) tr("Pick or scan a food", "음식을 고르거나 스캔하세요") else tr("Day after: $after", "기록 후 하루: $after"),
                     style = PawseType.BodyStrong,
+                    modifier = Modifier.swapIn(rememberSwap(plate.isEmpty())),
                 )
             }
             PrimaryButton(
                 text = if (plate.isEmpty()) tr("Log", "기록") else tr("Log $total kcal", "${total}kcal 기록"),
-                onClick = { viewModel.logPlate(onLogged) },
+                onClick = {
+                    haptic(PawseHaptic.Confirm)
+                    viewModel.logPlate(onLogged)
+                },
                 enabled = plate.isNotEmpty(),
                 modifier = Modifier.width(150.dp),
             )
@@ -332,27 +371,32 @@ private fun Modifier.glass(shape: Shape): Modifier = this
     .background(Glass, shape)
     .border(1.dp, GlassLine, shape)
 
-/** Barcode or Label, as a glass pill whose light thumb slides between them. */
+/**
+ * Barcode or Label: the design's glassy segmented switch, 208 dp wide and 40 tall,
+ * a translucent thumb sliding 240 ms in-out under light labels.
+ */
 @Composable
 private fun ModeToggle(mode: ScanMode, onModeChange: (ScanMode) -> Unit) {
-    val width = 92.dp
+    val width = 100.dp
     val offset by animateDpAsState(if (mode == ScanMode.BARCODE) 0.dp else width, tween(240, easing = EaseInOut), label = "mode")
     Box(
         Modifier
-            .glass(RoundedCornerShape(26.dp))
-            .padding(6.dp),
+            .lift(RoundedCornerShape(12.dp))
+            .background(Glass, RoundedCornerShape(12.dp))
+            .padding(4.dp),
     ) {
         Box(
             Modifier
                 .offset(x = offset)
-                .size(width = width, height = 40.dp)
-                .background(Ink, RoundedCornerShape(20.dp)),
+                .size(width = width, height = 32.dp)
+                .background(Color.White.copy(alpha = 0.14f), RoundedCornerShape(8.dp)),
         )
         Row {
             listOf(ScanMode.BARCODE to tr("Barcode", "바코드"), ScanMode.LABEL to tr("Label", "라벨")).forEach { (option, label) ->
+                val on = mode == option
                 Box(
                     Modifier
-                        .size(width = width, height = 40.dp)
+                        .size(width = width, height = 32.dp)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -360,7 +404,11 @@ private fun ModeToggle(mode: ScanMode, onModeChange: (ScanMode) -> Unit) {
                         ) { onModeChange(option) },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(label, style = PawseType.BodyStrong, color = if (mode == option) Night else Ink)
+                    Text(
+                        label,
+                        style = if (on) PawseType.Label.copy(fontWeight = PawseType.BodyStrong.fontWeight) else PawseType.Label,
+                        color = if (on) Color(0xFFF3F4F6) else Color(0xFFC9CED4),
+                    )
                 }
             }
         }
@@ -427,6 +475,8 @@ private fun DrawScope.brackets(
 private fun ScanStatePanel(
     state: ScanState,
     mode: ScanMode,
+    labelStuck: Boolean,
+    onLabelRetry: () -> Unit,
     onAdd: (Long) -> Unit,
     onScanAgain: () -> Unit,
     onReadLabel: () -> Unit,
@@ -436,7 +486,23 @@ private fun ScanStatePanel(
 ) {
     Column(Modifier.fillMaxWidth()) {
         when (state) {
-            is ScanState.Scanning -> {
+            is ScanState.Scanning -> if (mode == ScanMode.LABEL && labelStuck) {
+                Text(tr("Couldn’t read that label", "라벨을 읽지 못했어요"), style = PawseType.Heading)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    tr(
+                        "Fill the frame with the nutrition table and keep it flat. Glare and curved bottles are the usual trouble.",
+                        "영양성분표가 화면을 채우도록 평평하게 비춰 주세요. 반사광과 둥근 병이 흔한 원인이에요.",
+                    ),
+                    style = PawseType.Body,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(20.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PrimaryButton(tr("Try again", "다시 시도"), onClick = onLabelRetry, modifier = Modifier.weight(1f))
+                    SecondaryButton(tr("Type it in", "직접 입력"), onClick = onManualEntry, modifier = Modifier.weight(1f))
+                }
+            } else {
                 Text(
                     text = when (mode) {
                         ScanMode.BARCODE -> tr("Point at the barcode.", "바코드를 비춰 주세요.")
@@ -453,10 +519,16 @@ private fun ScanStatePanel(
                 GhostButton(tr("Type it in instead", "대신 직접 입력"), onClick = onManualEntry, glyph = Glyphs.Pencil)
             }
 
-            is ScanState.LookingUp -> Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onSurface)
-                Spacer(Modifier.width(12.dp))
-                Text(tr("Looking up ${state.barcode}", "${state.barcode} 찾는 중"), style = PawseType.Body)
+            // States board: the line, never a spinner; the row fills when the answer arrives.
+            is ScanState.LookingUp -> Column {
+                PullLine(running = true)
+                Spacer(Modifier.height(14.dp))
+                Text(tr("Looking up ${state.barcode}", "${state.barcode} 찾는 중"), style = PawseType.Heading)
+                Muted("Open Food Facts")
+                Spacer(Modifier.height(6.dp))
+                Text(tr("Usually a second. Recent foods below still work.", "보통 1초면 돼요. 아래 최근 음식은 그대로 쓸 수 있어요."), style = PawseType.Body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(16.dp))
+                SecondaryButton(tr("Cancel", "취소"), onClick = onScanAgain, modifier = Modifier.fillMaxWidth())
             }
 
             is ScanState.Found -> {
@@ -663,15 +735,13 @@ private fun CameraUnavailable(
     onManualEntry: () -> Unit,
 ) {
     Column {
-        Text(if (hasCamera) tr("Camera access", "카메라 접근") else tr("No camera on this phone", "이 휴대폰에는 카메라가 없어요"), style = PawseType.Heading)
+        Text(if (hasCamera) tr("Pawse needs the camera to scan", "스캔하려면 카메라가 필요해요") else tr("No camera on this phone", "이 휴대폰에는 카메라가 없어요"), style = PawseType.Heading)
         Spacer(Modifier.height(6.dp))
         Text(
             text = if (hasCamera) {
                 tr(
-                    "The camera reads barcodes and nutrition panels on this phone. No photo is " +
-                        "saved and no frame leaves the device.",
-                    "카메라로 이 휴대폰에서 바코드와 영양성분표를 읽어요. 사진은 저장되지 않고 어떤 화면도 " +
-                        "기기 밖으로 나가지 않아요.",
+                    "Barcodes and labels are read on the phone. No photo is kept or sent.",
+                    "바코드와 라벨은 휴대폰에서 읽어요. 사진은 저장하거나 보내지 않아요.",
                 )
             } else {
                 tr(

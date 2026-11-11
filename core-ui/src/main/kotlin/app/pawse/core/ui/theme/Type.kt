@@ -2,26 +2,27 @@ package app.pawse.core.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.sp
+import app.pawse.core.ui.R
 
 /**
  * One family, light numerals, medium headings, tabular figures everywhere a metric
  * renders. Sizes and tracking follow the design canvas exactly.
  *
- * Pretendard is the intended face: de facto Korean UI standard, open-licensed
- * (SIL OFL), and its Latin carries numerals well enough that no second family is
- * needed for the hero digits.
+ * Pretendard is the face the design ships: de facto Korean UI standard,
+ * open-licensed (SIL OFL), and its Latin carries numerals well enough that no
+ * second family is needed for the hero digits. Shipped, not left to the system,
+ * because a phone's own face can be anything (a handwriting face on Samsung).
  *
- * ASSUMPTION / one-line swap: the font binaries are not vendored in this repo.
- * Drop PretendardVariable.ttf into core-ui/src/main/res/font/ and change
- * [PawseFontFamily] to the commented line below. Until then the app renders in the
- * system face, whose Light and Medium weights carry the same hierarchy.
+ * One variable file, Pretendard v1.3.9; each weight below sets its wght axis.
  */
-val PawseFontFamily: FontFamily = FontFamily.Default
-// val PawseFontFamily: FontFamily = FontFamily(Font(R.font.pretendard_variable))
+val PawseFontFamily: FontFamily = FontFamily(
+    listOf(250, 300, 400, 500, 600, 700).map { Font(R.font.pretendard_variable, FontWeight(it)) },
+)
 
 /**
  * Tabular figures. Without this, a Recovery score ticking 68 -> 71 shifts width and
@@ -46,7 +47,7 @@ private fun style(size: Int, line: Int, weight: FontWeight, tracking: Double = 0
 
 /**
  * Big figures sit at 250 so they read light and exact. Pretendard Variable renders
- * it as drawn; a static system face snaps to its nearest weight, Light.
+ * it as drawn.
  */
 private val NumeralWeight = FontWeight(250)
 

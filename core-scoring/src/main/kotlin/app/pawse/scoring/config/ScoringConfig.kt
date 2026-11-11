@@ -78,15 +78,15 @@ data class BodyConfig(
     val baselineLagDays: Int = 7,
     /** No score with fewer valid nights than this. */
     val minValidNights: Int = 7,
-    /** HRV's share of the combined signal; sleeping HR has the rest. */
-    val hrvWeight: Double = 0.6,
-    /** The HRV-vs-sleeping-HR correlation is pulled toward this until there are nights. */
-    val rhoPrior: Double = 0.5,
+    /** HRV's share of the combined signal; sleeping HR has the rest. v2.5: HRV 62%, sleeping HR 38%. */
+    val hrvWeight: Double = 0.62,
+    /** The HRV-vs-sleeping-HR correlation is pulled toward this until there are nights. v2.5's ρ is 0.31. */
+    val rhoPrior: Double = 0.31,
     val rhoPriorNights: Double = 30.0,
     /** Range shown with every score: +/- this many SDs of the filter, a 50% interval. */
     val rangeZ: Double = 0.674,
-    val highConfidenceSd: Double = 0.7,
-    val mediumConfidenceSd: Double = 1.0,
+    /** v2.5: High confidence needs this many nights in your normal, and both signals. */
+    val highConfidenceNights: Int = 10,
     /** A Body score needs a valid night at most this many days old. */
     val maxNightAgeDays: Int = 2,
     val zClamp: Double = 3.0,
@@ -263,6 +263,8 @@ data class WeightConfig(
     /** A reading this far from the trend, or this far from your usual hour, counts at half weight. */
     val oddShare: Double = 0.025,
     val oddHours: Double = 4.0,
+    /** After a longer gap than this the trend is stale, so no reading is odd: it counts fully. */
+    val oddMaxGapDays: Int = 7,
     val goalWindowDays: Int = 28,
     val goalMinDays: Int = 21,
     val goalMinWeighIns: Int = 8,

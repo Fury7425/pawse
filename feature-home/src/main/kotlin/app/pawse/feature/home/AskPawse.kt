@@ -31,8 +31,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
+import app.pawse.core.ui.component.PawseSwitch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -91,8 +90,10 @@ import kotlin.math.ceil
  * time Pawse opens after the night, and Ask Pawse. One call from the screen.
  */
 @Composable
-internal fun ModelSheets(viewModel: AssistantViewModel = hiltViewModel()) {
+internal fun ModelSheets(openAsk: Boolean = false, viewModel: AssistantViewModel = hiltViewModel()) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
+    // The Ask Pawse widget opens straight into the chat, disclaimer first.
+    LaunchedEffect(openAsk) { if (openAsk) viewModel.openAsk() }
     val summary = ui.summary
     var rising by remember(summary?.date) { mutableStateOf(false) }
     LaunchedEffect(summary?.date, ui.rises) {
@@ -375,19 +376,12 @@ internal fun ModelSettingsSection(viewModel: AssistantViewModel = hiltViewModel(
 
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(MODEL_TITLE, style = PawseType.Heading, modifier = Modifier.weight(1f))
-        Switch(
+        PawseSwitch(
             checked = state != ModelState.Off,
-            onCheckedChange = { on ->
+            onChange = { on ->
                 viewModel.setModel(on)
                 sheet = on
             },
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = colors.background,
-                checkedTrackColor = colors.onSurface,
-                uncheckedThumbColor = colors.onSurfaceVariant,
-                uncheckedTrackColor = colors.surfaceContainerHigh,
-                uncheckedBorderColor = colors.outline,
-            ),
         )
     }
     Spacer(Modifier.height(6.dp))
@@ -532,7 +526,14 @@ private fun ColumnScope.DownloadProgress(
 ) {
     val grey = MaterialTheme.colorScheme.onSurfaceVariant
     val done = (state.bytes.toDouble() / PawseModel.BYTES).coerceIn(0.0, 1.0).toFloat()
-    Text(tr("Getting the model ready", "모델 준비 중"), style = PawseType.Heading)
+    Text(
+        when {
+            !state.waiting -> tr("Getting the model ready", "모델 준비 중")
+            state.wifiOnly -> tr("Paused · waiting for Wi-Fi", "일시 중지 · Wi-Fi를 기다리는 중")
+            else -> tr("Paused · waiting for a connection", "일시 중지 · 연결을 기다리는 중")
+        },
+        style = PawseType.Heading,
+    )
     Spacer(Modifier.height(16.dp))
     Row {
         Text(PawseModel.downloaded(state.bytes), style = PawseType.Label, modifier = Modifier.weight(1f))
@@ -567,7 +568,7 @@ private fun ColumnScope.DownloadProgress(
 private fun timeLeft(state: ModelState.Downloading): String {
     val start = remember(state.waiting) { System.currentTimeMillis() to state.bytes }
     if (state.waiting) {
-        return if (state.wifiOnly) tr("Waiting for Wi-Fi", "Wi-Fi를 기다리는 중") else tr("Waiting for a connection", "연결을 기다리는 중")
+        return if (state.wifiOnly) tr("It resumes on its own when Wi-Fi is back.", "Wi-Fi가 돌아오면 저절로 이어서 받아요.") else tr("It resumes on its own when you’re back online.", "다시 연결되면 저절로 이어서 받아요.")
     }
     val got = state.bytes - start.second
     val ms = System.currentTimeMillis() - start.first

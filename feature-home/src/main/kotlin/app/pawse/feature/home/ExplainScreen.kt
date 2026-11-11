@@ -2,7 +2,22 @@ package app.pawse.feature.home
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.platform.LocalDensity
+import app.pawse.core.ui.component.EaseInOut
+import app.pawse.core.ui.component.PawseHaptic
+import app.pawse.core.ui.component.REDUCED_FADE
+import app.pawse.core.ui.component.rememberHaptic
+import app.pawse.core.ui.component.rememberSwap
+import app.pawse.core.ui.component.swapIn
+import kotlinx.coroutines.flow.drop
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -19,7 +34,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -49,9 +69,12 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pawse.core.data.scoring.NightDetail
@@ -105,6 +128,7 @@ fun ExplainScreen(
     modifier: Modifier = Modifier,
     /** The day the Scores strip had picked, as days before the newest. */
     initialBack: Int = 0,
+    onOpenCalc: (CalcSection) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -122,15 +146,21 @@ fun ExplainScreen(
     }
     val scope = rememberCoroutineScope()
     val shown = PAGES[pager.currentPage]
+    // Tapping a segment moves the page on the segmented curve.
     fun show(t: ScoreType) {
-        scope.launch { pager.animateScrollToPage(PAGES.indexOf(t)) }
+        scope.launch {
+            pager.animateScrollToPage(PAGES.indexOf(t), animationSpec = if (reduce) snap() else tween(240, easing = EaseInOut))
+        }
+    }
+    // A page landing is a discrete step, so it ticks.
+    val haptic = rememberHaptic()
+    LaunchedEffect(pager) {
+        snapshotFlow { pager.settledPage }.drop(1).collect { haptic(PawseHaptic.Tick) }
     }
     // One window day drives every page; it stays put as the pages swipe.
     var back by rememberSaveable { mutableIntStateOf(initialBack) }
     // Body and Load's Over time range, shared by both pages.
     var range by rememberSaveable { mutableIntStateOf(30) }
-    // The ⓘ opens how the open page's number is worked out, as a sheet.
-    var mathFor by remember { mutableStateOf<ScoreType?>(null) }
     // One pinned day to compare against, as days before the newest; your usual is always on.
     var pin by rememberSaveable { mutableStateOf<Int?>(null) }
     // The day sheet: true picks a day to pin, false moves the window day (the calendar).
@@ -143,32 +173,19 @@ fun ExplainScreen(
         if (date != null && computedAt != null) viewModel.openNight(date, computedAt)
     }
 
+    // Each page keeps its own scroll; the open one collapses the rail and lifts the header.
+    val lists = PAGES.map { rememberLazyListState() }
+    val density = LocalDensity.current
+    val collapseRange = with(density) { 80.dp.toPx() }
+    val lift = with(density) { 4.dp.toPx() }
+    fun scrolled(): Float = lists[pager.currentPage].let { if (it.firstVisibleItemIndex > 0) Float.MAX_VALUE else it.firstVisibleItemScrollOffset.toFloat() }
+    val collapse = { (scrolled() / collapseRange).coerceIn(0f, 1f) }
+    val lifted by remember { derivedStateOf { scrolled() > lift } }
+
     Scaffold(modifier = modifier, containerColor = MaterialTheme.colorScheme.background) { padding ->
-        Column(
-            Modifier
-                .fillMaxSize()
-                .aura()
-                .padding(top = padding.calculateTopPadding() + 12.dp),
-        ) {
-            // Pinned: back, the switch and the day rail stay while the pages swipe under them.
-            Row(Modifier.padding(horizontal = 12.dp).heightIn(min = 56.dp).lookIn(look, 0), verticalAlignment = Alignment.CenterVertically) {
-                GlyphButton(Glyphs.ChevronLeft, tr("Back to Scores", "점수로 돌아가기"), onClick = onBack)
-                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    Segmented(
-                        options = PAGES,
-                        selected = shown,
-                        onSelect = ::show,
-                        label = ScoreCopy::name,
-                        height = 32.dp,
-                        modifier = Modifier.width(240.dp),
-                    )
-                }
-                GlyphButton(Glyphs.Info, tr("How Pawse calculates ${ScoreCopy.name(shown)}", "${ScoreCopy.name(shown)} 계산 방법"), onClick = { mathFor = shown })
-            }
-            if (snapshot != null) {
-                DateStrip(snapshot, shown, back, onPick = { back = it }, modifier = Modifier.padding(start = 24.dp, top = 8.dp, end = 24.dp).lookIn(look, 1))
-            }
-            HorizontalPager(state = pager, modifier = Modifier.weight(1f), beyondViewportPageCount = if (warm) 1 else 0) { page ->
+        val top = padding.calculateTopPadding()
+        Box(Modifier.fillMaxSize().aura()) {
+            HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = if (warm) 1 else 0) { page ->
                 ScorePage(
                     look = look,
                     type = PAGES[page],
@@ -181,12 +198,66 @@ fun ExplainScreen(
                     onRange = { range = it; if (back >= it) back = 0 },
                     night = night?.takeIf { it.date == date },
                     onBody = { show(ScoreType.BODY) },
+                    // Pages start under the 56 dp header and the 64 dp rail, and scroll under both.
+                    top = top + 128.dp,
                     bottom = padding.calculateBottomPadding(),
+                    list = lists[page],
                     pin = pin,
                     onCompare = { daySheet = true },
                     onUnpin = { pin = null },
                     onCalendar = { daySheet = false },
+                    onBasis = { onOpenCalc(CalcSection.LIKELY) },
                 )
+            }
+            // Pinned: back, the switch and the day rail stay while the pages swipe and scroll under them.
+            Column(Modifier.fillMaxWidth()) {
+                val fade = MaterialTheme.colorScheme.background.copy(alpha = 0.92f)
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(if (lifted) fade else Color.Transparent)
+                        .padding(start = 12.dp, top = top, end = 12.dp, bottom = 8.dp)
+                        .height(48.dp)
+                        .lookIn(look, 0),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    GlyphButton(Glyphs.ChevronLeft, tr("Back to Scores", "점수로 돌아가기"), onClick = onBack)
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        Segmented(
+                            options = PAGES,
+                            selected = shown,
+                            onSelect = ::show,
+                            label = ScoreCopy::name,
+                            modifier = Modifier.width(240.dp),
+                            position = { pager.currentPage + pager.currentPageOffsetFraction },
+                        )
+                    }
+                    GlyphButton(Glyphs.Info, tr("How Pawse calculates ${ScoreCopy.name(shown)}", "${ScoreCopy.name(shown)} 계산 방법"), onClick = {
+                        // The ⓘ opens How Pawse calculates at the open page's number.
+                        onOpenCalc(
+                            when (shown) {
+                                ScoreType.BODY -> CalcSection.BODY
+                                ScoreType.SLEEP -> CalcSection.SLEEP
+                                ScoreType.LOAD -> CalcSection.LOAD
+                            },
+                        )
+                    })
+                }
+                if (snapshot != null) {
+                    DayRail(
+                        snapshot = snapshot,
+                        type = shown,
+                        back = back,
+                        pin = pin,
+                        collapse = collapse,
+                        lifted = lifted,
+                        onPick = { back = it },
+                        onPin = { pin = if (pin == it) null else it },
+                        onCompare = { daySheet = true },
+                        onUnpin = { pin = null },
+                        modifier = Modifier.lookIn(look, 1),
+                    )
+                }
             }
         }
     }
@@ -203,27 +274,17 @@ fun ExplainScreen(
                 daySheet = null
             },
             onDismiss = { daySheet = null },
+            pin = pin,
+            // Swap: look at the pinned day, compare with the one you were on.
+            onSwap = {
+                pin?.let { p ->
+                    pin = back
+                    back = p
+                }
+                daySheet = null
+            },
+            onUnpin = { pin = null },
         )
-    }
-
-    mathFor?.let { type ->
-        val day = snapshot?.history?.lastOrNull { it.date == date }
-        PawseSheet(onDismiss = { mathFor = null }) {
-            Text(tr("How Pawse calculates ${ScoreCopy.name(type)}", "${ScoreCopy.name(type)} 계산 방법"), style = PawseType.Heading)
-            if (day != null && type != ScoreType.SLEEP) {
-                Combiner(combiner = combinerOf(type, day), mathOpen = true, onToggleMath = {}, modifier = Modifier.padding(top = 16.dp))
-            } else {
-                Text(
-                    tr(
-                        "Sleep is hours asleep against your need. Need comes from your nights off and rises a little after a hard day. Stages are shown, never scored.",
-                        "수면은 필요한 잠에 대한 실제 수면 시간이에요. 필요한 잠은 쉬는 날 밤에서 배우고, 힘든 날 뒤에는 조금 늘어요. 수면 단계는 보여주기만 하고 점수에 넣지 않아요.",
-                    ),
-                    style = PawseType.Body,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 12.dp),
-                )
-            }
-        }
     }
 }
 
@@ -240,16 +301,19 @@ private fun ScorePage(
     onRange: (Int) -> Unit,
     night: NightDetail?,
     onBody: () -> Unit,
+    top: Dp,
     bottom: Dp,
+    list: LazyListState,
     pin: Int?,
     onCompare: () -> Unit,
     onUnpin: () -> Unit,
     onCalendar: () -> Unit,
+    onBasis: () -> Unit,
 ) {
     var open by rememberSaveable { mutableIntStateOf(0) }
     var mathOpen by rememberSaveable { mutableStateOf(false) }
     val pad = Modifier.padding(horizontal = 24.dp)
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = bottom + 48.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(top = top, bottom = bottom + 48.dp)) {
         if (snapshot == null || date == null) {
             item {
                 Text(
@@ -280,6 +344,7 @@ private fun ScorePage(
                 onCompare = onCompare,
                 onUnpin = onUnpin,
                 onCalendar = onCalendar,
+                onBasis = onBasis,
                 modifier = pad,
             )
         }
@@ -306,77 +371,27 @@ private fun ScorePage(
                 modifier = pad.lookIn(look, 3),
             )
         }
+        // Body's why, week, overnight pattern and effects come before how it was worked out, as on the canvas.
+        if (type == ScoreType.BODY && day?.body != null) {
+            item {
+                Column(pad.padding(top = 32.dp).lookIn(look, 4)) {
+                    // The same usual the rows above print, so "Why NN" never quotes a second normal.
+                    BodyCards(day, snapshot.insights, snapshot.usual { NightFigure.HRV.of(it) }?.mid, snapshot.usual { NightFigure.HR.of(it) }?.mid)
+                }
+            }
+        }
         if (day != null) {
             item {
                 Combiner(
                     combiner = combinerOf(type, day),
                     mathOpen = mathOpen,
                     onToggleMath = { mathOpen = !mathOpen },
-                    modifier = pad.padding(top = 28.dp).lookIn(look, 4),
+                    modifier = pad.padding(top = 32.dp).lookIn(look, 4),
                 )
-            }
-        }
-        // Body's reasons, week, overnight pattern and insights sit under the combiner, as on the board.
-        if (type == ScoreType.BODY && day?.body != null) {
-            item {
-                Column(pad.padding(top = 28.dp).lookIn(look, 4), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    BodyCards(day, snapshot.insights)
-                }
             }
         }
 
         item { Provenance(snapshot, pad.padding(top = 28.dp).lookIn(look, 4)) }
-    }
-}
-
-/**
- * The day rail: seven chips ending at the newest day, each with the open page's
- * mark and no number, so it never reads as a scoreboard. Body is its band dot,
- * Sleep a bar against need, Load a bar against the ring's 16 points.
- */
-@Composable
-private fun DateStrip(snapshot: ScoringSnapshot, type: ScoreType, back: Int, onPick: (Int) -> Unit, modifier: Modifier = Modifier) {
-    val byDate = snapshot.history.associateBy { it.date }
-    val s = PawseTheme.semantics
-    val grey = MaterialTheme.colorScheme.onSurfaceVariant
-    val raised = MaterialTheme.colorScheme.surfaceContainerHigh
-    val ring = ScoringConfig.DEFAULT.points.ringPoints
-    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        for (d in 6 downTo 0) {
-            val date = snapshot.date.minusDays(d.toLong())
-            val day = if (d == 0) snapshot.today else byDate[date]
-            val picked = d == back
-            val dot = day?.body?.let { bodyColor(it.band, day.illness.level) }
-            val bar = when (type) {
-                ScoreType.SLEEP -> day?.sleep?.let { sl -> sl.lastNightMinutes?.let { it / (sl.needHours * 60.0) } }
-                ScoreType.LOAD -> day?.load?.points?.let { it / ring }
-                ScoreType.BODY -> null
-            }?.toFloat()?.coerceIn(0.08f, 1f)
-            Column(
-                Modifier
-                    .weight(1f)
-                    .height(64.dp)
-                    .pressable(enabled = day != null, role = Role.Tab) { onPick(d) }
-                    .background(if (picked) raised else Color.Transparent, RoundedCornerShape(12.dp))
-                    .semantics(mergeDescendants = true) { selected = picked }
-                    .padding(top = 8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(date.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, Locale.getDefault()), style = PawseType.Micro, color = s.faint)
-                Text(date.dayOfMonth.toString(), style = PawseType.Heading)
-                Canvas(Modifier.padding(top = 2.dp).size(12.dp)) {
-                    when {
-                        day == null -> Unit
-                        type == ScoreType.BODY && dot != null -> drawCircle(dot, 3.dp.toPx())
-                        type == ScoreType.BODY -> drawCircle(grey, 2.75.dp.toPx(), style = Stroke(1.5.dp.toPx()))
-                        bar != null -> {
-                            val h = bar * size.height
-                            drawRoundRect(grey, Offset(4.5.dp.toPx(), size.height - h), Size(3.dp.toPx(), h), CornerRadius(1.5.dp.toPx()))
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -400,45 +415,78 @@ private fun DetailHero(
     onCompare: () -> Unit,
     onUnpin: () -> Unit,
     onCalendar: () -> Unit,
+    onBasis: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val s = PawseTheme.semantics
     val grey = MaterialTheme.colorScheme.onSurfaceVariant
-    val now = LocalDate.now()
-    val title = when (date) {
-        now -> tr("Today", "오늘")
-        now.minusDays(1) -> tr("Yesterday", "어제")
-        else -> date.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, Locale.getDefault())
-    }
+    val haptic = rememberHaptic()
+    val reduce = LocalReduceMotion.current
+    val step = with(LocalDensity.current) { 12.dp.roundToPx() }
     Column(modifier.fillMaxWidth().padding(top = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(Modifier.fillMaxWidth().lookIn(look, 1), verticalAlignment = Alignment.CenterVertically) {
-            GlyphButton(Glyphs.ChevronLeft, tr("Day before", "전날"), onClick = { if (back < oldest) onPick(back + 1) })
-            // The title opens the calendar: every route to a day stays visible.
-            Text(
-                title,
-                style = PawseType.Heading,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = 48.dp)
-                    .pressable(onClick = onCalendar)
-                    .semantics { contentDescription = "$title, " + tr("choose a date", "날짜 선택") }
-                    .padding(top = 12.dp),
-            )
-            GlyphButton(Glyphs.ChevronRight, tr("Day after", "다음 날"), onClick = { if (back > 0) onPick(back - 1) })
+        // ‹ day › on the left and Compare on the right, the date under it. The head
+        // reaches 12 dp past the page padding so the arrows' glyphs sit on the text edge.
+        Row(Modifier.fillMaxWidth().bleed(12.dp).heightIn(min = 48.dp).lookIn(look, 1), verticalAlignment = Alignment.CenterVertically) {
+            GlyphButton(Glyphs.ChevronLeft, tr("Day before", "전날"), onClick = {
+                if (back < oldest) {
+                    haptic(PawseHaptic.Step)
+                    onPick(back + 1)
+                }
+            })
+            // The title opens the calendar: every route to a day stays visible. A step
+            // slides it 12 dp in from the side it travelled, the old one out fast.
+            AnimatedContent(
+                targetState = date,
+                modifier = Modifier.widthIn(max = 176.dp),
+                transitionSpec = {
+                    // An earlier day comes in from the left, a later one from the right.
+                    val from = if (targetState < initialState) -step else step
+                    if (reduce) {
+                        fadeIn(tween(REDUCED_FADE)) togetherWith fadeOut(tween(90))
+                    } else {
+                        (slideInHorizontally(tween(180, easing = EaseOut)) { from } + fadeIn(tween(180, easing = EaseOut))) togetherWith
+                            fadeOut(tween(90, easing = EaseOut))
+                    }
+                },
+                label = "dayHead",
+            ) { shownDate ->
+                val shownTitle = dayTitle(shownDate)
+                Text(
+                    shownTitle,
+                    style = PawseType.Heading.copy(fontSize = 17.sp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .pressable(onClick = onCalendar)
+                        .semantics { contentDescription = "$shownTitle, " + tr("choose a date", "날짜 선택") }
+                        .wrapContentHeight()
+                        .padding(horizontal = 2.dp),
+                )
+            }
+            GlyphButton(Glyphs.ChevronRight, tr("Day after", "다음 날"), onClick = {
+                if (back > 0) {
+                    haptic(PawseHaptic.Step)
+                    onPick(back - 1)
+                }
+            })
+            Spacer(Modifier.weight(1f))
+            CompareChip(pinDate, onOpen = onCompare, onUnpin = onUnpin, modifier = Modifier.padding(end = 12.dp))
         }
-        Row(Modifier.lookIn(look, 1), verticalAlignment = Alignment.CenterVertically) {
-            Text(shortDate(date), style = PawseType.Micro, color = s.faint)
+        Row(
+            Modifier.fillMaxWidth().bleed(12.dp).heightIn(min = 32.dp).padding(start = 48.dp, end = 12.dp).lookIn(look, 1),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(shortDate(date), style = PawseType.Label, color = grey, modifier = Modifier.weight(1f))
             if (back > 0) {
                 Text(
                     tr("Back to today", "오늘로"),
-                    style = PawseType.Micro.copy(fontWeight = PawseType.BodyStrong.fontWeight),
+                    style = PawseType.Label.copy(fontWeight = PawseType.BodyStrong.fontWeight),
                     color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(start = 8.dp).heightIn(min = 32.dp).pressable { onPick(0) }.padding(horizontal = 6.dp, vertical = 8.dp),
+                    modifier = Modifier.heightIn(min = 32.dp).pressable { onPick(0) }.padding(horizontal = 4.dp, vertical = 7.dp),
                 )
             }
         }
-        CompareChip(pinDate, onOpen = onCompare, onUnpin = onUnpin)
 
         val face = heroFace(type, day, showNumbers)
         ScoreRing(
@@ -450,15 +498,74 @@ private fun DetailHero(
             range = face.range,
             stroke = 6f,
             ghost = pinDate?.let { heroFace(type, pinned, showNumbers).fraction },
+            // A day step sweeps old → new in 220 ms, no refill.
+            changeMillis = 220,
             modifier = Modifier.padding(top = 4.dp).flightTarget(type),
         ) {
-            Row(verticalAlignment = Alignment.Bottom) {
+            // Another day keeps everything in place: the arc sweeps, the numeral swaps.
+            Row(Modifier.swapIn(rememberSwap(face.value)), verticalAlignment = Alignment.Bottom) {
                 Text(face.value, style = PawseType.RingXL)
                 if (face.unit.isNotEmpty()) Text(face.unit, style = PawseType.Heading.copy(fontWeight = PawseType.Body.fontWeight), color = grey, modifier = Modifier.padding(start = 2.dp, bottom = 8.dp))
             }
         }
         BandDot(color = face.dot, label = face.word, hollow = face.hollow, modifier = Modifier.padding(top = 12.dp).lookIn(look, 2))
+        // Load: the form word under the range word.
+        if (type == ScoreType.LOAD) {
+            day?.load?.formBand?.let { Text(ScoreCopy.form(it), style = PawseType.BodyStrong, modifier = Modifier.padding(top = 8.dp).lookIn(look, 2)) }
+        }
+        // Body: how sure the reading is, a chip that opens how the range and confidence are worked out.
+        if (type == ScoreType.BODY && day != null) {
+            val body = day.body
+            val signals = listOfNotNull(body?.hrv?.tonight, body?.sleepingHr?.tonight).size
+            Row(
+                Modifier
+                    .padding(top = 12.dp)
+                    .lookIn(look, 2)
+                    .heightIn(min = 48.dp)
+                    .pressable(onClick = onBasis),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    Modifier
+                        .height(36.dp)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(12.dp))
+                        .padding(horizontal = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Glyph(Glyphs.Shield, size = 16.dp, color = grey)
+                    Text(
+                        when {
+                            body == null -> tr("Learning your normal", "평소 상태를 배우는 중")
+                            body.confidence == app.pawse.scoring.model.Confidence.HIGH -> tr("High confidence · $signals of 2 signals", "신뢰도 높음 · 신호 2개 중 ${signals}개")
+                            signals < 2 -> tr("Low confidence · $signals of 2 signals", "신뢰도 낮음 · 신호 2개 중 ${signals}개")
+                            else -> tr("Low confidence · few nights so far", "신뢰도 낮음 · 아직 밤이 적어요")
+                        },
+                        style = PawseType.Label,
+                        color = grey,
+                    )
+                    Glyph(Glyphs.ChevronRight, size = 16.dp, color = grey)
+                }
+            }
+        }
         Text(face.sentence, style = PawseType.Body, color = grey, modifier = Modifier.fillMaxWidth().padding(top = 16.dp).lookIn(look, 2))
+    }
+}
+
+/** Reaches [x] past the parent's padding on both sides, like a CSS margin of -x. */
+private fun Modifier.bleed(x: Dp): Modifier = layout { measurable, constraints ->
+    val px = x.roundToPx()
+    if (!constraints.hasBoundedWidth) return@layout measurable.measure(constraints).let { p -> layout(p.width, p.height) { p.place(0, 0) } }
+    val p = measurable.measure(constraints.copy(minWidth = constraints.minWidth + 2 * px, maxWidth = constraints.maxWidth + 2 * px))
+    layout(p.width - 2 * px, p.height) { p.place(-px, 0) }
+}
+
+private fun dayTitle(date: LocalDate): String {
+    val now = LocalDate.now()
+    return when (date) {
+        now -> tr("Today", "오늘")
+        now.minusDays(1) -> tr("Yesterday", "어제")
+        else -> date.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, Locale.getDefault())
     }
 }
 
@@ -502,6 +609,7 @@ private fun heroFace(type: ScoreType, day: DayReport?, showNumbers: Boolean): He
                     else -> tr("Longer than your need", "필요량보다 김")
                 },
                 sentence = when {
+                    slept == null && day.date == java.time.LocalDate.now() -> tr("Waiting for last night from your watch.", "워치에서 지난밤 기록을 기다리는 중이에요.")
                     slept == null -> tr("No night came in from your watch.", "워치에서 들어온 밤 기록이 없어요.")
                     abs(gap!!) < 1.0 -> tr("You slept ${ScoreCopy.formatMinutes(slept)}, what you needed.", "${ScoreCopy.formatMinutes(slept)} 잤어요. 필요한 만큼이에요.")
                     gap > 0 -> tr("You slept ${ScoreCopy.formatMinutes(slept)}, ${ScoreCopy.formatMinutes(gap)} short of your ${ScoreCopy.formatMinutes(need)} need.", "${ScoreCopy.formatMinutes(slept)} 잤어요. 필요한 ${ScoreCopy.formatMinutes(need)}보다 ${ScoreCopy.formatMinutes(gap)} 부족해요.")
@@ -547,13 +655,19 @@ private fun heroFace(type: ScoreType, day: DayReport?, showNumbers: Boolean): He
                 dot = neutral,
                 hollow = false,
                 word = range?.let { tr("$shown of ${it.low}–${it.high}", "${it.low}–${it.high} 중 $shown") } ?: "$shown",
-                sentence = when {
-                    range == null -> tr("Load is training, not a grade, so it stays grey.", "부하는 평가가 아닌 훈련량이라 회색으로 둬요.")
-                    range.rest -> tr("Rest or easy today: your body has been strained or your overnight heart rate high.", "오늘은 쉬거나 가볍게: 몸에 부담이 쌓였거나 야간 심박수가 높았어요.")
-                    shown < range.low -> tr("Under the range Body set for the day.", "컨디션이 정한 범위보다 적어요.")
-                    shown > range.high -> tr("Over the range Body set for the day.", "컨디션이 정한 범위를 넘었어요.")
-                    else -> tr("Inside the range Body set for the day.", "컨디션이 정한 범위 안이에요.")
-                } + " " + tr("Your typical active day is 10.", "평소 활동한 날이 10이에요."),
+                // The canvas's Load notes, word for word. Zero today is "nothing yet", not a rest day.
+                sentence = run {
+                    val isToday = day.date == java.time.LocalDate.now()
+                    when {
+                        load.points <= 0.0 && isToday -> tr("Nothing yet today. Load counts from your first workout.", "오늘은 아직 없어요. 첫 운동부터 세요.")
+                        load.points <= 0.0 -> tr("A rest day.", "쉬는 날이에요.")
+                        range == null -> tr("No range yet: it comes with Body, after night 7.", "아직 범위가 없어요. 7번째 밤 이후 컨디션과 함께 나와요.")
+                        range.rest -> tr("Rest or easy today: your body has been strained or your overnight heart rate high.", "오늘은 쉬거나 가볍게: 몸에 부담이 쌓였거나 야간 심박수가 높았어요.")
+                        shown < range.low -> if (isToday) tr("Under today’s range so far.", "지금까지 오늘 범위 아래예요.") else tr("Under that day’s range.", "그날 범위 아래였어요.")
+                        shown > range.high -> tr("Over the range.", "범위를 넘었어요.")
+                        else -> tr("Inside the range.", "범위 안이에요.")
+                    }
+                },
                 range = range?.let { it.low.toFloat() / ring..it.high.toFloat() / ring },
             )
         }
@@ -678,71 +792,98 @@ private fun Combiner(
     }
 }
 
+/** A card's small head: the label on the left, an optional word or figure on the right. */
 @Composable
-private fun BodyCards(today: DayReport, insights: List<Insight>) {
+private fun CardHead(label: String, aside: String? = null, asideColor: Color = MaterialTheme.colorScheme.onSurface) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+        aside?.let { Text(it, style = PawseType.BodyStrong, color = asideColor) }
+    }
+}
+
+@Composable
+private fun MicroLine(k: String, v: String) {
+    Row(Modifier.padding(top = 8.dp)) {
+        Text(k, style = PawseType.Micro, color = PawseTheme.semantics.faint, modifier = Modifier.weight(1f))
+        Text(v, style = PawseType.Micro, color = MaterialTheme.colorScheme.onSurface, textAlign = TextAlign.End)
+    }
+}
+
+/** Body's cards under Over time, in the design's order: why, the week, the overnight pattern, what moves it. */
+@Composable
+private fun BodyCards(today: DayReport, insights: List<Insight>, hrvUsual: Double?, hrUsual: Double?) {
     val body = today.body ?: return
-    if (body.reasons.isNotEmpty()) {
-        PawseCard {
-            SectionTitle(tr("Top reasons", "주요 이유"))
-            Text(ScoreCopy.reasons(body.reasons), style = PawseType.Body)
-            Spacer(Modifier.height(8.dp))
-            Note(
-                ScoreCopy.bandMeaning(body.band) + tr(
-                    " Body ${body.score} is roughly “better than ${body.score}% of your normal days”.",
-                    " 컨디션 ${body.score}점은 대략 ‘평소 날의 ${body.score}%보다 좋음’이라는 뜻이에요.",
-                ),
-            )
-        }
+    val faint = PawseTheme.semantics.faint
+    // Why NN: each signal against your normal, in its own unit.
+    val why = listOfNotNull(
+        body.hrv?.let { h ->
+            h.tonight?.let { t ->
+                val base = hrvUsual ?: h.baseline
+                val p = ((t - base) / base * 100).roundToInt()
+                if (abs(p) < 3) tr("HRV about your normal", "HRV는 평소와 비슷") else tr("HRV ${abs(p)}% ${if (p > 0) "above" else "below"} your normal", "HRV가 평소보다 ${abs(p)}% ${if (p > 0) "높음" else "낮음"}")
+            }
+        },
+        body.sleepingHr?.let { r ->
+            r.tonight?.let { t ->
+                val d = t - (hrUsual ?: r.baseline)
+                if (abs(d) < 1) tr("sleeping heart rate about your normal", "수면 중 심박수는 평소와 비슷") else tr("sleeping heart rate ${f1(abs(d))} bpm ${if (d > 0) "above" else "below"} your normal", "수면 중 심박수가 평소보다 ${f1(abs(d))} bpm ${if (d > 0) "높음" else "낮음"}")
+            }
+        },
+    ).joinToString("; ").replaceFirstChar { it.uppercase() }
+    PawseCard {
+        CardHead(tr("Why ${body.score}", "왜 ${body.score}인가요"))
+        Text(if (why.isEmpty()) tr("Your usual needs a few more nights before this score can be explained.", "이 점수를 설명하려면 평소 범위를 알 밤이 몇 개 더 필요해요.") else "$why.", style = PawseType.Body, modifier = Modifier.padding(top = 8.dp))
+        if (body.reasons.isNotEmpty()) Text(ScoreCopy.reasons(body.reasons), style = PawseType.Micro, color = faint, modifier = Modifier.padding(top = 8.dp))
     }
     today.weekly?.let { w ->
-        PawseCard {
-            SectionTitle(tr("The week, not just the day", "하루가 아닌 한 주"))
-            Text(ScoreCopy.weekly(w.pattern), style = PawseType.Body)
-            Spacer(Modifier.height(6.dp))
-            DetailLine(tr("7-day HRV", "7일 HRV"), tr("${w.hrv7.roundToInt()} ms over ${w.nights} nights", "${w.nights}밤 평균 ${w.hrv7.roundToInt()} ms"))
-            DetailLine(
-                tr("Day-to-day variation", "날마다의 변동"),
-                "${fmt(w.cv7)}%" + (w.usualCv7?.let { tr(" (usually ${fmt(it)}%)", " (평소 ${fmt(it)}%)") } ?: ""),
-            )
-            Spacer(Modifier.height(8.dp))
-            Note(
-                tr(
-                    "A falling weekly HRV with shrinking variation under heavy load is a warning even when no single day looks bad.",
-                    "높은 부하 속에 주간 HRV가 떨어지고 변동도 줄어든다면, 하루하루는 괜찮아 보여도 경고 신호예요.",
-                ),
-            )
+        PawseCard(Modifier.padding(top = 16.dp)) {
+            CardHead(tr("The week, not just the day", "하루가 아니라 한 주"), ScoreCopy.weekly(w.pattern))
+            MicroLine(tr("7-day HRV", "7일 HRV"), tr("${w.hrv7.roundToInt()} ms · ${w.nights} nights", "${w.hrv7.roundToInt()} ms · ${w.nights}일 밤"))
+            MicroLine(tr("Day-to-day variation", "날마다 변동"), "${f1(w.cv7)}%" + (w.usualCv7?.let { tr(" (usually ${f1(it)}%)", " (평소 ${f1(it)}%)") } ?: ""))
         }
     }
-    PawseCard {
-        SectionTitle(tr("Overnight heart-rate pattern", "야간 심박수 패턴"))
-        DetailLine(tr("Running sum", "누적 합"), fmt(today.illness.cusum))
-        DetailLine(tr("Quiet note above", "조용한 알림 기준"), "3")
-        DetailLine(tr("Alert above", "경고 기준"), tr("5, with temperature or breathing up", "5, 체온이나 호흡수도 올랐을 때"))
-        Spacer(Modifier.height(8.dp))
-        Note(
+    PawseCard(Modifier.padding(top = 16.dp)) {
+        CardHead(
+            tr("Overnight heart-rate pattern", "밤사이 심박 패턴"),
+            tr("Running sum ${fmt(today.illness.cusum)}", "누적 합 ${fmt(today.illness.cusum)}"),
+            if (today.illness.level == IllnessLevel.ALERT) PawseTheme.semantics.bandLow else MaterialTheme.colorScheme.onSurface,
+        )
+        Row(Modifier.padding(top = 8.dp)) {
+            Text(tr("Quiet note above 3", "3 넘으면 조용한 알림"), style = PawseType.Micro, color = faint, modifier = Modifier.weight(1f))
+            Text(tr("Alert above 5, with temperature or breathing up", "5 넘고 체온이나 호흡이 오르면 경보"), style = PawseType.Micro, color = faint, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
+        }
+        Text(
             tr(
-                "Small excesses add up night after night, so three slightly high nights count and one random spike does not. " +
-                    "Logged drinks and travel or stress tags are checked first. It never names a disease.",
-                "작은 초과분이 밤마다 쌓이는 방식이라, 조금 높은 밤 세 번은 반영되고 우연한 한 번의 급등은 반영되지 " +
-                    "않아요. 기록한 음주와 여행·스트레스 태그를 먼저 확인해요. 병명은 절대 말하지 않아요.",
+                "Small nightly excesses over your normal add up; logged drinks, travel and stress are checked first. It never names a disease.",
+                "평소보다 조금씩 높은 밤이 쌓여요. 기록된 술, 여행, 스트레스를 먼저 확인하고, 질병 이름은 붙이지 않아요.",
             ),
+            style = PawseType.Micro,
+            color = faint,
+            modifier = Modifier.padding(top = 8.dp),
         )
     }
-    PawseCard {
-        SectionTitle(tr("What moves your Body", "컨디션을 움직이는 것"))
-        if (insights.isEmpty()) {
-            Note(
+    Text(tr("What moves your Body", "컨디션을 움직이는 것"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 32.dp))
+    PawseCard(Modifier.padding(top = 12.dp)) {
+        val nights = today.body?.validNights ?: 0
+        if (insights.isEmpty() && nights < 30) {
+            // States board: say how far along it is instead of hiding the section.
+            Text(
+                tr("Patterns appear after about 30 nights. $nights so far.", "패턴은 약 30일 밤 뒤에 나타나요. 지금까지 ${nights}일."),
+                style = PawseType.Label,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else if (insights.isEmpty()) {
+            Text(
                 tr(
-                    "Nothing clear yet. An insight appears after at least 8 days of exposure and only when its 90% range excludes zero.",
-                    "아직 뚜렷한 건 없어요. 최소 8일 이상 겪은 일이고 90% 범위가 0을 포함하지 않을 때만 인사이트가 나타나요.",
+                    "Nothing clear yet. An effect shows after at least 8 days of exposure, and only when its 90% range excludes zero.",
+                    "아직 뚜렷한 건 없어요. 최소 8일 이상 겪고, 90% 범위가 0을 포함하지 않을 때만 보여줘요.",
                 ),
+                style = PawseType.Label,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            insights.forEach {
-                Text(ScoreCopy.insight(it), style = PawseType.Body, modifier = Modifier.padding(vertical = 4.dp))
-            }
-            Spacer(Modifier.height(4.dp))
-            Note(ScoreCopy.INSIGHT_NOTE)
+            insights.forEach { Text(ScoreCopy.insight(it), style = PawseType.Body, modifier = Modifier.padding(top = 8.dp)) }
+            Text(ScoreCopy.INSIGHT_NOTE, style = PawseType.Micro, color = faint, modifier = Modifier.padding(top = 16.dp))
         }
     }
 }
@@ -788,3 +929,5 @@ internal fun minutesText(minutes: Double): String = "${minutes.roundToInt()}${tr
 internal fun pct(fraction: Double): String = "${(fraction * 100).roundToInt()}%"
 
 private fun fmt(v: Double): String = String.format(Locale.getDefault(), "%.2f", v)
+
+private fun f1(v: Double): String = String.format(Locale.getDefault(), "%.1f", v)

@@ -35,6 +35,9 @@ vico = "2.0.0-beta.2"
 # toolchain (Kotlin 2.1) can read; beta3 and later pull in kotlin-stdlib 2.3+.
 mlkitGenaiPrompt = "1.0.0-beta2"
 
+# The dock's frosted glass: a backdrop blur Compose has no API for.
+haze = "1.1.1"
+
 # Security
 sqlcipher = "4.6.1"
 sqliteKtx = "2.4.0"
@@ -69,6 +72,7 @@ androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling
 androidx-compose-material3 = { module = "androidx.compose.material3:material3" }
 androidx-compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
 androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigation" }
+haze = { module = "dev.chrisbanes.haze:haze", version.ref = "haze" }
 
 # Health Connect
 androidx-health-connect-client = { module = "androidx.health.connect:connect-client", version.ref = "healthConnect" }

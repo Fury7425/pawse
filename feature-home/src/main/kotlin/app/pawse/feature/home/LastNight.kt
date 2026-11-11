@@ -35,9 +35,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import android.content.pm.PackageManager
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -70,10 +73,13 @@ import app.pawse.core.ui.component.Glyph
 import app.pawse.core.ui.component.Glyphs
 import app.pawse.core.ui.component.KeySwatch
 import app.pawse.core.ui.component.PawseCard
+import app.pawse.core.ui.component.PawseHaptic
 import app.pawse.core.ui.component.Segmented
 import app.pawse.core.ui.component.UsualRangeKey
 import app.pawse.core.ui.component.cardSurface
 import app.pawse.core.ui.component.pressable
+import app.pawse.core.ui.component.PawseSheet
+import app.pawse.core.ui.component.rememberHaptic
 import app.pawse.core.ui.component.rememberSwap
 import app.pawse.core.ui.component.swapIn
 import app.pawse.core.ui.theme.PawseTheme
@@ -141,35 +147,34 @@ internal fun SleepTab(
     val night = snapshot.row(back)
 
     Column(modifier.padding(top = 16.dp)) {
-        Column(Modifier.swapIn(swap)) {
-            val open = figure
-            if (open == null) {
-                NightPage(
-                    snapshot = snapshot,
-                    row = night,
-                    latest = back == 0,
-                    detail = detail,
-                    stage = stage,
-                    onStage = { stage = it },
-                    cursor = cursor,
-                    onCursor = { cursor = it },
-                    onOpen = { figure = it; picked = back },
-                )
-            } else {
-                Trend(
-                    snapshot = snapshot,
-                    figure = open,
-                    range = range,
-                    onRange = { range = it },
-                    sel = picked.takeIf { it < range } ?: back.takeIf { it < range } ?: 0,
-                    onSel = { picked = it },
-                    page = night,
-                    pageBack = back,
-                    onClose = { figure = null },
-                    onOpenNight = onOpenNight,
-                    onBody = onBody,
-                )
-            }
+        NightPage(
+            snapshot = snapshot,
+            row = night,
+            latest = back == 0,
+            detail = detail,
+            stage = stage,
+            onStage = { stage = it },
+            cursor = cursor,
+            onCursor = { cursor = it },
+            onOpen = { figure = it; picked = back },
+        )
+        // Over time sits under the night, as on the canvas: one figure at a time, picked
+        // from Showing ▾ or by tapping a figure above, with the shared 7 / 30 / 90 range.
+        Column(Modifier.padding(top = 32.dp).swapIn(swap)) {
+            Trend(
+                snapshot = snapshot,
+                figure = figure ?: NightFigure.ASLEEP,
+                range = range,
+                onRange = { range = it },
+                sel = picked.takeIf { it < range } ?: back.takeIf { it < range } ?: 0,
+                onSel = { picked = it },
+                page = night,
+                pageBack = back,
+                onClose = { figure = null },
+                onOpenNight = onOpenNight,
+                onBody = onBody,
+                onFigure = { figure = it },
+            )
         }
     }
 }
@@ -198,8 +203,16 @@ private fun NightPage(
     val end = night?.endEpochMs
     val bed = night?.bedtimeMinutes
     if (rec == null || night == null || start == null || end == null || bed == null || end <= start) {
+        // States board: today's night may simply not have synced yet. Say what it waits for
+        // and when Pawse last looked; nothing pulses.
+        val waiting = row.date == java.time.LocalDate.now() && snapshot.lastSyncEpochMs > 0
         Note(
-            tr("No night recorded: nothing came in from your watch that night.", "기록된 밤이 없어요. 그날 밤 시계에서 들어온 기록이 없어요."),
+            if (waiting) {
+                val at = ScoreCopy.clock(snapshot.lastSyncEpochMs)
+                tr("Waiting for last night from your watch. Last read $at.", "워치에서 지난밤 기록을 기다리는 중이에요. 마지막 확인 $at.")
+            } else {
+                tr("No night recorded: nothing came in from your watch that night.", "기록된 밤이 없어요. 그날 밤 시계에서 들어온 기록이 없어요.")
+            },
             Modifier.padding(top = 12.dp),
         )
         return
@@ -215,6 +228,9 @@ private fun NightPage(
             value = ScoreCopy.minuteOfDay(bed.roundToInt()),
             sub = tr("to ${axis.clockAt(end)}", "~ ${axis.clockAt(end)}"),
             modifier = Modifier.weight(1f),
+            usual = snapshot.usual(NightFigure.TIMING::of)?.let { b ->
+                snapshot.wakeUsual()?.let { w -> tr("Usually ", "평소 ") + ScoreCopy.minuteOfDay(b.mid.roundToInt() % 1440) + "–" + ScoreCopy.minuteOfDay(w.mid.roundToInt() % 1440) }
+            },
             onClick = { onOpen(NightFigure.TIMING) },
         )
         MiniCard(
@@ -222,12 +238,14 @@ private fun NightPage(
             value = night.latencyMinutes?.let(::dur) ?: "—",
             sub = tr("after lights out", "불 끈 뒤"),
             modifier = Modifier.weight(1f),
+            usual = snapshot.usual { it.rec?.sleep?.latencyMinutes }?.let { usualMinutes(it) },
         )
         MiniCard(
             label = tr("Awake", "깬 시간"),
             value = (sleep?.wasoMinutes ?: night.wasoMinutes)?.let(::dur) ?: "—",
             sub = wakeUps(night.awakenings),
             modifier = Modifier.weight(1f),
+            usual = snapshot.usual { it.rec?.sleep?.wasoMinutes }?.let { usualMinutes(it) },
             onClick = { onOpen(NightFigure.EFFICIENCY) },
         )
     }
@@ -276,7 +294,19 @@ private fun NightPage(
     Ticks(axis)
 
     if (night.hasStages) {
-        Row(Modifier.padding(top = 16.dp).height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        // The night's share of each stage, in the chart's lane order, picked stage at full strength.
+        val st = PawseTheme.semantics
+        Row(Modifier.padding(top = 12.dp).fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            listOf(
+                NightStage.AWAKE to ((night.inBedMinutes - night.asleepMinutes) to st.stageAwake),
+                NightStage.REM to ((night.remMinutes ?: 0.0) to st.stageRem),
+                NightStage.LIGHT to ((night.lightMinutes ?: 0.0) to st.stageLight),
+                NightStage.DEEP to ((night.deepMinutes ?: 0.0) to st.stageDeep),
+            ).filter { it.second.first > 0.0 }.forEach { (s, v) ->
+                Box(Modifier.weight(v.first.toFloat()).fillMaxHeight().background(v.second.copy(alpha = if (stage == null || stage == s) 1f else 0.35f)))
+            }
+        }
+        Row(Modifier.padding(top = 12.dp).height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf(NightStage.AWAKE, NightStage.REM, NightStage.LIGHT, NightStage.DEEP).forEach { s ->
                 StageChip(s, night, picked = stage == s, modifier = Modifier.weight(1f)) { onStage(if (stage == s) null else s) }
             }
@@ -307,7 +337,9 @@ private fun NightPage(
 
     Column(Modifier.padding(top = 20.dp)) {
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        vitalsOf(rec, detail, axis).forEach { VitalRow(it, axis, cursor, onCursor, onOpen) }
+        vitalsOf(rec, detail, axis).forEach { v ->
+            VitalRow(v, snapshot.usual(v.figure::of)?.let { usualSpread(v.figure, it) }, axis, cursor, onCursor, onOpen)
+        }
     }
 
     FedInto(row, rec, latest, onOpen)
@@ -392,7 +424,7 @@ private fun AsleepCard(asleep: Double, need: Double, debtHours: Double?, onClick
 }
 
 @Composable
-private fun MiniCard(label: String, value: String, sub: String, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
+private fun MiniCard(label: String, value: String, sub: String, modifier: Modifier = Modifier, usual: String? = null, onClick: (() -> Unit)? = null) {
     val grey = MaterialTheme.colorScheme.onSurfaceVariant
     Column(
         modifier
@@ -407,6 +439,7 @@ private fun MiniCard(label: String, value: String, sub: String, modifier: Modifi
         }
         Text(value, style = Figure15, maxLines = 1, modifier = Modifier.padding(top = 2.dp))
         Text(sub, style = PawseType.Label, color = grey)
+        usual?.let { Text(it, style = PawseType.Micro, color = PawseTheme.semantics.faint) }
     }
 }
 
@@ -440,7 +473,7 @@ private fun Hypnogram(
             Modifier
                 .weight(1f)
                 .height(height)
-                .scrub(onCursor)
+                .scrub(onAt = onCursor)
                 .semantics { contentDescription = description },
         ) {
             val laneH = LANE_HEIGHT.dp.toPx()
@@ -634,7 +667,9 @@ private fun vitalsOf(rec: NightRecord, detail: NightDetail?, axis: NightAxis): L
         Vital(
             figure = NightFigure.BR,
             name = tr("Breathing rate", "호흡수"),
-            value = s.breathingRate,
+            // The night's stored figure, or the median of what the chart draws: a row never
+            // reads "—" over its own readings.
+            value = s.breathingRate ?: Stats.median(br.map { it.value }),
             curve = br,
             sub = if (br.isEmpty()) median else tr("Median of ${br.size} readings", "측정값 ${br.size}개의 중앙값"),
             off = notWritten,
@@ -664,7 +699,7 @@ private fun vitalsOf(rec: NightRecord, detail: NightDetail?, axis: NightAxis): L
 }
 
 @Composable
-private fun VitalRow(v: Vital, axis: NightAxis, cursor: Float?, onCursor: (Float?) -> Unit, onOpen: (NightFigure) -> Unit) {
+private fun VitalRow(v: Vital, usual: String?, axis: NightAxis, cursor: Float?, onCursor: (Float?) -> Unit, onOpen: (NightFigure) -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val grey = scheme.onSurfaceVariant
     val semantics = PawseTheme.semantics
@@ -692,13 +727,15 @@ private fun VitalRow(v: Vital, axis: NightAxis, cursor: Float?, onCursor: (Float
                     style = PawseType.Label,
                     color = grey,
                 )
+                if (on && usual != null) Text(usual, style = PawseType.Micro, color = semantics.faint)
             }
             Spacer(Modifier.width(12.dp))
             Text(shown, style = PawseType.MetricValue, color = if (on) scheme.onSurface else grey)
             Spacer(Modifier.width(12.dp))
             Glyph(Glyphs.ChevronRight, size = 16.dp, color = grey, modifier = Modifier.alpha(if (on) 1f else 0f))
         }
-        if (v.curve.isNotEmpty() && v.hi > v.lo) {
+        // Under three readings there is no curve to draw: the row stands alone, not over an empty box.
+        if (v.curve.size >= 3 && v.hi > v.lo) {
             Row(Modifier.padding(top = 2.dp, bottom = 16.dp)) {
                 Box(Modifier.width(44.dp).height(v.height)) {
                     Text(v.top, style = PawseType.Label, color = grey, modifier = Modifier.pinned(0.dp, 5.dp, centreX = false))
@@ -708,7 +745,7 @@ private fun VitalRow(v: Vital, axis: NightAxis, cursor: Float?, onCursor: (Float
                     Modifier
                         .weight(1f)
                         .height(v.height)
-                        .scrub(onCursor)
+                        .scrub(onAt = onCursor)
                         .semantics { contentDescription = "${v.name}, ${v.sub}: $shown" },
                 ) {
                     val pad = 3.dp.toPx()
@@ -835,6 +872,7 @@ private fun Trend(
     onClose: () -> Unit,
     onOpenNight: (Int) -> Unit,
     onBody: () -> Unit,
+    onFigure: (NightFigure) -> Unit,
 ) {
     val grey = MaterialTheme.colorScheme.onSurfaceVariant
     val rows = snapshot.rows(range)
@@ -843,17 +881,60 @@ private fun Trend(
     val usual = snapshot.usual(figure::of)
     val need = (page.day?.sleep?.needHours ?: snapshot.today.sleep.needHours) * 60.0
     val reading = readingOf(figure, selRow, usual, need)
+    var picking by remember { mutableStateOf(false) }
 
-    BackLink(nightTitle(page.date, pageBack == 0), onClick = onClose)
-    Text(figure.title(), style = PawseType.Title, modifier = Modifier.padding(top = 12.dp))
-    Text(figure.lead(), style = PawseType.Body, color = grey, modifier = Modifier.padding(top = 4.dp))
+    Row(Modifier.fillMaxWidth().heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(tr("Over time", "기간별 추이"), style = PawseType.Heading, modifier = Modifier.weight(1f))
+        // Showing ▾: which figure the trend draws.
+        Row(
+            Modifier
+                .heightIn(min = 48.dp)
+                .pressable { picking = true }
+                .semantics { contentDescription = tr("Showing ${figure.title()}. Change", "${figure.title()} 표시 중. 바꾸기") },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                Modifier
+                    .height(36.dp)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(12.dp))
+                    .padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(figure.title(), style = PawseType.Label, color = grey)
+                Glyph(Glyphs.ChevronDown, size = 14.dp, color = grey)
+            }
+        }
+    }
+    if (picking) {
+        PawseSheet(onDismiss = { picking = false }) {
+            Text(tr("Showing", "표시할 항목"), style = PawseType.Heading)
+            Column(Modifier.padding(top = 8.dp)) {
+                NightFigure.entries.forEach { f ->
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 52.dp)
+                            .pressable {
+                                onFigure(f)
+                                picking = false
+                            },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(f.title(), style = PawseType.BodyStrong, modifier = Modifier.weight(1f))
+                        if (f == figure) Glyph(Glyphs.Check, size = 20.dp, color = MaterialTheme.colorScheme.onSurface)
+                    }
+                }
+            }
+        }
+    }
     Segmented(
         options = RANGES,
         selected = range,
         onSelect = onRange,
         label = { tr("$it nights", "${it}밤") },
-        height = 36.dp,
-        modifier = Modifier.padding(top = 20.dp),
+        modifier = Modifier.padding(top = 12.dp),
     )
 
     Text(
@@ -948,7 +1029,12 @@ internal fun TrendChart(
     val labels: List<Pair<String, Double>>
     when (figure) {
         NightFigure.ASLEEP -> {
-            frac = { (1 - it / 600.0).toFloat() }
+            // 10 h, or the longest night rounded up to the hour: a long night stays inside the plot.
+            val longest = rows.maxOfOrNull { r ->
+                r.rec?.sleep?.let { n -> max(n.asleepMinutes, (n.deepMinutes ?: 0.0) + (n.lightMinutes ?: 0.0) + (n.remMinutes ?: 0.0)) } ?: 0.0
+            } ?: 0.0
+            val top = max(600.0, ceil(longest / 60.0) * 60.0)
+            frac = { (1 - it / top).toFloat() }
             labels = listOf(540.0, 360.0, 180.0).map { tr("${(it / 60).toInt()} h", "${(it / 60).toInt()}시간") to it }
         }
         NightFigure.SCORE -> {
@@ -987,7 +1073,7 @@ internal fun TrendChart(
             Modifier
                 .width(plot)
                 .fillMaxHeight()
-                .scrub { f -> if (f != null) onPick((f * n).toInt().coerceIn(0, n - 1)) }
+                .scrub(n) { f -> if (f != null) onPick((f * n).toInt().coerceIn(0, n - 1)) }
                 .semantics {
                     contentDescription = tr(
                         "${figure.title()}, last $n nights. Touch the chart to pick a night.",
@@ -1118,8 +1204,8 @@ private fun Parts(rows: List<NightRow>, selI: Int, need: Double) {
             tr("Continuity", "연속성"),
             config.scoreContinuityWeight,
             tr(
-                "Half efficiency against ${config.efficiencyTargetPercent.roundToInt()}%, half time awake against ${config.wasoLimitMinutes.roundToInt()} minutes.",
-                "절반은 수면 효율 ${config.efficiencyTargetPercent.roundToInt()}% 대비, 절반은 깬 시간 ${config.wasoLimitMinutes.roundToInt()}분 대비예요.",
+                "100 × asleep ÷ (asleep + awake in bed): the night's efficiency.",
+                "100 × 잠 ÷ (잠 + 누운 동안 깬 시간): 그 밤의 수면 효율이에요.",
             ),
         ) { it.continuity },
     )
@@ -1214,8 +1300,24 @@ internal class Usual(val mid: Double, val sd: Double, val nights: Int) {
 
 internal fun ScoringSnapshot.usual(get: (NightRow) -> Double?): Usual? {
     val xs = rows(USUAL_END).take(USUAL_NIGHTS).mapNotNull(get)
-    if (xs.size < 2) return null
+    // v2.5: a usual needs at least 4 nights.
+    if (xs.size < 4) return null
     return Usual(Stats.median(xs)!!, Stats.robustSpread(xs)!!, xs.size)
+}
+
+/** "Usually 3–12 min", the design's range for a mini card. */
+private fun usualMinutes(u: Usual): String =
+    tr("Usually ", "평소 ") + "${u.lo.coerceAtLeast(0.0).roundToInt()}–" + dur(u.hi.coerceAtLeast(0.0))
+
+/** "Usually 52 ± 6 ms · 43 nights", under a vital's name. */
+internal fun usualSpread(figure: NightFigure, u: Usual): String {
+    val text = figure.text(u.mid)
+    val unit = text.substringAfter(' ', "").let { if (text.endsWith("%")) "%" else if (it.isEmpty()) "" else " $it" }
+    val sd = when (figure) {
+        NightFigure.HRV, NightFigure.SPO2 -> maxOf(1, u.sd.roundToInt()).toString()
+        else -> String.format(Locale.getDefault(), "%.1f", u.sd)
+    }
+    return tr("Usually ${bare(text)} ± $sd$unit · ${u.nights} nights", "평소 ${bare(text)} ± $sd$unit · ${u.nights}일 밤")
 }
 
 private fun ScoringSnapshot.wakeUsual(): Usual? =
@@ -1458,12 +1560,12 @@ private fun NightFigure.about(): String {
                 "살피는 신호 중 하나이며, 생리 주기도 영향을 줘요.",
         )
         NightFigure.EFFICIENCY -> tr(
-            "The share of your time in bed spent asleep, lights out to final wake. It is half of the Sleep score’s " +
-                "continuity part, against ${sleep.efficiencyTargetPercent.roundToInt()}%. A low night is usually a long time " +
-                "falling asleep or a long wake in the night; the Awake card says which.",
-            "누운 시간 중 실제로 잠든 시간의 비율로, 불 끈 시각부터 마지막으로 깬 시각까지예요. 수면 점수 연속성 항목의 " +
-                "절반이며 기준은 ${sleep.efficiencyTargetPercent.roundToInt()}%예요. 낮은 밤은 대개 잠들기까지 오래 걸렸거나 " +
-                "밤사이 오래 깨어 있었던 경우예요. 어느 쪽인지는 ‘깬 시간’ 카드에서 볼 수 있어요.",
+            "The share of your time in bed spent asleep, lights out to final wake. It is the Sleep score’s " +
+                "continuity part. A low night is usually a long time falling asleep or a long wake in the night; " +
+                "the Awake card says which.",
+            "누운 시간 중 실제로 잠든 시간의 비율로, 불 끈 시각부터 마지막으로 깬 시각까지예요. 수면 점수의 연속성 " +
+                "항목이에요. 낮은 밤은 대개 잠들기까지 오래 걸렸거나 밤사이 오래 깨어 있었던 경우예요. 어느 쪽인지는 " +
+                "‘깬 시간’ 카드에서 볼 수 있어요.",
         )
         NightFigure.DEEP_REM -> tr(
             "Deep and REM sleep added together, from your watch’s stages, against your own usual rather than a target. " +
@@ -1555,10 +1657,22 @@ private fun hm(minutes: Double): String = ScoreCopy.formatMinutes(minutes)
 private fun dur(minutes: Double): String = if (minutes.roundToInt() >= 60) hm(minutes) else minutesText(max(0.0, minutes))
 
 // ponytail: one friendly name; other writers show their package until one needs its own.
-internal fun writer(pkg: String): String = when (pkg) {
-    CapabilityProbe.SAMSUNG_HEALTH -> "Samsung Health"
+/**
+ * The app that wrote a record, by the name the phone shows for it, never a package
+ * name. Visible because the manifest queries Health Connect's rationale intent,
+ * which every app writing to Health Connect declares.
+ */
+@Composable
+internal fun writer(pkg: String): String {
+    val pm = LocalContext.current.packageManager
+    return remember(pkg) { appName(pm, pkg) }
+}
+
+/** [writer] outside composition, for text built in plain functions. */
+internal fun appName(pm: PackageManager, pkg: String): String = when (pkg) {
     "" -> "—"
-    else -> pkg
+    else -> runCatching { pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString() }
+        .getOrElse { if (pkg == CapabilityProbe.SAMSUNG_HEALTH) "Samsung Health" else pkg }
 }
 
 // --- Layout helpers ----------------------------------------------------------------
@@ -1577,15 +1691,26 @@ private class NightAxis(val start: Long, val end: Long, val bedMinute: Double) {
 
 /**
  * Touch or drag across a chart to read it: [onAt] gets the share of the width
- * under the finger. Horizontal only, so the page still scrolls.
+ * under the finger. Horizontal only, so the page still scrolls. With [points], a
+ * tap ticks once and a drag ticks finely at each point it crosses.
  */
 @Composable
-internal fun Modifier.scrub(onAt: (Float?) -> Unit): Modifier {
+internal fun Modifier.scrub(points: Int = 0, onAt: (Float?) -> Unit): Modifier {
     val latest by rememberUpdatedState(onAt)
-    return pointerInput(Unit) {
-        fun at(x: Float) = latest((x / size.width).coerceIn(0f, 0.999f))
+    val haptic = rememberHaptic()
+    return pointerInput(points) {
+        var last = -1
+        fun at(x: Float, tap: Boolean = false) {
+            val f = (x / size.width).coerceIn(0f, 0.999f)
+            if (points > 0) {
+                val i = (f * points).toInt()
+                if (i != last || tap) haptic(if (tap) PawseHaptic.Step else PawseHaptic.FineTick)
+                last = i
+            }
+            latest(f)
+        }
         coroutineScope {
-            launch { detectTapGestures { at(it.x) } }
+            launch { detectTapGestures { at(it.x, tap = true) } }
             launch {
                 detectHorizontalDragGestures(onDragStart = { at(it.x) }) { change, _ ->
                     change.consume()

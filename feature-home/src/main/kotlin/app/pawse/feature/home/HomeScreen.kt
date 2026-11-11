@@ -1,7 +1,39 @@
 package app.pawse.feature.home
 
 import android.content.Intent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.pulltorefresh.pullToRefresh
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.text.font.FontWeight
+import app.pawse.core.data.profile.FIRST_WEEK_DONE
+import app.pawse.core.data.profile.FIRST_WEEK_NONE
+import app.pawse.core.data.profile.FIRST_WEEK_SEEN
+import app.pawse.core.ui.component.EaseInOut
+import app.pawse.core.ui.component.LocalReduceMotion
+import app.pawse.core.ui.component.REDUCED_FADE
+import app.pawse.core.ui.component.lift
+import app.pawse.core.ui.component.rememberSwap
+import app.pawse.core.ui.component.swapIn
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.drop
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -26,12 +58,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -68,28 +98,42 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.PermissionController
+import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.StepsRecord
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pawse.core.data.activity.HeartHour
 import app.pawse.core.data.activity.MovingSnapshot
+import app.pawse.core.data.health.HealthConnectGateway
 import app.pawse.core.data.scoring.ScoringSnapshot
 import app.pawse.core.data.sync.SyncFailure
 import app.pawse.core.data.sync.SyncStatus
 import app.pawse.core.ui.component.BandDot
+import app.pawse.core.ui.component.EaseOut
 import app.pawse.core.ui.component.Glyph
 import app.pawse.core.ui.component.Glyphs
 import app.pawse.core.ui.component.PawseCard
+import app.pawse.core.ui.component.PawseHaptic
+import app.pawse.core.ui.component.PawseMotion
 import app.pawse.core.ui.component.PrimaryButton
+import app.pawse.core.ui.component.PullLine
 import app.pawse.core.ui.component.RangeTrack
+import app.pawse.core.ui.component.RevealEnter
+import app.pawse.core.ui.component.RevealExit
 import app.pawse.core.ui.component.ScoreRing
 import app.pawse.core.ui.component.SecondaryButton
 import app.pawse.core.ui.component.SelectChip
+import app.pawse.core.ui.component.StatusBarScrim
 import app.pawse.core.ui.component.SplitRow
 import app.pawse.core.ui.component.WeekDay
 import app.pawse.core.ui.component.WeekStrip
 import app.pawse.core.ui.component.aura
 import app.pawse.core.ui.component.pressable
+import app.pawse.core.ui.component.rememberHaptic
+import app.pawse.core.ui.theme.PawseFontFamily
 import app.pawse.core.ui.theme.PawseTheme
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.scoring.activity.MovingReading
@@ -134,6 +178,12 @@ fun HomeScreen(
     /** The tapped score and the picked day, as days before the newest. */
     onOpenExplain: (ScoreType, Int) -> Unit,
     modifier: Modifier = Modifier,
+    /** Moving today's cards: the Activity detail on the tapped figure. */
+    onOpenActivity: (ActivityFigure) -> Unit = {},
+    /** Profile's How Pawse calculates, a push of its own. */
+    onOpenCalc: () -> Unit = {},
+    /** Opened from the Ask Pawse widget: the chat comes up at once. */
+    openAsk: Boolean = false,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -142,6 +192,9 @@ fun HomeScreen(
     val appearance by viewModel.appearance.collectAsStateWithLifecycle()
     val cardOrder by viewModel.cardOrder.collectAsStateWithLifecycle()
     val hiddenCards by viewModel.hiddenCards.collectAsStateWithLifecycle()
+    val coachSeen by viewModel.coachSeen.collectAsStateWithLifecycle()
+    val firstWeek by viewModel.firstWeek.collectAsStateWithLifecycle()
+    val hiddenToday by viewModel.hiddenToday.collectAsStateWithLifecycle()
     var editingProfile by remember { mutableStateOf(false) }
 
     Scaffold(modifier = modifier, containerColor = MaterialTheme.colorScheme.background) { padding ->
@@ -171,16 +224,23 @@ fun HomeScreen(
                 cards = cardOrder?.filter { it !in hiddenCards },
                 contentPadding = padding,
                 onOpenExplain = onOpenExplain,
+                onOpenActivity = onOpenActivity,
                 onSyncNow = viewModel::syncNow,
                 onSettings = { editingProfile = true },
                 onDismissError = viewModel::dismissError,
                 onCheckIn = viewModel::checkIn,
                 onTag = viewModel::toggleTag,
+                coach = coachSeen == false,
+                onCoachDone = viewModel::dismissCoach,
+                firstWeek = firstWeek,
+                onFirstWeek = viewModel::setFirstWeek,
+                hidden = hiddenToday,
+                onShow = { viewModel.setHiddenToday(false) },
             )
         }
     }
 
-    ModelSheets()
+    ModelSheets(openAsk = openAsk)
 
     if (editingProfile) {
         val snapshot = (state as? HomeUiState.Ready)?.snapshot
@@ -198,6 +258,8 @@ fun HomeScreen(
                 calibration = snapshot?.calibration,
                 cardOrder = cardOrder,
                 hiddenCards = hiddenCards,
+                hiddenToday = hiddenToday,
+                recent = remember { viewModel.recentNotes() },
             ),
             actions = ProfileActions(
                 onShowNumbers = viewModel::setShowNumbers,
@@ -212,24 +274,54 @@ fun HomeScreen(
                 onResetModel = viewModel::resetModel,
                 onCardOrder = viewModel::setCardOrder,
                 onHidden = viewModel::setHidden,
+                onHideToday = viewModel::setHiddenToday,
             ),
             onDismiss = { editingProfile = false },
+            onOpenCalc = {
+                editingProfile = false
+                onOpenCalc()
+            },
         )
     }
 }
 
-/** First install only: Pawse is reading for the first time. Later opens show the last numbers at once. */
+/**
+ * First install only: Pawse is reading for the first time. Later opens show the last
+ * numbers at once. Track-coloured blocks where the title and rings will be, breathing
+ * between 55% and 90%; never a spinner, never a shimmer. Still at 70% under reduce motion.
+ */
 @Composable
 private fun Loading(modifier: Modifier = Modifier) {
+    val reduce = LocalReduceMotion.current
+    val breathe by rememberInfiniteTransition(label = "skeleton").animateFloat(
+        initialValue = 0.55f,
+        targetValue = 0.9f,
+        animationSpec = infiniteRepeatable(tween(1200, easing = EaseInOut), RepeatMode.Reverse),
+        label = "breathe",
+    )
+    val block = PawseTheme.semantics.baselineOuter
     Column(
-        modifier = modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
+            .fillMaxSize()
+            .padding(start = 24.dp, top = 16.dp, end = 24.dp)
+            .graphicsLayer { alpha = if (reduce) 0.7f else breathe }
+            .semantics { contentDescription = tr("Working out your night", "지난밤을 분석하는 중") },
     ) {
-        CircularProgressIndicator(color = MaterialTheme.colorScheme.onSurface, strokeWidth = 2.dp, modifier = Modifier.size(28.dp))
-        Spacer(Modifier.height(16.dp))
-        Text(tr("Working out your night", "지난밤을 분석하는 중"), style = PawseType.Body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box(Modifier.fillMaxWidth(0.4f).height(24.dp).background(block, RoundedCornerShape(8.dp)))
+        Box(Modifier.padding(top = 10.dp).fillMaxWidth(0.6f).height(12.dp).background(block, RoundedCornerShape(6.dp)))
+        Row(
+            Modifier.fillMaxWidth().padding(top = 96.dp),
+            horizontalArrangement = Arrangement.SpaceAround,
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            listOf(84.dp, 112.dp, 84.dp).forEach { Box(Modifier.size(it).background(block, CircleShape)) }
+        }
     }
+}
+
+/** The day whose rings already filled once, so a tab return lands at the value instead of refilling. */
+private object FirstDraw {
+    var seen: LocalDate? = null
 }
 
 private val RINGS = listOf(ScoreType.SLEEP, ScoreType.BODY, ScoreType.LOAD)
@@ -246,13 +338,25 @@ private fun Scores(
     cards: List<ScoresCard>?,
     contentPadding: PaddingValues,
     onOpenExplain: (ScoreType, Int) -> Unit,
+    onOpenActivity: (ActivityFigure) -> Unit,
     onSyncNow: () -> Unit,
     onSettings: () -> Unit,
     onDismissError: () -> Unit,
     onCheckIn: (Int) -> Unit,
     onTag: (DayTag) -> Unit,
+    /** "Tap any ring to see why" is still owed. */
+    coach: Boolean,
+    onCoachDone: () -> Unit,
+    /** The seventh night's stage, or null until read. */
+    firstWeek: Int?,
+    onFirstWeek: (Int) -> Unit,
+    /** Hide scores today: the rings and the sentence give way to one line. */
+    hidden: Boolean,
+    onShow: () -> Unit,
 ) {
     val context = LocalContext.current
+    // Share steps: Health Connect's own sheet, then a fresh sync reads them.
+    val shareSteps = rememberLauncherForActivityResult(PermissionController.createRequestPermissionResultContract()) { onSyncNow() }
     // The picked day, as days before the newest. Today is 0.
     var back by rememberSaveable { mutableIntStateOf(0) }
     val date = snapshot.date.minusDays(back.toLong())
@@ -260,21 +364,60 @@ private fun Scores(
     val isToday = back == 0
     val evening = isToday && LocalTime.now().hour >= EVENING_HOUR
     val alert = day?.illness?.level == IllnessLevel.ALERT
-    val wash = day?.body?.let { bodyColor(it.band, day.illness.level) }
+    // Hidden scores leave no hint of the band behind them either.
+    val wash = day?.body?.takeIf { !(hidden && isToday) }?.let { bodyColor(it.band, day.illness.level) }
     val pad = Modifier.padding(horizontal = 24.dp)
     val pull = rememberPullToRefreshState()
     val running = sync is SyncStatus.Running
+    val reduce = LocalReduceMotion.current
+    val haptic = rememberHaptic()
+    // Opened on old numbers while Health Connect is read: the rings wait at 45%.
+    val stale = running && System.currentTimeMillis() - snapshot.lastSyncEpochMs > STALE_MS
 
-    PullToRefreshBox(
-        isRefreshing = running,
-        onRefresh = onSyncNow,
-        state = pull,
-        modifier = Modifier.fillMaxSize(),
-        // A thin line under the header stands in for the spinner.
-        indicator = {},
-    ) {
+    // Release now and it reads; backing off says it won't.
+    LaunchedEffect(pull, running) {
+        if (running) return@LaunchedEffect
+        snapshotFlow { pull.distanceFraction >= 1f }.drop(1).collect { past ->
+            haptic(if (past) PawseHaptic.Threshold else PawseHaptic.ThresholdOff)
+        }
+    }
+
+    // The seventh night, once ever: a learning week seen here, then the night the score arrives.
+    val learning = isToday && day?.bodyStatus == BodyStatus.WARMING_UP
+    LaunchedEffect(learning, firstWeek) {
+        if (learning && firstWeek == FIRST_WEEK_NONE) onFirstWeek(FIRST_WEEK_SEEN)
+    }
+    val celebrate = isToday && firstWeek == FIRST_WEEK_SEEN && day?.body != null
+    // The rest of that morning says so.
+    var normalSet by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(celebrate) { if (celebrate) normalSet = true }
+
+    // Tap anywhere, or a ring, and the coachmark goes. The room made for it stays
+    // for the visit, so the rings don't jump when it leaves.
+    var coachOut by remember { mutableStateOf(false) }
+    var coachRoom by remember { mutableStateOf(false) }
+    LaunchedEffect(coach) { if (coach) coachRoom = true }
+    val dismissCoach = {
+        if (coach && !coachOut) {
+            coachOut = true
+            onCoachDone()
+        }
+    }
+
+    // A thin line under the header stands in for the spinner; the pull is 56 dp.
+    Box(Modifier.fillMaxSize().pullToRefresh(isRefreshing = running, state = pull, threshold = PULL_THRESHOLD, onRefresh = onSyncNow)) {
         LazyColumn(
-            modifier = Modifier.fillMaxSize().aura(),
+            modifier = Modifier
+                .fillMaxSize()
+                .aura()
+                .pointerInput(coach) { if (coach) awaitEachGesture { awaitFirstDown(requireUnconsumed = false); dismissCoach() } }
+                // The content follows the finger at 0.6, then 0.2 past 100 dp. Still under reduce motion.
+                .graphicsLayer {
+                    if (reduce) return@graphicsLayer
+                    val d = pull.distanceFraction * PULL_THRESHOLD.toPx()
+                    val knee = 100.dp.toPx()
+                    translationY = if (d <= knee) d * 0.6f else knee * 0.6f + (d - knee) * 0.2f
+                },
             contentPadding = PaddingValues(
                 top = contentPadding.calculateTopPadding() + 8.dp,
                 bottom = contentPadding.calculateBottomPadding() + 140.dp,
@@ -300,25 +443,51 @@ private fun Scores(
                         onProfile = onSettings,
                         modifier = pad,
                     )
-                    PullLine(running = running, fraction = pull.distanceFraction)
+                    PullLine(running = running, fraction = pull.distanceFraction, modifier = Modifier.padding(horizontal = 24.dp))
                     WeekStrip(
                         days = weekOf(snapshot),
                         selected = 6 - back,
                         onPick = { back = 6 - it },
                         modifier = Modifier.padding(start = 24.dp, top = 4.dp, end = 24.dp),
                     )
-                    if (day != null) {
+                    val hiddenNow = hidden && isToday
+                    if (day != null && !hiddenNow) {
+                        // The most human line on the screen changes quietly, never by snapping.
+                        val guidance = if (normalSet && isToday) ScoreCopy.NORMAL_SET else ScoreCopy.guidance(day.guidance)
+                        val guideSwap = rememberSwap(guidance)
                         Text(
-                            ScoreCopy.guidance(day.guidance),
+                            guidance,
                             style = PawseType.Guidance,
-                            modifier = pad.padding(top = 24.dp).heightIn(min = 28.dp),
+                            modifier = pad.padding(top = 24.dp).heightIn(min = 28.dp).swapIn(guideSwap),
                         )
                     }
-                    Rings(
+                    // Hide scores today: one line until tomorrow morning; the cards below stay.
+                    if (hiddenNow) {
+                        PawseCard(modifier = pad.padding(top = 24.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    tr("Scores are hidden for today", "오늘은 점수를 숨겼어요"),
+                                    style = PawseType.Label,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                SecondaryButton(tr("Show", "보기"), onClick = onShow, height = 40.dp, modifier = Modifier.padding(start = 8.dp).widthIn(min = 80.dp))
+                            }
+                        }
+                    } else Rings(
                         day = day,
                         showNumbers = snapshot.showNumbers,
-                        onOpen = { onOpenExplain(it, back) },
-                        modifier = Modifier.padding(top = 24.dp),
+                        onOpen = {
+                            dismissCoach()
+                            onOpenExplain(it, back)
+                        },
+                        today = snapshot.date,
+                        dim = stale,
+                        coach = coach && !coachOut && isToday && day != null,
+                        celebrate = celebrate,
+                        onCelebrated = { onFirstWeek(FIRST_WEEK_DONE) },
+                        // Room above for the coachmark, as the first week's layout has.
+                        modifier = Modifier.padding(top = if (coachRoom && isToday) 72.dp else 24.dp),
                     )
                 }
             }
@@ -349,7 +518,26 @@ private fun Scores(
                 }
             }
             if (isToday && syncError != null) {
-                item { Banner(title = tr("Nothing new was read", "새로 읽은 게 없어요"), body = syncError, action = tr("Dismiss", "닫기"), onAction = onDismissError, modifier = pad.padding(top = 24.dp)) }
+                // One cause, one button; grey, never red.
+                item {
+                    when ((sync as? SyncStatus.Failed)?.reason) {
+                        SyncFailure.READ_FAILED -> Banner(
+                            title = tr("Couldn’t read today’s data", "오늘 데이터를 읽지 못했어요"),
+                            body = syncError,
+                            action = tr("Try again", "다시 시도"),
+                            onAction = onSyncNow,
+                            modifier = pad.padding(top = 24.dp),
+                        )
+                        SyncFailure.NEEDS_UPDATE -> Banner(
+                            title = tr("Health Connect needs an update", "헬스 커넥트 업데이트가 필요해요"),
+                            body = syncError,
+                            action = tr("Open the Play Store", "Play 스토어 열기"),
+                            onAction = { openHealthConnectInStore(context) },
+                            modifier = pad.padding(top = 24.dp),
+                        )
+                        else -> Banner(title = tr("Nothing new was read", "새로 읽은 게 없어요"), body = syncError, action = tr("Dismiss", "닫기"), onAction = onDismissError, modifier = pad.padding(top = 24.dp))
+                    }
+                }
             }
 
             when {
@@ -367,7 +555,7 @@ private fun Scores(
                         // Check-in and Moving today stand apart; the cards between sit closer.
                         val top = if (card == ScoresCard.MOVING || card == ScoresCard.CHECK_IN) 32.dp else 16.dp
                         when (card) {
-                            ScoresCard.MOVING -> if (moving != null) item { MovingToday(moving, pad.padding(top = top)) }
+                            ScoresCard.MOVING -> if (moving != null) item { MovingToday(moving, onOpenActivity, onShareSteps = { shareSteps.launch(setOf(HealthPermission.getReadPermission(StepsRecord::class))) }, modifier = pad.padding(top = top)) }
                             ScoresCard.WORTH -> if (day.bodyStatus != BodyStatus.WARMING_UP) item { Box(pad.padding(top = top)) { WorthKnowingCard(snapshot) } }
                             ScoresCard.YOUR_DAY -> if (energy != null) item { Box(pad.padding(top = top)) { YourDay(energy) } }
                             ScoresCard.TONIGHT -> if (tonight != null) item { Box(pad.padding(top = top)) { TonightCard(tonight, snapshot) } }
@@ -396,10 +584,29 @@ private fun Scores(
                 }
             }
         }
+        StatusBarScrim()
     }
 }
 
 private const val EVENING_HOUR = 18
+
+/** Health Connect's own Play Store page, the way its docs open it for an update. */
+private fun openHealthConnectInStore(context: android.content.Context) {
+    val uri = "market://details?id=${HealthConnectGateway.HEALTH_CONNECT_PACKAGE}&url=healthconnect%3A%2F%2Fonboarding"
+    runCatching {
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW, android.net.Uri.parse(uri))
+                .setPackage("com.android.vending")
+                .putExtra("overlay", true)
+                .putExtra("callerId", context.packageName),
+        )
+    }
+}
+
+/** Older than this, the numbers on screen wait dimmed while a read runs. */
+private const val STALE_MS = 30 * 60 * 1000L
+
+private val PULL_THRESHOLD = 56.dp
 
 // ---------------------------------------------------------------------------
 // Header, pull line and week
@@ -410,8 +617,15 @@ private const val EVENING_HOUR = 18
 private fun Header(title: String, sync: String, onProfile: () -> Unit, modifier: Modifier = Modifier) {
     Row(modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(title, style = PawseType.Title)
-            Text(sync, style = PawseType.Micro, color = PawseTheme.semantics.faint)
+            Text(title, style = PawseType.Title, modifier = Modifier.swapIn(rememberSwap(title)))
+            Text(
+                sync,
+                style = PawseType.Micro,
+                color = PawseTheme.semantics.faint,
+                modifier = Modifier
+                    .swapIn(rememberSwap(sync))
+                    .semantics { liveRegion = LiveRegionMode.Polite },
+            )
         }
         Box(
             Modifier
@@ -429,33 +643,13 @@ private fun Header(title: String, sync: String, onProfile: () -> Unit, modifier:
     }
 }
 
-/**
- * The 2 dp line under the header: it follows a pull, then runs while Health
- * Connect is read. Never a spinner.
- */
-@Composable
-private fun PullLine(running: Boolean, fraction: Float) {
-    val ink = MaterialTheme.colorScheme.onSurfaceVariant
-    val sweep by rememberInfiniteTransition(label = "pull").animateFloat(
-        initialValue = -0.4f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1400, easing = LinearEasing), RepeatMode.Restart),
-        label = "sweep",
-    )
-    Canvas(Modifier.fillMaxWidth().padding(horizontal = 24.dp).height(2.dp)) {
-        when {
-            running -> drawRect(ink, Offset(sweep * size.width, 0f), Size(size.width * 0.4f, size.height))
-            fraction > 0f -> drawRect(ink, Offset.Zero, Size(size.width * fraction.coerceIn(0f, 1f), size.height))
-        }
-    }
-}
-
 private fun statusLine(sync: SyncStatus, lastSyncEpochMs: Long): String = when (sync) {
     is SyncStatus.Running -> tr("Checking Health Connect…", "헬스 커넥트 확인 중…")
     is SyncStatus.Failed -> when (sync.reason) {
-        SyncFailure.READ_FAILED -> tr("Health Connect didn’t answer · ${ScoreCopy.clock(sync.atEpochMs)}", "헬스 커넥트 응답 없음 · ${ScoreCopy.clock(sync.atEpochMs)}")
+        SyncFailure.READ_FAILED -> tr("Couldn’t reach Health Connect · ${ScoreCopy.clock(sync.atEpochMs)}", "헬스 커넥트에 연결하지 못함 · ${ScoreCopy.clock(sync.atEpochMs)}")
         SyncFailure.ACCESS_OFF -> tr("No access to Health Connect", "헬스 커넥트 접근 권한 없음")
         SyncFailure.UNAVAILABLE -> tr("Health Connect isn’t available", "헬스 커넥트를 사용할 수 없어요")
+        SyncFailure.NEEDS_UPDATE -> tr("Health Connect is out of date", "헬스 커넥트가 오래된 버전이에요")
     }
     else -> if (lastSyncEpochMs > 0) {
         tr("Updated ${ScoreCopy.clock(lastSyncEpochMs)} from Health Connect", "헬스 커넥트에서 ${ScoreCopy.clock(lastSyncEpochMs)} 업데이트")
@@ -506,6 +700,11 @@ private class RingFace(
     val word: String,
     val target: Float? = null,
     val range: ClosedFloatingPointRange<Float>? = null,
+    /** The figure behind [value], so the first fill can count up to it. */
+    val count: Double? = null,
+    val decimals: Int = 0,
+    /** First week: nights learned of seven, drawn as segments. */
+    val segments: Int? = null,
 )
 
 /**
@@ -522,6 +721,25 @@ private fun ringFace(type: ScoreType, day: DayReport?, showNumbers: Boolean): Ri
         ScoreType.BODY -> {
             val body = day.body
             val color = bodyColor(body?.band, day.illness.level)
+            // The first week: seven segments fill a night at a time, and the numeral counts them.
+            // States board: sleep came from the phone with no overnight heart rate.
+            if (body == null && day.validNights == 0 && day.sleep.lastNightMinutes != null) {
+                return RingFace(null, grey, false, "—", "", neutral, true, tr("Needs a watch", "워치가 필요해요"))
+            }
+            if (body == null && day.bodyStatus == BodyStatus.WARMING_UP) {
+                val nights = day.validNights.coerceIn(0, 7)
+                return RingFace(
+                    fraction = null,
+                    arc = grey,
+                    glow = false,
+                    value = "$nights/7",
+                    unit = "",
+                    dot = neutral,
+                    hollow = true,
+                    word = tr("Learning", "배우는 중"),
+                    segments = nights,
+                )
+            }
             RingFace(
                 fraction = body?.let { it.score / 100f },
                 arc = color,
@@ -536,6 +754,7 @@ private fun ringFace(type: ScoreType, day: DayReport?, showNumbers: Boolean): Ri
                 hollow = body == null,
                 word = body?.let { ScoreCopy.bandWord(it.band) }
                     ?: if (day.bodyStatus == BodyStatus.NO_RECENT_NIGHT) tr("No reading", "기록 없음") else tr("Learning", "배우는 중"),
+                count = body?.score?.toDouble()?.takeIf { showNumbers },
             )
         }
 
@@ -558,6 +777,8 @@ private fun ringFace(type: ScoreType, day: DayReport?, showNumbers: Boolean): Ri
                     else -> tr("Short", "부족")
                 },
                 target = if (slept != null) 1f else null,
+                count = slept?.let { it / 60.0 },
+                decimals = 1,
             )
         }
 
@@ -580,6 +801,7 @@ private fun ringFace(type: ScoreType, day: DayReport?, showNumbers: Boolean): Ri
                     else -> tr("$shown of ${range.low}–${range.high}", "${range.low}–${range.high} 중 $shown")
                 },
                 range = range?.let { it.low.toFloat() / points.ringPoints..it.high.toFloat() / points.ringPoints },
+                count = shown.toDouble(),
             )
         }
     }
@@ -587,25 +809,136 @@ private fun ringFace(type: ScoreType, day: DayReport?, showNumbers: Boolean): Ri
 
 /** Sleep, Body a size up, and Load. Each opens its page; the chevron says so. */
 @Composable
-private fun Rings(day: DayReport?, showNumbers: Boolean, onOpen: (ScoreType) -> Unit, modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier.fillMaxWidth().padding(horizontal = 24.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.Bottom,
+private fun Rings(
+    day: DayReport?,
+    showNumbers: Boolean,
+    onOpen: (ScoreType) -> Unit,
+    today: LocalDate,
+    /** Old numbers waiting on a read: 45%, back to full in 200 ms. */
+    dim: Boolean,
+    coach: Boolean,
+    /** The seventh night has landed and hasn't been shown. */
+    celebrate: Boolean,
+    onCelebrated: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // The day's first fill counts up once; a tab return lands at the value.
+    val skipFirstDraw = remember { FirstDraw.seen == today }
+    SideEffect { FirstDraw.seen = today }
+    val alpha by animateFloatAsState(if (dim) 0.45f else 1f, tween(200), label = "dim")
+    // The coachmark waits for the rings to fill, then a 200 ms rest.
+    var coachIn by remember { mutableStateOf(false) }
+    LaunchedEffect(coach) {
+        if (coach) {
+            delay(if (skipFirstDraw) 200L else PawseMotion.FIRST_DRAW + 200L)
+            coachIn = true
+        } else {
+            coachIn = false
+        }
+    }
+    Box(modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).graphicsLayer { this.alpha = alpha },
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            RINGS.forEach { type ->
+                val big = type == ScoreType.BODY
+                RingTile(
+                    type = type,
+                    face = ringFace(type, day, showNumbers),
+                    big = big,
+                    onClick = { onOpen(type) },
+                    skipFirstDraw = skipFirstDraw,
+                    celebrate = big && celebrate,
+                    onCelebrated = onCelebrated,
+                    modifier = Modifier.weight(if (big) 1.4f else 1f),
+                )
+            }
+        }
+        Coachmark(coachIn, Modifier.align(Alignment.TopCenter).offset(y = (-58).dp))
+    }
+}
+
+/** "Tap any ring to see why", in the selection fill, pointing down at the rings. Once ever. */
+@Composable
+private fun Coachmark(visible: Boolean, modifier: Modifier = Modifier) {
+    val s = PawseTheme.semantics
+    val reduce = LocalReduceMotion.current
+    AnimatedVisibility(
+        visible = visible,
+        modifier = modifier,
+        enter = if (reduce) {
+            fadeIn(tween(REDUCED_FADE))
+        } else {
+            fadeIn(tween(200, easing = EaseOut)) +
+                scaleIn(tween(200, easing = EaseOut), initialScale = 0.96f, transformOrigin = TransformOrigin(0.5f, 1f))
+        },
+        exit = fadeOut(tween(150, easing = EaseOut)),
     ) {
-        RINGS.forEach { type ->
-            val big = type == ScoreType.BODY
-            RingTile(type, ringFace(type, day, showNumbers), big, onClick = { onOpen(type) }, modifier = Modifier.weight(if (big) 1.4f else 1f))
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        ) {
+            Text(
+                tr("Tap any ring to see why", "링을 누르면 이유가 보여요"),
+                style = PawseType.Label.copy(fontWeight = FontWeight.Medium),
+                color = s.onSelection,
+                modifier = Modifier
+                    .lift(RoundedCornerShape(12.dp))
+                    .background(s.selection, RoundedCornerShape(12.dp))
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+            )
+            Canvas(Modifier.size(12.dp, 6.dp)) {
+                drawPath(Path().apply { moveTo(0f, 0f); lineTo(size.width, 0f); lineTo(size.width / 2f, size.height); close() }, s.selection)
+            }
         }
     }
 }
 
 @Composable
-private fun RingTile(type: ScoreType, face: RingFace, big: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun RingTile(
+    type: ScoreType,
+    face: RingFace,
+    big: Boolean,
+    onClick: () -> Unit,
+    skipFirstDraw: Boolean,
+    celebrate: Boolean,
+    onCelebrated: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val reduce = LocalReduceMotion.current
+    val haptic = rememberHaptic()
+    // The numeral counts up with the first fill, reading the same 700 ms curve as the arc.
+    val count = remember { Animatable(if (skipFirstDraw || reduce) 1f else 0f) }
+    LaunchedEffect(Unit) { count.animateTo(1f, tween(PawseMotion.FIRST_DRAW, easing = EaseOut)) }
+    // The seventh night: the segments grow into one ring (600 ms), then the score fades in over it (300 ms).
+    val join = remember { Animatable(0f) }
+    val reveal = remember { Animatable(0f) }
+    var joined by remember { mutableStateOf(false) }
+    LaunchedEffect(celebrate) {
+        if (!celebrate) return@LaunchedEffect
+        if (!reduce) join.animateTo(1f, tween(600, easing = EaseInOut))
+        haptic(PawseHaptic.Confirm)
+        reveal.animateTo(1f, tween(if (reduce) 200 else 300))
+        joined = true
+        onCelebrated()
+    }
+    val value = when {
+        celebrate && !joined -> "7/7"
+        face.count != null && count.value < 1f -> {
+            val v = face.count * count.value
+            if (face.decimals == 0) v.roundToInt().toString() else String.format(Locale.getDefault(), "%.${face.decimals}f", v)
+        }
+        else -> face.value
+    }
     val shown = face.value?.let { " $it${face.unit}" } ?: ""
     val description = "${ScoreCopy.name(type)}$shown, ${face.word}. " + tr("Opens details.", "자세히 보기.")
     // Where this ring sits, for the flight into the detail. Not state: nothing redraws from it.
     val bounds = remember { arrayOfNulls<androidx.compose.ui.geometry.Rect>(1) }
+    // Keyed on the settled figure, never the count-up, so only a real change swaps.
+    val numeralSwap = rememberSwap(face.value to (celebrate && !joined))
+    val wordSwap = rememberSwap(face.word)
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Column(
             Modifier
@@ -631,13 +964,18 @@ private fun RingTile(type: ScoreType, face: RingFace, big: Boolean, onClick: () 
                 target = face.target,
                 range = face.range,
                 stroke = 7.2f,
+                segments = if (celebrate && !joined) 7 else face.segments,
+                join = join.value,
+                reveal = reveal.value,
+                skipFirstDraw = skipFirstDraw,
                 modifier = Modifier.flightSource { bounds[0] = it },
             ) {
-                if (face.value == null) {
+                if (value == null) {
                     Glyph(scoreGlyph(type), size = 28.dp, color = PawseTheme.semantics.mark)
                 } else {
-                    Row(verticalAlignment = Alignment.Bottom) {
-                        Text(face.value, style = if (big) PawseType.Numeral else PawseType.RingSmall)
+                    Row(Modifier.swapIn(numeralSwap), verticalAlignment = Alignment.Bottom) {
+                        // The first week's "4/7" sits a size down so it never reads as a score.
+                        Text(value, style = if (big && face.segments == null && !celebrate) PawseType.Numeral else PawseType.RingSmall)
                         if (face.unit.isNotEmpty()) {
                             Text(face.unit, style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 1.dp, bottom = if (big) 8.dp else 3.dp))
                         }
@@ -650,7 +988,7 @@ private fun RingTile(type: ScoreType, face: RingFace, big: Boolean, onClick: () 
                 Glyph(Glyphs.ChevronRight, size = 16.dp, color = PawseTheme.semantics.faint)
             }
         }
-        BandDot(color = face.dot, label = face.word, hollow = face.hollow)
+        BandDot(color = face.dot, label = face.word, hollow = face.hollow, modifier = Modifier.swapIn(wordSwap))
     }
 }
 
@@ -759,7 +1097,7 @@ private fun pointsOf(day: DayReport): String {
  * keeps none of it. No goal, no score, grey only.
  */
 @Composable
-private fun MovingToday(m: MovingSnapshot, modifier: Modifier = Modifier) {
+private fun MovingToday(m: MovingSnapshot, onOpen: (ActivityFigure) -> Unit, onShareSteps: () -> Unit, modifier: Modifier = Modifier) {
     Column(modifier) {
         SplitRow {
             Text(tr("Moving today", "오늘의 움직임"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
@@ -769,11 +1107,38 @@ private fun MovingToday(m: MovingSnapshot, modifier: Modifier = Modifier) {
                 color = PawseTheme.semantics.faint,
             )
         }
-        Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            MovingCard(tr("Steps", "걸음 수"), m.steps, unit = "", per = "", modifier = Modifier.weight(1f))
-            MovingCard(tr("Active energy", "활동 에너지"), m.energy, unit = "kcal", per = " kcal", modifier = Modifier.weight(1f))
+        // States board: steps declined is one cause with one action; nothing reads as zero.
+        if (!m.stepsShared) {
+            PawseCard(modifier = Modifier.padding(top = 8.dp)) {
+                Text(tr("Steps aren’t shared with Pawse", "걸음 수가 Pawse와 공유되지 않아요"), style = PawseType.BodyStrong)
+                Text(
+                    tr("Active energy and heart rate still show below.", "활동 에너지와 심박수는 아래에 그대로 나와요."),
+                    style = PawseType.Label,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                SecondaryButton(tr("Share steps", "걸음 수 공유"), onClick = onShareSteps, modifier = Modifier.padding(top = 12.dp))
+            }
         }
-        if (m.heart.isNotEmpty()) HeartToday(m, Modifier.padding(top = 12.dp))
+        Row(Modifier.padding(top = if (m.stepsShared) 8.dp else 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            // Each card opens the Activity detail on its own figure.
+            if (m.stepsShared) MovingCard(tr("Steps", "걸음 수"), m.steps, unit = "", per = "", onClick = { onOpen(ActivityFigure.STEPS) }, modifier = Modifier.weight(1f))
+            MovingCard(tr("Active energy", "활동 에너지"), m.energy, unit = "kcal", per = " kcal", onClick = { onOpen(ActivityFigure.ENERGY) }, modifier = Modifier.weight(1f))
+        }
+        if (m.heart.isNotEmpty()) {
+            HeartToday(m, onClick = { onOpen(ActivityFigure.HEART) }, modifier = Modifier.padding(top = 12.dp))
+        } else {
+            // Watch off or charging: say so instead of drawing an empty chart.
+            PawseCard(modifier = Modifier.padding(top = 12.dp)) {
+                Text(tr("No heart rate since you woke", "기상 이후 심박수가 없어요"), style = PawseType.BodyStrong)
+                Text(
+                    tr("Your watch hasn’t written any today. The steps above are from the phone.", "오늘 워치가 기록하지 않았어요. 위 걸음 수는 휴대폰에서 왔어요."),
+                    style = PawseType.Label,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+        }
         Text(
             tr("Health Connect’s own totals, read when Scores opens. Pawse keeps none of it.", "헬스 커넥트의 합계를 점수 화면을 열 때 읽어요. Pawse는 저장하지 않아요."),
             style = PawseType.Micro,
@@ -784,9 +1149,12 @@ private fun MovingToday(m: MovingSnapshot, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun MovingCard(label: String, r: MovingReading, unit: String, per: String, modifier: Modifier = Modifier) {
-    PawseCard(modifier = modifier, padding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)) {
-        Text(label, style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun MovingCard(label: String, r: MovingReading, unit: String, per: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    PawseCard(modifier = modifier, onClick = onClick, padding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(label, style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Glyph(Glyphs.ChevronRight, size = 14.dp, color = PawseTheme.semantics.faint)
+        }
         Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.Bottom) {
             Text(String.format(Locale.getDefault(), "%,d", r.today.roundToInt()), style = MovingNumber)
             if (unit.isNotEmpty()) Text(unit, style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 2.dp, bottom = 5.dp))
@@ -816,7 +1184,7 @@ private fun MovingCard(label: String, r: MovingReading, unit: String, per: Strin
 
 private val MovingNumber = PawseType.Numeral.copy(fontSize = 28.sp, lineHeight = 34.sp, letterSpacing = (-0.7).sp)
 
-private fun movingWord(w: MovingWord): String = when (w) {
+internal fun movingWord(w: MovingWord): String = when (w) {
     MovingWord.BELOW -> tr("Below usual by now", "이 시간 평소보다 적음")
     MovingWord.ABOUT -> tr("About usual by now", "이 시간 평소 수준")
     MovingWord.ABOVE -> tr("Above usual by now", "이 시간 평소보다 많음")
@@ -825,7 +1193,7 @@ private fun movingWord(w: MovingWord): String = when (w) {
 
 /** Heart rate since waking, hour by hour: lowest to highest as a bar, the mean as a dot. Shown, never scored. */
 @Composable
-private fun HeartToday(m: MovingSnapshot, modifier: Modifier = Modifier) {
+private fun HeartToday(m: MovingSnapshot, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val zone = java.time.ZoneId.systemDefault()
     val wake = java.time.Instant.ofEpochMilli(m.wakeEpochMs).atZone(zone).toLocalTime()
     val awake = m.heart.filter { it.hour >= wake.hour }
@@ -834,9 +1202,12 @@ private fun HeartToday(m: MovingSnapshot, modifier: Modifier = Modifier) {
     val low = shown.minOf { it.low }
     val peak = shown.maxBy { it.high }
     val now = m.heart.last()
-    PawseCard(modifier = modifier) {
+    PawseCard(modifier = modifier, onClick = onClick) {
         SplitRow {
-            Text(tr("Heart rate today", "오늘의 심박수"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                Text(tr("Heart rate today", "오늘의 심박수"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Glyph(Glyphs.ChevronRight, size = 14.dp, color = PawseTheme.semantics.faint)
+            }
             if (m.wakeKnown) {
                 Text(tr("since you woke at ${ScoreCopy.clock(m.wakeEpochMs)}", "${ScoreCopy.clock(m.wakeEpochMs)} 기상 이후"), style = PawseType.Micro, color = PawseTheme.semantics.faint)
             }
@@ -870,7 +1241,7 @@ private fun HeartChart(hours: List<HeartHour>, wakeHour: Float, modifier: Modifi
     val faint = s.faint
     val grey = MaterialTheme.colorScheme.onSurfaceVariant
     val measurer = rememberTextMeasurer()
-    val axis = TextStyle(fontSize = 11.sp, color = faint)
+    val axis = TextStyle(fontFamily = PawseFontFamily, fontSize = 11.sp, color = faint)
     val asleep = tr("Asleep", "수면")
     val nowHour = LocalTime.now().let { it.hour + it.minute / 60f }
     Canvas(
@@ -968,7 +1339,19 @@ private fun WorthKnowingCard(snapshot: ScoringSnapshot) {
                 Text(tr("${items.size} of $measured signals", "신호 ${measured}개 중 ${items.size}개"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        if (items.isEmpty()) {
+        // States board: a watch with no HRV is named once, calmly; nothing reads as zero.
+        val body = snapshot.today.body
+        val noHrv = body != null && body.hrv == null && body.sleepingHr != null &&
+            series.first { it.signal == Watched.HRV }.usualNights.isEmpty()
+        if (noHrv) {
+            Text(tr("Body is working from heart rate and sleep", "컨디션은 심박수와 수면으로 계산 중이에요"), style = PawseType.BodyStrong, modifier = Modifier.padding(top = 12.dp))
+            Text(
+                tr("This watch does not record HRV, so scores are a little less sure. Nothing for you to do.", "이 워치는 HRV를 기록하지 않아서 점수가 조금 덜 확실해요. 따로 할 일은 없어요."),
+                style = PawseType.Label,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        } else if (items.isEmpty()) {
             Text(tr("All within your usual.", "모두 평소 범위예요."), style = PawseType.BodyStrong, modifier = Modifier.padding(top = 12.dp))
         }
         items.forEach { WorthRow(it, series.first { s -> s.signal == it.signal }.usualNights.size) }
@@ -1027,8 +1410,8 @@ private fun YourDay(energy: EnergyForecast) {
     val stroke = MaterialTheme.colorScheme.outline
     val card = MaterialTheme.colorScheme.surfaceContainer
     val measurer = rememberTextMeasurer()
-    val label = TextStyle(fontSize = 12.sp, color = grey, textAlign = TextAlign.Center)
-    val axis = TextStyle(fontSize = 12.sp, color = s.faint)
+    val label = TextStyle(fontFamily = PawseFontFamily, fontSize = 12.sp, color = grey, textAlign = TextAlign.Center)
+    val axis = TextStyle(fontFamily = PawseFontFamily, fontSize = 12.sp, color = s.faint)
     val now = LocalTime.now().let { it.hour * 60 + it.minute }
     val words = Triple(tr("Focus", "집중"), tr("Dip", "처짐"), tr("Bed", "취침"))
     PawseCard {
@@ -1220,17 +1603,28 @@ private fun TodaysLoad(day: DayReport) {
 private fun CheckIn(snapshot: ScoringSnapshot, onCheckIn: (Int) -> Unit, onTag: (DayTag) -> Unit, modifier: Modifier = Modifier) {
     val s = PawseTheme.semantics
     val feeling = snapshot.checkIn
+    val haptic = rememberHaptic()
     PawseCard(modifier = modifier) {
         Text(tr("How do you feel?", "오늘 컨디션은 어때요?"), style = PawseType.Heading)
         Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             (1..5).forEach { n ->
                 val on = feeling == n
+                // The choice inverts in 160 ms: the one selection recipe.
+                val fill by animateColorAsState(
+                    if (on) s.selection else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    tween(PawseMotion.PRESS_UP, easing = EaseOut),
+                    label = "checkIn",
+                )
                 Box(
                     Modifier
                         .weight(1f)
                         .height(48.dp)
-                        .pressable(role = Role.RadioButton) { onCheckIn(n) }
-                        .background(if (on) s.selection else MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)
+                        .pressable(role = Role.RadioButton) {
+                            // Saving confirms; tapping the same answer clears it, silently.
+                            if (!on) haptic(PawseHaptic.Confirm)
+                            onCheckIn(n)
+                        }
+                        .background(fill, CircleShape)
                         .clearAndSetSemantics {
                             contentDescription = when (n) {
                                 1 -> "1, " + tr("Rough", "힘듦")
@@ -1251,7 +1645,8 @@ private fun CheckIn(snapshot: ScoringSnapshot, onCheckIn: (Int) -> Unit, onTag: 
             Text(tr("Great", "아주 좋음"), style = PawseType.Micro, color = s.faint)
         }
         val body = snapshot.today.body
-        if (feeling != null && body != null) {
+        AnimatedVisibility(feeling != null && body != null, enter = RevealEnter, exit = RevealExit) {
+            if (feeling == null || body == null) return@AnimatedVisibility
             val agree = !ScoreCopy.disagrees(feeling, body.band)
             Text(
                 if (snapshot.showNumbers) {

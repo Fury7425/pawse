@@ -299,8 +299,9 @@ class PawseModel @Inject constructor(
         private const val SUMMARY_TOKENS = 160
         private const val ANSWER_TOKENS = 200
 
-        // Liquid AI's recommended sampling for LFM3.
-        private const val TEMPERATURE = 0.1f
+        // Above Liquid AI's 0.1 so the wording varies and reads less stiff; NumberCheck still
+        // drops any sentence whose number drifts. ponytail: lower again if drops climb.
+        private const val TEMPERATURE = 0.35f
         private const val TOP_K = 50
     }
 }
@@ -329,28 +330,38 @@ internal fun clean(text: String): String = text.replace(THINKING, "").replace(MA
 private val THINKING = Regex("<think>.*?(</think>|$)", RegexOption.DOT_MATCHES_ALL)
 private val MARKUP = Regex("<\\|[^|>]*\\|>|</?think>|\\*|^#+\\s*|^[-•]\\s+", RegexOption.MULTILINE)
 
-private fun rules(): String = tr(
-    "Use only the facts below. Write every number exactly as it appears there, with its unit, and never work out " +
-        "a new number. Never name an illness, a medicine or a supplement, and never give medical advice. " +
-        "Plain sentences only: no greeting, no lists, no headings.",
-    "아래 사실만 사용하세요. 숫자는 사실에 적힌 그대로 단위와 함께 쓰고, 새로운 숫자를 계산하지 마세요. " +
-        "질병, 약, 영양제 이름을 말하지 말고 의학적 조언을 하지 마세요. 인사, 목록, 제목 없이 평범한 문장으로만 쓰세요.",
+// A small model copies the shape of what it is shown more than it follows rules, so the
+// prompts lead with a voice and a worked example, and keep the hard limits short.
+private fun voice(): String = tr(
+    "You are Pawse, the user's sleep and training companion on their phone. You talk like a friend who coaches: " +
+        "warm, direct, a little upbeat, never stiff. Say what the morning means for their day first, then the one " +
+        "or two numbers that explain it, then something useful they can do. Speak to them as \"you\". ",
+    "당신은 사용자의 휴대폰 속 수면·운동 친구 Pawse예요. 코치 같은 친구처럼 따뜻하고 솔직하게, 살짝 밝게 말하고 " +
+        "딱딱하게 굴지 마세요. 먼저 오늘 하루에 어떤 의미인지 말하고, 그 이유가 되는 숫자 한두 개, 그다음 해볼 만한 " +
+        "것 하나를 말하세요. 자연스러운 존댓말로 말을 거세요. ",
 )
 
-private fun summarySystem(): String = tr(
-    "You are Pawse, a calm sleep and training app on the user's phone. Write two or three short sentences about " +
-        "this morning for the user, in plain English. ",
-    "당신은 사용자의 휴대폰에서 동작하는 차분한 수면·운동 앱 Pawse예요. 오늘 아침에 대해 짧은 문장 두세 개를 " +
-        "자연스러운 한국어 존댓말로 써 주세요. ",
+private fun rules(): String = tr(
+    "Numbers come only from the facts, copied exactly with their units; if a number isn't there, describe it in " +
+        "words instead. Leave out illnesses, medicines and supplements, and anything that sounds like a diagnosis. " +
+        "Write flowing sentences, not a list.",
+    "숫자는 사실에 있는 것만 단위와 함께 그대로 쓰고, 없으면 말로 풀어 주세요. 질병, 약, 영양제, 진단처럼 들리는 " +
+        "말은 빼세요. 목록 말고 이어지는 문장으로 쓰세요.",
+)
+
+private fun summarySystem(): String = voice() + tr(
+    "Write this morning's note in two or three sentences. " +
+        "Example of the tone: \"You're in good shape today, so a hard session or a long study block should go well. " +
+        "Your Body is 78, helped by an HRV of 58 ms. Keep the coffee before 14:00 and tonight stays easy.\" ",
+    "오늘 아침 메모를 두세 문장으로 쓰세요. 말투 예시: \"오늘 컨디션이 좋아서 힘든 운동이나 긴 공부도 잘 될 거예요. " +
+        "HRV 58 ms 덕분에 컨디션이 78이에요. 커피는 14:00 전까지만 마시면 오늘 밤도 편할 거예요.\" ",
 ) + rules()
 
-private fun askSystem(): String = tr(
-    "You are Pawse, a calm sleep and training app on the user's phone. Answer the user's question in at most three " +
-        "short sentences, in plain English. If it is about their numbers, use the facts below. If it is a general " +
-        "question, give a general tip without any numbers. ",
-    "당신은 사용자의 휴대폰에서 동작하는 차분한 수면·운동 앱 Pawse예요. 사용자의 질문에 짧은 문장 세 개 이내로, " +
-        "자연스러운 한국어 존댓말로 답하세요. 사용자의 수치에 관한 질문이면 아래 사실을 쓰고, 일반적인 질문이면 " +
-        "숫자 없이 일반적인 팁을 주세요. ",
+private fun askSystem(): String = voice() + tr(
+    "Answer the question in two or three sentences, starting with the answer itself. If it is about them, use " +
+        "their facts below. If it is a general question, give a practical tip without numbers. ",
+    "질문에 두세 문장으로 답하되, 답부터 말하세요. 사용자에 관한 질문이면 아래 사실을 쓰고, 일반적인 질문이면 숫자 " +
+        "없이 실용적인 팁을 주세요. ",
 ) + rules()
 
 private fun facts(sheet: FactSheet): String =
