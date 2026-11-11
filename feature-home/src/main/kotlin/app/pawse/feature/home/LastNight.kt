@@ -667,7 +667,9 @@ private fun vitalsOf(rec: NightRecord, detail: NightDetail?, axis: NightAxis): L
         Vital(
             figure = NightFigure.BR,
             name = tr("Breathing rate", "호흡수"),
-            value = s.breathingRate,
+            // The night's stored figure, or the median of what the chart draws: a row never
+            // reads "—" over its own readings.
+            value = s.breathingRate ?: Stats.median(br.map { it.value }),
             curve = br,
             sub = if (br.isEmpty()) median else tr("Median of ${br.size} readings", "측정값 ${br.size}개의 중앙값"),
             off = notWritten,
@@ -732,7 +734,8 @@ private fun VitalRow(v: Vital, usual: String?, axis: NightAxis, cursor: Float?, 
             Spacer(Modifier.width(12.dp))
             Glyph(Glyphs.ChevronRight, size = 16.dp, color = grey, modifier = Modifier.alpha(if (on) 1f else 0f))
         }
-        if (v.curve.isNotEmpty() && v.hi > v.lo) {
+        // Under three readings there is no curve to draw: the row stands alone, not over an empty box.
+        if (v.curve.size >= 3 && v.hi > v.lo) {
             Row(Modifier.padding(top = 2.dp, bottom = 16.dp)) {
                 Box(Modifier.width(44.dp).height(v.height)) {
                     Text(v.top, style = PawseType.Label, color = grey, modifier = Modifier.pinned(0.dp, 5.dp, centreX = false))
@@ -1026,7 +1029,12 @@ internal fun TrendChart(
     val labels: List<Pair<String, Double>>
     when (figure) {
         NightFigure.ASLEEP -> {
-            frac = { (1 - it / 600.0).toFloat() }
+            // 10 h, or the longest night rounded up to the hour: a long night stays inside the plot.
+            val longest = rows.maxOfOrNull { r ->
+                r.rec?.sleep?.let { n -> max(n.asleepMinutes, (n.deepMinutes ?: 0.0) + (n.lightMinutes ?: 0.0) + (n.remMinutes ?: 0.0)) } ?: 0.0
+            } ?: 0.0
+            val top = max(600.0, ceil(longest / 60.0) * 60.0)
+            frac = { (1 - it / top).toFloat() }
             labels = listOf(540.0, 360.0, 180.0).map { tr("${(it / 60).toInt()} h", "${(it / 60).toInt()}시간") to it }
         }
         NightFigure.SCORE -> {

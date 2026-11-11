@@ -375,7 +375,8 @@ private fun ScorePage(
         if (type == ScoreType.BODY && day?.body != null) {
             item {
                 Column(pad.padding(top = 32.dp).lookIn(look, 4)) {
-                    BodyCards(day, snapshot.insights)
+                    // The same usual the rows above print, so "Why NN" never quotes a second normal.
+                    BodyCards(day, snapshot.insights, snapshot.usual { NightFigure.HRV.of(it) }?.mid, snapshot.usual { NightFigure.HR.of(it) }?.mid)
                 }
             }
         }
@@ -654,13 +655,19 @@ private fun heroFace(type: ScoreType, day: DayReport?, showNumbers: Boolean): He
                 dot = neutral,
                 hollow = false,
                 word = range?.let { tr("$shown of ${it.low}–${it.high}", "${it.low}–${it.high} 중 $shown") } ?: "$shown",
-                sentence = when {
-                    range == null -> tr("Load is training, not a grade, so it stays grey.", "부하는 평가가 아닌 훈련량이라 회색으로 둬요.")
-                    range.rest -> tr("Rest or easy today: your body has been strained or your overnight heart rate high.", "오늘은 쉬거나 가볍게: 몸에 부담이 쌓였거나 야간 심박수가 높았어요.")
-                    shown < range.low -> tr("Under the range Body set for the day.", "컨디션이 정한 범위보다 적어요.")
-                    shown > range.high -> tr("Over the range Body set for the day.", "컨디션이 정한 범위를 넘었어요.")
-                    else -> tr("Inside the range Body set for the day.", "컨디션이 정한 범위 안이에요.")
-                } + " " + tr("Your typical active day is 10.", "평소 활동한 날이 10이에요."),
+                // The canvas's Load notes, word for word. Zero today is "nothing yet", not a rest day.
+                sentence = run {
+                    val isToday = day.date == java.time.LocalDate.now()
+                    when {
+                        load.points <= 0.0 && isToday -> tr("Nothing yet today. Load counts from your first workout.", "오늘은 아직 없어요. 첫 운동부터 세요.")
+                        load.points <= 0.0 -> tr("A rest day.", "쉬는 날이에요.")
+                        range == null -> tr("No range yet: it comes with Body, after night 7.", "아직 범위가 없어요. 7번째 밤 이후 컨디션과 함께 나와요.")
+                        range.rest -> tr("Rest or easy today: your body has been strained or your overnight heart rate high.", "오늘은 쉬거나 가볍게: 몸에 부담이 쌓였거나 야간 심박수가 높았어요.")
+                        shown < range.low -> if (isToday) tr("Under today’s range so far.", "지금까지 오늘 범위 아래예요.") else tr("Under that day’s range.", "그날 범위 아래였어요.")
+                        shown > range.high -> tr("Over the range.", "범위를 넘었어요.")
+                        else -> tr("Inside the range.", "범위 안이에요.")
+                    }
+                },
                 range = range?.let { it.low.toFloat() / ring..it.high.toFloat() / ring },
             )
         }
@@ -804,20 +811,21 @@ private fun MicroLine(k: String, v: String) {
 
 /** Body's cards under Over time, in the design's order: why, the week, the overnight pattern, what moves it. */
 @Composable
-private fun BodyCards(today: DayReport, insights: List<Insight>) {
+private fun BodyCards(today: DayReport, insights: List<Insight>, hrvUsual: Double?, hrUsual: Double?) {
     val body = today.body ?: return
     val faint = PawseTheme.semantics.faint
     // Why NN: each signal against your normal, in its own unit.
     val why = listOfNotNull(
         body.hrv?.let { h ->
             h.tonight?.let { t ->
-                val p = ((t - h.baseline) / h.baseline * 100).roundToInt()
+                val base = hrvUsual ?: h.baseline
+                val p = ((t - base) / base * 100).roundToInt()
                 if (abs(p) < 3) tr("HRV about your normal", "HRV는 평소와 비슷") else tr("HRV ${abs(p)}% ${if (p > 0) "above" else "below"} your normal", "HRV가 평소보다 ${abs(p)}% ${if (p > 0) "높음" else "낮음"}")
             }
         },
         body.sleepingHr?.let { r ->
             r.tonight?.let { t ->
-                val d = t - r.baseline
+                val d = t - (hrUsual ?: r.baseline)
                 if (abs(d) < 1) tr("sleeping heart rate about your normal", "수면 중 심박수는 평소와 비슷") else tr("sleeping heart rate ${f1(abs(d))} bpm ${if (d > 0) "above" else "below"} your normal", "수면 중 심박수가 평소보다 ${f1(abs(d))} bpm ${if (d > 0) "높음" else "낮음"}")
             }
         },

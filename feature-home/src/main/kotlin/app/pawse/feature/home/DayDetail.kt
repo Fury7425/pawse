@@ -66,6 +66,7 @@ import app.pawse.core.ui.component.cardSurface
 import app.pawse.core.ui.theme.PawseTheme
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.scoring.config.ScoringConfig
+import app.pawse.scoring.load.LoadPoints
 import app.pawse.scoring.model.BodyScore
 import app.pawse.scoring.model.DayReport
 import app.pawse.scoring.model.LoadReading
@@ -78,6 +79,7 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -115,7 +117,7 @@ internal fun DayTab(
     val pick: (Int) -> Unit = { i -> onPick(span - 1 - i) }
 
     val pm = LocalContext.current.packageManager
-    val lines = if (type == ScoreType.BODY) bodyLines(snapshot, rows, selI) else loadLines(rows, selI) { appName(pm, it) }
+    val lines = if (type == ScoreType.BODY) bodyLines(snapshot, rows, selI) { appName(pm, it) } else loadLines(rows, selI) { appName(pm, it) }
     @Composable
     fun signalRows(title: String, aside: String) {
         Row(Modifier.padding(top = 28.dp, bottom = 2.dp)) {
@@ -192,6 +194,13 @@ private fun DayFigure(type: ScoreType, day: DayReport?, today: Boolean) {
     Sessions(load, today)
 }
 
+/**
+ * TRIMP on the ring's scale (your typical active day is 10), so the Load page speaks
+ * one unit: the card, the chart and the rows all agree with the ring.
+ */
+private fun LoadReading.pts(trimp: Double): Double =
+    if (pointsReference > 0.0) LoadPoints.points(trimp, pointsReference, ScoringConfig.DEFAULT.points) else trimp
+
 /** Sessions: each workout, its load, and how it was counted. */
 @Composable
 private fun Sessions(load: LoadReading, today: Boolean) {
@@ -211,7 +220,7 @@ private fun Sessions(load: LoadReading, today: Boolean) {
             Column(Modifier.padding(vertical = 8.dp)) {
                 Row {
                     Text(s.title ?: tr("Workout", "운동"), style = PawseType.BodyStrong, modifier = Modifier.weight(1f))
-                    Text(s.skippedReason ?: tr("${ScoreCopy.load(s.load)} load", "${ScoreCopy.load(s.load)} 부하"), style = PawseType.MetricValue)
+                    Text(s.skippedReason ?: tr("${ScoreCopy.load(load.pts(s.load))} load", "${ScoreCopy.load(load.pts(s.load))} 부하"), style = PawseType.MetricValue)
                 }
                 Text(
                     listOfNotNull(
@@ -314,16 +323,19 @@ private fun LoadColumns(load: LoadReading, today: Boolean) {
     val scheme = MaterialTheme.colorScheme
     val s = PawseTheme.semantics
     val grey = scheme.onSurfaceVariant
-    val low = load.rangeLow
-    val high = load.rangeHigh
+    // The ring's own range, in points: the card never shows a second scale.
+    val range = load.pointsRange
+    val low = range?.low?.toDouble()
+    val high = range?.high?.toDouble()
+    val points = load.points
     val faint = s.faint
     // The design's Load card: three light figures, the range bar, its ends, and why it stays grey.
     Column(Modifier.padding(top = 32.dp).fillMaxWidth().cardSurface().padding(16.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(
-                ScoreCopy.load(load.todayLoad) to tr("Load", "부하"),
-                (load.fitness?.roundToInt()?.toString() ?: "—") to tr("Fitness", "체력"),
-                (load.fatigue?.roundToInt()?.toString() ?: "—") to tr("Fatigue", "피로"),
+                ScoreCopy.load(points) to tr("Load", "부하"),
+                (load.fitness?.let { ScoreCopy.load(load.pts(it)) } ?: "—") to tr("Fitness", "체력"),
+                (load.fatigue?.let { ScoreCopy.load(load.pts(it)) } ?: "—") to tr("Fatigue", "피로"),
             ).forEach { (v, k) ->
                 Column(Modifier.weight(1f)) {
                     Text(v, style = PawseType.Numeral.copy(fontSize = 28.sp, lineHeight = 34.sp), maxLines = 1)
@@ -331,29 +343,28 @@ private fun LoadColumns(load: LoadReading, today: Boolean) {
                 }
             }
         }
-        val ranged = low != null && high != null && !load.rest
-        val top = maxOf((high ?: 0.0) * 1.25, load.todayLoad, 1.0)
+        val ranged = low != null && high != null
+        val top = maxOf((high ?: 0.0) * 1.25, points, 1.0)
         val whose = if (today) tr("today’s", "오늘") else tr("that day’s", "그날")
         val label = if (ranged) {
             tr(
-                "Load ${ScoreCopy.load(load.todayLoad)} against $whose range of ${ScoreCopy.load(low!!)} to ${ScoreCopy.load(high!!)}.",
-                "부하 ${ScoreCopy.load(load.todayLoad)}, $whose 범위는 ${ScoreCopy.load(low!!)}~${ScoreCopy.load(high!!)}예요.",
+                "Load ${ScoreCopy.load(points)} against $whose range of ${ScoreCopy.load(low!!)} to ${ScoreCopy.load(high!!)}.",
+                "부하 ${ScoreCopy.load(points)}, $whose 범위는 ${ScoreCopy.load(low!!)}~${ScoreCopy.load(high!!)}예요.",
             )
         } else {
-            tr("Load ${ScoreCopy.load(load.todayLoad)}.", "부하 ${ScoreCopy.load(load.todayLoad)}.")
+            tr("Load ${ScoreCopy.load(points)}.", "부하 ${ScoreCopy.load(points)}.")
         }
         Canvas(Modifier.padding(top = 16.dp).fillMaxWidth().height(14.dp).semantics { contentDescription = label }) {
             fun x(v: Double) = (v / top).toFloat().coerceIn(0f, 1f) * size.width
             val r = CornerRadius(7.dp.toPx())
             drawRoundRect(s.baselineOuter, cornerRadius = r)
             if (ranged) drawRoundRect(s.baselineBand, Offset(x(low!!), 0f), Size(x(high!!) - x(low), size.height), r)
-            drawRoundRect(grey.copy(alpha = 0.9f), Offset.Zero, Size(x(load.todayLoad), size.height), r)
+            drawRoundRect(grey.copy(alpha = 0.9f), Offset.Zero, Size(x(points), size.height), r)
             if (ranged) drawRoundRect(scheme.onSurface, Offset(x(low!!) - 1.dp.toPx(), -3.dp.toPx()), Size(2.dp.toPx(), size.height + 6.dp.toPx()), CornerRadius(1.dp.toPx()))
         }
         Row(Modifier.padding(top = 8.dp)) {
             Text(
                 when {
-                    load.rest -> tr("Rest, no range", "휴식, 범위 없음")
                     ranged -> tr("Range", "범위") + " ${ScoreCopy.load(low!!)}–${ScoreCopy.load(high!!)}"
                     else -> tr("No range yet", "아직 범위 없음")
                 },
@@ -361,7 +372,7 @@ private fun LoadColumns(load: LoadReading, today: Boolean) {
                 color = faint,
                 modifier = Modifier.weight(1f),
             )
-            load.typicalDayLoad?.let { Text(tr("Typical day", "보통의 하루") + " ${ScoreCopy.load(it)}", style = PawseType.Micro, color = faint) }
+            load.typicalDayLoad?.let { Text(tr("Typical day", "보통의 하루") + " ${ScoreCopy.load(load.pts(it))}", style = PawseType.Micro, color = faint) }
         }
         Text(tr("Load is training, not a grade, so it stays grey.", "부하는 훈련량이지 성적이 아니라서 회색으로 둬요."), style = PawseType.Micro, color = faint, modifier = Modifier.padding(top = 8.dp))
     }
@@ -383,7 +394,10 @@ private fun LoadChart(rows: List<NightRow>, selI: Int, onPick: (Int) -> Unit) {
     val grey = scheme.onSurfaceVariant
     val n = rows.size
     val loads = rows.map { it.day?.load }
-    val top = max(150.0, loads.maxOf { it?.todayLoad ?: 0.0 })
+    // In points like the ring. As on the canvas: the top is the largest of load, fitness
+    // and fatigue plus 15%, rounded up to a 5; the labels are the top and its half.
+    val peak = loads.maxOf { l -> if (l == null) 0.0 else maxOf(l.points, l.fitness?.let(l::pts) ?: 0.0, l.fatigue?.let(l::pts) ?: 0.0) }
+    val top = ceil(max(1.0, peak) * 1.15 / 5.0) * 5.0
     val frac: (Double) -> Float = { (1 - it / top).toFloat() }
     val description = tr(
         "Load over the last $n days, ${shortDate(rows[selI].date)} picked. Touch the chart to pick another day.",
@@ -411,7 +425,7 @@ private fun LoadChart(rows: List<NightRow>, selI: Int, onPick: (Int) -> Unit) {
             drawRoundRect(scheme.surfaceContainerHigh, column, columnSize, CornerRadius(4.dp.toPx()))
             drawRoundRect(scheme.outline, column, columnSize, CornerRadius(4.dp.toPx()), style = Stroke(1.dp.toPx()))
             loads.forEachIndexed { i, l ->
-                val v = l?.todayLoad ?: 0.0
+                val v = l?.points ?: 0.0
                 if (v > 0) {
                     drawRoundRect(
                         if (i == selI) scheme.onSurface else scheme.outline,
@@ -421,14 +435,14 @@ private fun LoadChart(rows: List<NightRow>, selI: Int, onPick: (Int) -> Unit) {
                     )
                 }
             }
-            drawPath(gapPath(loads.map { it?.fitness }, x, y), scheme.onSurface, style = Stroke(1.75.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+            drawPath(gapPath(loads.map { it?.let { l -> l.fitness?.let(l::pts) } }, x, y), scheme.onSurface, style = Stroke(1.75.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
             drawPath(
-                gapPath(loads.map { it?.fatigue }, x, y),
+                gapPath(loads.map { it?.let { l -> l.fatigue?.let(l::pts) } }, x, y),
                 grey,
                 style = Stroke(1.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round, pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx()))),
             )
         }
-        listOf(100.0, 50.0).forEach { v ->
+        listOf(top, (top / 2).roundToInt().toDouble()).forEach { v ->
             Text("${v.roundToInt()}", style = PawseType.Label, color = grey, maxLines = 1, modifier = Modifier.pinned(plot + 6.dp, CHART_HEIGHT.dp * frac(v), centreX = false))
         }
     }
@@ -489,7 +503,7 @@ private class DayLine(
     val learning: Boolean = false,
 )
 
-private fun bodyLines(snapshot: ScoringSnapshot, rows: List<NightRow>, selI: Int): List<DayLine> {
+private fun bodyLines(snapshot: ScoringSnapshot, rows: List<NightRow>, selI: Int, name: (String) -> String): List<DayLine> {
     val row = rows[selI]
     val body = row.day?.body
     val w = body?.hrvWeight ?: ScoringConfig.DEFAULT.body.hrvWeight
@@ -548,12 +562,20 @@ private fun bodyLines(snapshot: ScoringSnapshot, rows: List<NightRow>, selI: Int
                 body?.hrv,
                 NightFigure.HRV,
                 u,
-                against = { signed((v / it.baseline - 1) * 100, 0) + "%" },
+                // One usual per page, as on the canvas: the row's "Usually 66 ± 12 ms" is the
+                // figure these lines use too. The engine's own normal stands in until there is one.
+                against = { signed((v / (u?.mid ?: it.baseline) - 1) * 100, 0) + "%" },
                 normal = {
-                    val spread = ((exp(it.spread) - 1.0) * 100).roundToInt()
-                    tr("${it.baseline.roundToInt()} ms ± $spread% over ${it.baselineNights} nights", "${it.baselineNights}밤 기준 ${it.baseline.roundToInt()} ms ± $spread%")
+                    if (u != null) {
+                        val spread = (u.sd / u.mid * 100).roundToInt()
+                        tr("${u.mid.roundToInt()} ms ± $spread% · ${u.nights} nights", "${u.mid.roundToInt()} ms ± $spread% · ${u.nights}일 밤")
+                    } else {
+                        val spread = ((exp(it.spread) - 1.0) * 100).roundToInt()
+                        tr("${it.baseline.roundToInt()} ms ± $spread% over ${it.baselineNights} nights", "${it.baselineNights}밤 기준 ${it.baseline.roundToInt()} ms ± $spread%")
+                    }
                 },
-                extra = body?.hrv?.let { tr("Source", "출처") to it.source.substringBefore('#') },
+                // The app's name, never its package.
+                extra = body?.hrv?.let { tr("Source", "출처") to name(it.source.substringBefore('#')) },
             )
         },
         line(
@@ -570,10 +592,15 @@ private fun bodyLines(snapshot: ScoringSnapshot, rows: List<NightRow>, selI: Int
                 body?.sleepingHr,
                 NightFigure.HR,
                 u,
-                against = { signed(v - it.baseline, 1) + " bpm" },
+                against = { signed(v - (u?.mid ?: it.baseline), 1) + " bpm" },
                 normal = {
-                    val b = String.format(Locale.getDefault(), "%.1f ± %.1f", it.baseline, it.spread)
-                    tr("$b bpm over ${it.baselineNights} nights", "${it.baselineNights}밤 기준 $b bpm")
+                    if (u != null) {
+                        val b = "${u.mid.roundToInt()} ± " + String.format(Locale.getDefault(), "%.1f", u.sd)
+                        tr("$b bpm · ${u.nights} nights", "$b bpm · ${u.nights}일 밤")
+                    } else {
+                        val b = String.format(Locale.getDefault(), "%.1f ± %.1f", it.baseline, it.spread)
+                        tr("$b bpm over ${it.baselineNights} nights", "${it.baselineNights}밤 기준 $b bpm")
+                    }
                 },
                 extra = body?.sleepingHr?.let {
                     tr("Definition", "정의") to if (it.source.endsWith(DailyInputAssembler.RESTING)) {
@@ -635,7 +662,7 @@ private fun loadLines(rows: List<NightRow>, selI: Int, name: (String) -> String)
     return listOf(
         line(
             tr("Daily load", "하루 부하"),
-            get = { it.todayLoad },
+            get = { it.points },
             show = ScoreCopy::load,
             note = tr(
                 "Minutes weighted by how far into your heart-rate reserve you worked, counted only above ${pct(config.minReserveFraction)} of it. " +
@@ -645,28 +672,27 @@ private fun loadLines(rows: List<NightRow>, selI: Int, name: (String) -> String)
             ),
             fromZero = true,
         ) { load, _ ->
-            val low = load.rangeLow
-            val high = load.rangeHigh
+            val range = load.pointsRange
             listOf(
                 tr("Counted by", "계산 방식") to load.sessions.mapNotNull { it.method }.distinct().joinToString(", ") { ScoreCopy.loadMethod(it) }.ifEmpty { "—" },
-                tr("Sessions", "운동") to load.sessions.joinToString("; ") { sessionText(it, name) }.ifEmpty { tr("None", "없음") },
+                tr("Sessions", "운동") to load.sessions.joinToString("; ") { sessionText(it, name, load::pts) }.ifEmpty { tr("None", "없음") },
                 tr("Sources", "출처") to load.sessions.map { it.citation }.filter { it.isNotBlank() }.distinct().joinToString(" ").ifEmpty { "—" },
                 tr("Range that day", "그날 범위") to when {
-                    load.rest -> tr("Rest: overnight heart rate was high", "휴식: 야간 심박수가 높았어요")
-                    low != null && high != null -> "${ScoreCopy.load(low)}–${ScoreCopy.load(high)}"
-                    else -> tr("After your first few workouts", "운동을 몇 번 한 뒤에")
+                    range == null -> tr("No range yet", "아직 범위 없음")
+                    range.rest -> tr("${range.low}–${range.high} · rest or easy", "${range.low}–${range.high} · 쉬거나 가볍게")
+                    else -> "${range.low}–${range.high}"
                 },
             )
         },
         line(
             tr("Fitness", "체력"),
-            get = { it.fitness },
+            get = { l -> l.fitness?.let(l::pts) },
             show = ScoreCopy::load,
             note = tr("The long average: what your recent training has built.", "긴 평균: 최근 훈련으로 쌓은 것이에요."),
         ) { _, _ -> listOf(tr("Window", "기간") to tr("$fitnessDays days of load", "${fitnessDays}일 부하")) },
         line(
             tr("Fatigue", "피로"),
-            get = { it.fatigue },
+            get = { l -> l.fatigue?.let(l::pts) },
             show = ScoreCopy::load,
             note = tr("The short average: what the last week has cost.", "짧은 평균: 지난 일주일이 남긴 부담이에요."),
         ) { _, _ -> listOf(tr("Window", "기간") to tr("$fatigueDays days of load", "${fatigueDays}일 부하")) },
@@ -692,10 +718,10 @@ private fun loadLines(rows: List<NightRow>, selI: Int, name: (String) -> String)
 }
 
 /** "Run, 42 min · 35 · Published · Samsung Health", or why it wasn't counted. */
-private fun sessionText(s: SessionLoad, name: (String) -> String): String =
+private fun sessionText(s: SessionLoad, name: (String) -> String, pts: (Double) -> Double): String =
     listOfNotNull(
         "${s.title ?: tr("Workout", "운동")}, ${minutesText(s.durationMinutes)}",
-        s.skippedReason ?: ScoreCopy.load(s.load),
+        s.skippedReason ?: ScoreCopy.load(pts(s.load)),
         // Every number carries where its coefficient came from (Provenance.kt).
         ScoreCopy.provenanceLabel(s.provenance).takeIf { s.skippedReason == null },
         s.source.takeIf { it.isNotBlank() }?.let(name),
