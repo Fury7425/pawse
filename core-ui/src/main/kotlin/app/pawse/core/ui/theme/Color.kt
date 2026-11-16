@@ -66,7 +66,8 @@ object PawseColors {
     val NightSurfaceContainer = Color(0xFF111315)
     val NightSurfaceContainerHigh = Color(0xFF181B1E)
     val NightOutline = Color(0xFF2A2F34)
-    val NightOutlineVariant = Color(0xFF1C2024)
+    // The canvas's bedside hairline: white at 5%, not a solid grey.
+    val NightOutlineVariant = Color(0x0DFFFFFF)
     val NightOnSurface = Color(0xFFD9DCDF)
     val NightOnSurfaceVariant = Color(0xFF8A929A)
     val NightOnSurfaceFaint = Color(0xFF80888F)

@@ -313,7 +313,9 @@ private fun NightPage(
                 NightStage.LIGHT to ((night.lightMinutes ?: 0.0) to st.stageLight),
                 NightStage.DEEP to ((night.deepMinutes ?: 0.0) to st.stageDeep),
             ).filter { it.second.first > 0.0 }.forEach { (s, v) ->
-                Box(Modifier.weight(v.first.toFloat()).fillMaxHeight().background(v.second.copy(alpha = if (stage == null || stage == s) 1f else 0.35f)))
+                // The bar dims with the lanes: the other stages fall to 22% over 200 ms.
+                val strength by animateFloatAsState(if (stage == null || stage == s) 1f else 0.22f, tween(200), label = "stageBar")
+                Box(Modifier.weight(v.first.toFloat()).fillMaxHeight().background(v.second.copy(alpha = strength)))
             }
         }
         Row(Modifier.padding(top = 12.dp).height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
