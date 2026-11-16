@@ -461,7 +461,8 @@ private fun DetailHero(
                 },
                 label = "dayHead",
             ) { shownDate ->
-                val shownTitle = dayTitle(shownDate)
+                // The Sleep page names the night ("Last night", "Tuesday night"); the others the day.
+                val shownTitle = if (type == ScoreType.SLEEP) nightTitle(shownDate, latest = shownDate == date.plusDays(back.toLong())) else dayTitle(shownDate)
                 Text(
                     shownTitle,
                     style = PawseType.Heading.copy(fontSize = 17.sp),
@@ -488,7 +489,8 @@ private fun DetailHero(
             Modifier.fillMaxWidth().bleed(12.dp).heightIn(min = 32.dp).padding(start = 48.dp, end = 12.dp).lookIn(look, 1),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(shortDate(date), style = PawseType.Label, color = grey, modifier = Modifier.weight(1f))
+            // Under it: the night's span on Sleep ("Fri 23 → Sat 24 October"), the date elsewhere.
+            Text(if (type == ScoreType.SLEEP) nightRange(date) else shortDate(date), style = PawseType.Label, color = grey, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             if (back > 0) {
                 Text(
                     tr("Back to today", "오늘로"),

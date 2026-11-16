@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -67,6 +68,7 @@ import app.pawse.core.ui.theme.PawseTheme
 import app.pawse.core.ui.theme.PawseType
 import app.pawse.scoring.config.ScoringConfig
 import app.pawse.scoring.load.LoadPoints
+import app.pawse.scoring.model.BodyBand
 import app.pawse.scoring.model.BodyScore
 import app.pawse.scoring.model.DayReport
 import app.pawse.scoring.model.LoadReading
@@ -138,9 +140,13 @@ internal fun DayTab(
         // Body: Against your normal sits under What moved it, before Over time, as on the canvas.
         if (type == ScoreType.BODY) signalRows(tr("Against your normal", "내 평소와 비교"), tr("track ±3σ · band ±1σ", "트랙 ±3σ · 음영 ±1σ"))
 
-        Row(Modifier.padding(top = 32.dp).fillMaxWidth()) {
-            Text(tr("Over time", "기간별 추이"), style = PawseType.Heading, modifier = Modifier.weight(1f).alignByBaseline())
-            Text(tr("Touch a day to read it", "날짜를 눌러 읽어요"), style = PawseType.Label, color = grey, modifier = Modifier.alignByBaseline())
+        // Over time, laid out as the canvas does on every page: title, range, one readout
+        // line, the chart, its dates, a hint, four figures and how the days fell.
+        val faint = PawseTheme.semantics.faint
+        val over = overTimeOf(type, rows, selI)
+        Row(Modifier.padding(top = 32.dp).fillMaxWidth().heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(tr("Over time", "기간별 보기"), style = PawseType.Heading, modifier = Modifier.weight(1f))
+            if (type == ScoreType.BODY) Text(tr("band is Typical 31–69", "띠는 평소 수준 31–69"), style = PawseType.Micro, color = faint)
         }
         Segmented(
             options = DAY_RANGES,
@@ -149,19 +155,114 @@ internal fun DayTab(
             label = { tr("$it days", "${it}일") },
             modifier = Modifier.padding(top = 12.dp),
         )
+        Text(over.readout, style = PawseType.Label, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(top = 12.dp))
         if (type == ScoreType.BODY) {
             TrendChart(NightFigure.BODY, rows, selI, usual = null, wakeUsual = null, need = 0.0, onPick = pick)
         } else {
             LoadChart(rows, selI, pick)
         }
         Row(Modifier.padding(top = 8.dp, end = 36.dp).fillMaxWidth()) {
-            Text(shortDate(rows.first().date), style = PawseType.Label, color = grey, modifier = Modifier.weight(1f))
-            Text(if (snapshot.date == LocalDate.now()) tr("Today", "오늘") else shortDate(snapshot.date), style = PawseType.Label, color = grey)
+            Text(shortDate(rows.first().date), style = PawseType.Micro, color = faint, modifier = Modifier.weight(1f))
+            Text(if (snapshot.date == LocalDate.now()) tr("Today", "오늘") else shortDate(snapshot.date), style = PawseType.Micro, color = faint)
         }
-        Legend(type)
+        if (type != ScoreType.BODY) {
+            Text(tr("bars daily load · line fitness · dashed fatigue", "막대 일일 부하 · 선 체력 · 점선 피로"), style = PawseType.Micro, color = faint, modifier = Modifier.padding(top = 4.dp))
+        }
+        Text(tr("Drag to read · tap a day to open it", "끌어서 보고, 탭하면 그날로 이동해요"), style = PawseType.Micro, color = faint, modifier = Modifier.padding(top = 4.dp))
+        Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            over.stats.chunked(2).forEach { pair ->
+                Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    pair.forEach { (k, v, n) ->
+                        Column(Modifier.weight(1f).fillMaxHeight().cardSurface(RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 12.dp)) {
+                            Text(k, style = PawseType.Label, color = grey)
+                            Text(v, style = PawseType.MetricValue, modifier = Modifier.padding(top = 2.dp))
+                            Text(n, style = PawseType.Micro, color = faint)
+                        }
+                    }
+                }
+            }
+        }
+        Text(over.counts, style = PawseType.Micro, color = faint, modifier = Modifier.padding(top = 12.dp))
 
         if (type != ScoreType.BODY) signalRows(tr("Load, fitness and form, same days", "같은 날들의 부하·체력·폼"), shortDate(picked.date))
     }
+}
+
+/** Over time's words for Body and Load: the readout, four figures, and the counts. */
+private class OverTime(val readout: String, val stats: List<Triple<String, String, String>>, val counts: String)
+
+private fun overTimeOf(type: ScoreType, rows: List<NightRow>, selI: Int): OverTime {
+    val n = rows.size
+    val picked = rows[selI]
+    val name = if (picked.date == LocalDate.now()) tr("Today", "오늘") else shortDate(picked.date)
+    val none = tr("No reading", "기록 없음")
+    val dash = "—"
+    fun whole(v: Double) = v.roundToInt().toString()
+
+    if (type == ScoreType.BODY) {
+        val vals = rows.map { it.day?.body?.score?.toDouble() }
+        val rec = vals.indices.filter { vals[it] != null }
+        val hi = rec.maxByOrNull { vals[it]!! }
+        val lo = rec.minByOrNull { vals[it]!! }
+        var a = 0
+        var b = 0
+        var c = 0
+        var e = 0
+        var missing = 0
+        rows.forEach { r ->
+            val day = r.day
+            when {
+                day == null -> missing++
+                day.body == null -> e++
+                day.body!!.band == BodyBand.ABOVE_NORMAL -> c++
+                day.body!!.band == BodyBand.TYPICAL -> a++
+                else -> b++
+            }
+        }
+        val body = picked.day?.body
+        return OverTime(
+            readout = if (body == null) "$name · $none" else "$name ${body.score} · ${ScoreCopy.bandWord(body.band)}.",
+            stats = listOf(
+                Triple(tr("Average", "평균"), if (rec.isEmpty()) dash else whole(rec.map { vals[it]!! }.average()), tr("Average over $n days, ${rec.size} recorded", "${n}일 평균, ${rec.size}일 기록")),
+                Triple(tr("Your usual", "평소"), "31–69", tr("Typical", "평소 수준")),
+                Triple(tr("Highest", "가장 높음"), hi?.let { whole(vals[it]!!) } ?: dash, hi?.let { shortDate(rows[it].date) }.orEmpty()),
+                Triple(tr("Lowest", "가장 낮음"), lo?.let { whole(vals[it]!!) } ?: dash, lo?.let { shortDate(rows[it].date) }.orEmpty()),
+            ),
+            counts = tr("Above $c · Typical $a · Below $b · Learning $e · No reading $missing", "평소보다 높음 $c · 평소 $a · 평소보다 낮음 $b · 학습 중 $e · 기록 없음 $missing"),
+        )
+    }
+
+    val vals = rows.map { it.day?.load?.points }
+    val rec = vals.indices.filter { vals[it] != null }
+    val hi = rec.maxByOrNull { vals[it]!! }
+    var a = 0
+    var b = 0
+    var c = 0
+    var e = 0
+    var missing = 0
+    rows.forEach { r ->
+        val l = r.day?.load
+        val range = l?.pointsRange
+        when {
+            l == null -> missing++
+            l.points <= 0.0 -> e++
+            range == null -> a++
+            l.points.roundToInt() < range.low -> b++
+            l.points.roundToInt() > range.high -> c++
+            else -> a++
+        }
+    }
+    val load = picked.day?.load
+    return OverTime(
+        readout = if (load == null) "$name · $none" else "$name ${whole(load.points)}.",
+        stats = listOf(
+            Triple(tr("Average day", "하루 평균"), if (rec.isEmpty()) dash else whole(rec.map { vals[it]!! }.average()), tr("$n days, ${rec.size} recorded", "${n}일, ${rec.size}일 기록")),
+            Triple(tr("Typical day", "보통의 하루"), load?.typicalDayLoad?.let { whole(load.pts(it)) } ?: dash, tr("your active days", "활동한 날 기준")),
+            Triple(tr("Highest", "가장 높음"), hi?.let { whole(vals[it]!!) } ?: dash, hi?.let { shortDate(rows[it].date) }.orEmpty()),
+            Triple(tr("Rest days", "쉰 날"), "$e", tr("no sessions", "활동 없음")),
+        ),
+        counts = tr("In range $a · Under $b · Over $c · Rest $e · No reading $missing", "범위 안 $a · 아래 $b · 위 $c · 휴식 $e · 기록 없음 $missing"),
+    )
 }
 
 // --- The picked day ------------------------------------------------------------

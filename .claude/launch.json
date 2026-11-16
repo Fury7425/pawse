@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "design-mockup",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8765",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "C:/Users/robin/AppData/Local/Temp/claude/973dbc45d292abdd/f3fd0eb8-7aea-42c8-adb4-e50e9c89b0d6/scratchpad/artifact-files/f3d9c0de-abe1-4652-b704-212268c3296a/project"
+      ],
+      "port": 8765
+    }
+  ]
+}
