@@ -257,7 +257,6 @@ private fun NightPage(
             sub = wakeUps(night.awakenings),
             modifier = Modifier.weight(1f),
             usual = snapshot.usual { it.rec?.sleep?.wasoMinutes }?.let { usualMinutes(it) },
-            onClick = { onOpen(NightFigure.EFFICIENCY) },
         )
     }
 
@@ -923,7 +922,8 @@ private fun Trend(
         PawseSheet(onDismiss = { picking = false }) {
             Text(tr("Showing", "표시할 항목"), style = PawseType.Heading)
             Column(Modifier.padding(top = 8.dp)) {
-                NightFigure.entries.forEach { f ->
+                // The canvas's nine figures; efficiency and deep/REM are read on the night itself.
+                NightFigure.entries.filter { it != NightFigure.EFFICIENCY && it != NightFigure.DEEP_REM }.forEach { f ->
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Row(
                         Modifier
@@ -1560,7 +1560,7 @@ internal fun span(figure: NightFigure, u: Usual): String =
 
 internal fun NightFigure.title(): String = when (this) {
     NightFigure.ASLEEP -> tr("Time asleep", "수면 시간")
-    NightFigure.TIMING -> tr("Bedtime and wake", "취침과 기상")
+    NightFigure.TIMING -> tr("Bedtime and wake", "잠든 시각과 깬 시각")
     NightFigure.SCORE -> tr("Sleep score", "수면 점수")
     NightFigure.BODY -> tr("Body", "컨디션")
     NightFigure.HR -> tr("Sleeping heart rate", "수면 중 심박수")

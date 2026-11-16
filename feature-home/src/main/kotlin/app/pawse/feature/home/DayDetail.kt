@@ -184,7 +184,7 @@ internal fun DayTab(
         }
         Text(over.counts, style = PawseType.Micro, color = faint, modifier = Modifier.padding(top = 12.dp))
 
-        if (type != ScoreType.BODY) signalRows(tr("Load, fitness and form, same days", "같은 날들의 부하·체력·폼"), shortDate(picked.date))
+        if (type != ScoreType.BODY) signalRows(tr("Load, fitness and form, same days", "부하, 체력, 폼 · 같은 날들"), "")
     }
 }
 

@@ -81,6 +81,7 @@ import app.pawse.core.ui.component.Chip
 import app.pawse.core.ui.component.EaseInOut
 import app.pawse.core.ui.component.GhostButton
 import app.pawse.core.ui.component.Glyph
+import androidx.compose.ui.text.style.TextAlign
 import app.pawse.core.ui.component.Glyphs
 import app.pawse.core.ui.component.PawseCard
 import app.pawse.core.ui.component.PawseField
@@ -187,6 +188,18 @@ fun ScannerScreen(
                 mode = mode,
                 sweeping = state is ScanState.Scanning || state is ScanState.LookingUp,
                 locked = state is ScanState.Found,
+                // The canvas's one line under the frame: what to do, then what was read.
+                status = when (val now = state) {
+                    is ScanState.Scanning -> if (mode == ScanMode.BARCODE) {
+                        tr("Point at a barcode", "바코드를 비춰 주세요")
+                    } else {
+                        tr("Fit the nutrition table in the frame", "영양 성분표가 프레임 안에 들어오게 해 주세요")
+                    }
+                    is ScanState.LookingUp -> now.barcode
+                    is ScanState.NotFound -> now.barcode
+                    is ScanState.Found -> now.product.name
+                    is ScanState.LabelRead -> ""
+                },
             )
         }
 
@@ -202,20 +215,21 @@ fun ScannerScreen(
                 .padding(start = 16.dp, end = 16.dp, top = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // The scanner closes, it doesn't go back: a 48 dp glass ✕, as on the canvas.
             Box(
                 Modifier
-                    .size(52.dp)
+                    .size(48.dp)
                     .pressable(onClick = onBack)
                     .glass(CircleShape)
-                    .semantics { contentDescription = tr("Back", "뒤로") },
+                    .semantics { contentDescription = tr("Close", "닫기") },
                 contentAlignment = Alignment.Center,
             ) {
-                Glyph(Glyphs.ChevronLeft, color = Ink)
+                Glyph(Glyphs.Close, color = Ink)
             }
             Spacer(Modifier.weight(1f))
             ModeToggle(mode = mode, onModeChange = viewModel::setMode)
             Spacer(Modifier.weight(1f))
-            Spacer(Modifier.size(52.dp))
+            Spacer(Modifier.size(48.dp))
         }
 
         Column(
@@ -245,9 +259,10 @@ fun ScannerScreen(
                     onDecline = viewModel::dismissConsent,
                 )
 
-                // Aiming at a barcode: the logger sits under the camera, so a food eaten
-                // before is one tap and a plate of them one button.
-                state is ScanState.Scanning && mode == ScanMode.BARCODE -> Logger(viewModel, onManualEntry, onLogged)
+                // Aiming, in either mode: the logger sits under the camera, so a food eaten
+                // before is one tap and a plate of them one button. A label that won't read
+                // swaps it for the tip and the retry.
+                state is ScanState.Scanning && !(mode == ScanMode.LABEL && labelStuck) -> Logger(viewModel, onManualEntry, onLogged)
 
                 else -> AnimatedContent(
                     targetState = state,
@@ -417,28 +432,43 @@ private fun ModeToggle(mode: ScanMode, onModeChange: (ScanMode) -> Unit) {
 
 /** Corner brackets where the code or panel should sit, a sweep while looking, a lock when found. */
 @Composable
-private fun Viewfinder(mode: ScanMode, sweeping: Boolean, locked: Boolean) {
+private fun Viewfinder(mode: ScanMode, sweeping: Boolean, locked: Boolean, status: String) {
     val barcode = mode == ScanMode.BARCODE
-    val frame: Pair<Dp, Dp> = if (barcode) 280.dp to 150.dp else 240.dp to 300.dp
+    // The canvas's frames: 232 × 132 for a barcode, 200 × 232 for a label.
+    val frame: Pair<Dp, Dp> = if (barcode) 232.dp to 132.dp else 200.dp to 232.dp
     val sweep by rememberInfiniteTransition(label = "sweep").animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(1600, easing = LinearEasing), RepeatMode.Reverse),
         label = "sweep",
     )
-    Box(Modifier.fillMaxSize().statusBarsPadding().padding(top = if (barcode) 168.dp else 100.dp), contentAlignment = Alignment.TopCenter) {
+    Column(
+        Modifier.fillMaxSize().statusBarsPadding().padding(top = if (barcode) 108.dp else 60.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         Canvas(Modifier.size(frame.first, frame.second)) {
             brackets(Offset.Zero, size, 28.dp.toPx(), 16.dp.toPx(), 3.dp.toPx())
             if (sweeping && barcode) {
                 val inset = 16.dp.toPx()
-                val y = 14.dp.toPx() + sweep * 118.dp.toPx()
+                val y = 14.dp.toPx() + sweep * (size.height - 28.dp.toPx())
                 drawLine(Ink.copy(alpha = 0.25f), Offset(inset, y), Offset(size.width - inset, y), 8.dp.toPx())
                 drawLine(Ink, Offset(inset, y), Offset(size.width - inset, y), 2.dp.toPx())
             }
             if (locked && barcode) {
-                val inner = Size(216.dp.toPx(), 108.dp.toPx())
-                brackets(Offset((size.width - inner.width) / 2f, 20.dp.toPx()), inner, 18.dp.toPx(), 8.dp.toPx(), 2.5.dp.toPx())
+                // Found: the frame tightens to 148 × 72 around the code.
+                val inner = Size(148.dp.toPx(), 72.dp.toPx())
+                brackets(Offset((size.width - inner.width) / 2f, (size.height - inner.height) / 2f), inner, 18.dp.toPx(), 8.dp.toPx(), 2.5.dp.toPx())
             }
+        }
+        if (status.isNotEmpty()) {
+            Text(
+                status,
+                style = PawseType.BodyStrong,
+                color = Ink,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                modifier = Modifier.padding(top = if (barcode) 20.dp else 12.dp, start = 32.dp, end = 32.dp).swapIn(rememberSwap(status)),
+            )
         }
     }
 }
