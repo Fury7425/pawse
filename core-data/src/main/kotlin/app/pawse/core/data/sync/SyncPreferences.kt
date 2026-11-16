@@ -48,6 +48,16 @@ class SyncPreferences @Inject constructor(
         }
     }
 
+    /**
+     * Whether the last full read had history access. Without it Health Connect only
+     * answers the 30 days before the grant, so a later history grant needs a re-read.
+     */
+    suspend fun readWithHistory(): Boolean = store.data.first()[booleanPreferencesKey("read_with_history")] ?: false
+
+    suspend fun setReadWithHistory(value: Boolean) {
+        store.edit { it[booleanPreferencesKey("read_with_history")] = value }
+    }
+
     val onboardingComplete: Flow<Boolean> =
         store.data.map { it[booleanPreferencesKey("onboarding_complete")] ?: false }
 

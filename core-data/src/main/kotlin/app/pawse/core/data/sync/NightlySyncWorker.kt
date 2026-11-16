@@ -40,7 +40,7 @@ class NightlySyncWorker @AssistedInject constructor(
             SyncFailure.READ_FAILED -> if (runAttemptCount < MAX_ATTEMPTS) Result.retry() else Result.failure()
             // Nothing to retry against: Health Connect is missing, or access is off
             // and stays off until the user changes it.
-            SyncFailure.UNAVAILABLE, SyncFailure.ACCESS_OFF -> Result.success()
+            SyncFailure.UNAVAILABLE, SyncFailure.NEEDS_UPDATE, SyncFailure.ACCESS_OFF -> Result.success()
         }
         else -> Result.success()
     }

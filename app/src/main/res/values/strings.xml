@@ -16,6 +16,12 @@
     <string name="widget_scan">Scan</string>
     <string name="widget_add">Log food</string>
     <string name="widget_empty">Open Pawse to read last night</string>
+    <string name="widget_summary">This morning</string>
+    <string name="widget_summary_tag">Written on this phone</string>
+    <string name="widget_summary_description">This morning\'s summary, word for word as in the app.</string>
+    <string name="widget_ask">Ask Pawse about today</string>
+    <string name="widget_ask_note">Small model · can be wrong · not medical advice</string>
+    <string name="widget_ask_description">A way into Ask Pawse. It never answers on the home screen.</string>
 
     <!--
       Shown by Health Connect on its own permission screen. This is the only place

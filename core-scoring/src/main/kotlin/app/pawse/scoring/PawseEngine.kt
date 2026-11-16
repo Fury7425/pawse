@@ -261,7 +261,11 @@ class PawseEngine(private val config: ScoringConfig = ScoringConfig.DEFAULT) {
                     low = BodyMath.score(z - body.rangeZ * sd),
                     high = BodyMath.score(z + body.rangeZ * sd),
                     band = BodyBand.of(value),
-                    confidence = BodyMath.confidence(sd, body),
+                    confidence = BodyMath.confidence(
+                        nights = listOfNotNull(hs?.baselineNights?.takeIf { zh[i] != null }, rs?.baselineNights?.takeIf { zr[i] != null }).minOrNull() ?: 0,
+                        bothSignals = zh[i] != null && zr[i] != null,
+                        config = body,
+                    ),
                     z = z,
                     zSd = sd,
                     hrv = hs?.takeIf { zh[i] != null }?.let { s ->

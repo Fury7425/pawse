@@ -70,9 +70,8 @@ private val DarkSemantics = PawseSemantics(
     neutral = PawseColors.NeutralDark,
     baselineBand = PawseColors.BaselineBandDark,
     baselineOuter = PawseColors.BaselineOuterDark,
-    // ponytail: 90% with no blur. The design's 62% needs a backdrop blur (Haze, or
-    // RenderEffect on a captured layer on API 31+); drop the alpha when that lands.
-    glass = PawseColors.DarkSurface.copy(alpha = 0.9f),
+    // The design's glass: 62% over a 24 dp backdrop blur (Haze, in the dock).
+    glass = Color(0x9E15181C),
     glassLine = Color.White.copy(alpha = 0.10f),
     sheen = Color.White.copy(alpha = 0.045f),
     aura = Color(0xFF96ACD2).copy(alpha = 0.09f),
@@ -100,7 +99,7 @@ private val LightSemantics = PawseSemantics(
     neutral = PawseColors.NeutralLight,
     baselineBand = PawseColors.BaselineBandLight,
     baselineOuter = PawseColors.BaselineOuterLight,
-    glass = PawseColors.LightSurface.copy(alpha = 0.92f),
+    glass = Color.White.copy(alpha = 0.72f),
     glassLine = PawseColors.LightOnSurface.copy(alpha = 0.08f),
     sheen = Color.Transparent,
     aura = Color.Transparent,
@@ -110,7 +109,7 @@ private val LightSemantics = PawseSemantics(
     onSelection = PawseColors.LightSurface,
     segmentThumb = PawseColors.LightSegmentThumb,
     toast = PawseColors.LightToast,
-    onToast = PawseColors.LightSurface,
+    onToast = PawseColors.DarkOnSurface,
     sheet = PawseColors.LightSheet,
     stageAwake = Color(0xFF7C858D),
     stageRem = Color(0xFF6690DD),

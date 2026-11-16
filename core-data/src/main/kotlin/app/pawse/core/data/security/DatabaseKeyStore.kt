@@ -41,7 +41,9 @@ class DatabaseKeyStore @Inject constructor(
         val fresh = ByteArray(32).also { SecureRandom().nextBytes(it) }
         val cipher = Cipher.getInstance(TRANSFORMATION).apply { init(Cipher.ENCRYPT_MODE, wrappingKey()) }
         val wrapped = cipher.doFinal(fresh)
-        prefs.edit {
+        // Written synchronously: the database is created with this passphrase next, and
+        // a process killed before an async write landed would leave a database no key opens.
+        prefs.edit(commit = true) {
             putString(KEY_WRAPPED, android.util.Base64.encodeToString(wrapped, android.util.Base64.NO_WRAP))
             putString(KEY_IV, android.util.Base64.encodeToString(cipher.iv, android.util.Base64.NO_WRAP))
         }

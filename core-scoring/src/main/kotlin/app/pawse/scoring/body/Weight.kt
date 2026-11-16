@@ -45,7 +45,8 @@ object Weight {
     /**
      * A reading more than 2.5% from the trend, or more than 4 hours from your usual
      * weigh-in time, counts at half weight. The next one off in the same direction
-     * counts fully, so a real change is never held back.
+     * counts fully, so a real change is never held back. After more than a week
+     * away the trend is stale, so the first reading back counts fully too.
      */
     fun trend(points: List<WeighInPoint>, config: WeightConfig): List<TrendPoint> {
         val sorted = points.sortedBy { it.day }
@@ -63,7 +64,7 @@ object Weight {
             val gap = p.kg - t
             val usualMinute = Stats.circularMeanMinutes(minutes)
             val offHour = p.minuteOfDay != null && usualMinute != null && clockGap(p.minuteOfDay, usualMinute) > config.oddHours * 60.0
-            val odd = abs(gap) > config.oddShare * t || offHour
+            val odd = dt <= config.oddMaxGapDays && (abs(gap) > config.oddShare * t || offHour)
             val held = odd && sign(gap) != lastOdd
             if (held) alpha /= 2.0
             lastOdd = if (odd) sign(gap) else 0.0

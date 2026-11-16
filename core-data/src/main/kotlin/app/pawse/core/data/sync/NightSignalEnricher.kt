@@ -9,6 +9,7 @@ import app.pawse.core.data.health.HealthConnectGateway
 import app.pawse.scoring.config.ScoringConfig
 import app.pawse.scoring.model.Metric
 import app.pawse.scoring.signal.SignalLayer
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.Instant
@@ -52,7 +53,12 @@ class NightSignalEnricher @Inject constructor(
             val known = metricDao.window(Metric.NIGHT_HR_COVERAGE.key, start, end).isNotEmpty()
             if (known && date < recentFrom) continue
 
-            val records = gateway.readOrEmpty(HeartRateRecord::class, Instant.ofEpochMilli(start), Instant.ofEpochMilli(end))
+            // A read that failed (no grant in the background, Health Connect busy) is not
+            // a night without heart rate: writing it as one would freeze the night at zero
+            // coverage once it is older than the recompute window. Try again next time.
+            val read = runCatching { gateway.read(HeartRateRecord::class, Instant.ofEpochMilli(start), Instant.ofEpochMilli(end)) }
+            read.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+            val records = read.getOrNull() ?: continue
             val samples = records.flatMap { r -> r.samples.map { it.time.toEpochMilli() to it.beatsPerMinute.toDouble() } }
             val night = SignalLayer.heartRate(samples, start, end, config)
             // The writer with the most records owns the night, so its baseline stays its own.

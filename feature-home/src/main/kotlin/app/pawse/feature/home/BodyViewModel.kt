@@ -22,13 +22,18 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-enum class BodyRange(val days: Long, private val en: String, private val ko: String) {
-    DAYS_30(30, "30 days", "30일"),
-    DAYS_90(90, "90 days", "90일"),
-    YEAR(365, "1 year", "1년"),
+/** The design's W · M · 6M · Y: a week, four weeks, six months, a year. */
+enum class BodyRange(val days: Long, private val en: String, private val ko: String, private val spokenEn: String, private val spokenKo: String) {
+    WEEK(7, "W", "주", "a week", "1주"),
+    MONTH(28, "M", "월", "4 weeks", "4주"),
+    HALF_YEAR(182, "6M", "6개월", "6 months", "6개월"),
+    YEAR(365, "Y", "년", "a year", "1년"),
     ;
 
     val label: String get() = tr(en, ko)
+
+    /** Read out, and in the chart's description. */
+    val spoken: String get() = tr(spokenEn, spokenKo)
 }
 
 @HiltViewModel
@@ -54,7 +59,7 @@ class BodyViewModel @Inject constructor(
     private val _snapshot = MutableStateFlow<BodySnapshot?>(null)
     val snapshot: StateFlow<BodySnapshot?> = _snapshot.asStateFlow()
 
-    private val _range = MutableStateFlow(BodyRange.DAYS_30)
+    private val _range = MutableStateFlow(BodyRange.MONTH)
     val range: StateFlow<BodyRange> = _range.asStateFlow()
 
     init {

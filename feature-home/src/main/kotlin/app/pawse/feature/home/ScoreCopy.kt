@@ -46,6 +46,10 @@ object ScoreCopy {
         Guidance.SETTLING -> tr("Still learning your normal. Here is what last night says.", "아직 평소 상태를 알아가는 중이에요. 지난밤 기록은 이래요.")
     }
 
+    /** The morning the seventh night lands. */
+    val NORMAL_SET: String
+        get() = tr("Your normal is set. Body starts today.", "평소 상태를 다 배웠어요. 오늘부터 컨디션 점수가 나와요.")
+
     fun bandWord(band: BodyBand): String = when (band) {
         BodyBand.ABOVE_NORMAL -> tr("Above normal", "평소보다 높음")
         BodyBand.TYPICAL -> tr("Typical", "평소 수준")
@@ -69,11 +73,10 @@ object ScoreCopy {
     fun bodyStatus(status: BodyStatus, validNights: Int, needed: Int): String = when (status) {
         BodyStatus.READY -> ""
         BodyStatus.WARMING_UP -> if (validNights < needed) {
+            // The States board's first-week line.
             tr(
-                "Night ${validNights + 1} of $needed. Body compares each night with your own normal, " +
-                    "and a reading built on fewer nights would be a guess.",
-                "${needed}밤 중 ${validNights + 1}번째 밤이에요. 컨디션은 매일 밤을 내 평소와 비교하는데, " +
-                    "그보다 적은 밤으로 읽으면 추측에 불과해요.",
+                "Night ${validNights + 1} of $needed. Body starts after $needed nights on this watch.",
+                "${needed}밤 중 ${validNights + 1}번째 밤이에요. 컨디션은 이 워치로 ${needed}밤이 지나면 시작해요.",
             )
         } else {
             tr(

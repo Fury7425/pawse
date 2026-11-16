@@ -6,6 +6,10 @@ import android.appwidget.AppWidgetProviderInfo
 import android.content.ComponentName
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
+import app.pawse.core.model.ModelState
+import app.pawse.core.model.PawseModel
+import kotlinx.coroutines.flow.first
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -108,6 +112,11 @@ class TodayWidget : AppWidgetProvider() {
             }
         }
 
+        /** Off when the last read found no Health Connect access: the widget then says so instead of guessing. */
+        fun setReadable(context: Context, readable: Boolean) {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putBoolean("readable", readable) }
+        }
+
         /** Today's wake from the last read, for Moving today; null before one. */
         fun wake(context: Context): Long? {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -141,7 +150,9 @@ class TodayWidget : AppWidgetProvider() {
 
         private fun fill(context: Context, prefs: SharedPreferences, layout: Int): RemoteViews {
             val readAt = prefs.getLong("readAt", 0L)
-            val old = Widgets.stale(readAt)
+            val readable = prefs.getBoolean("readable", true)
+            // No access dims the widget like an old one: it never shows numbers it can't stand behind as current.
+            val old = Widgets.stale(readAt) || !readable
             val age = Widgets.age(readAt)
             val grey = context.getColor(R.color.widget_on2)
             val on = context.getColor(if (old) R.color.widget_faint else R.color.widget_on)
@@ -152,6 +163,7 @@ class TodayWidget : AppWidgetProvider() {
             val sleepValue = slept?.let { String.format(Locale.getDefault(), "%.1f", it / 60f) } ?: "—"
             val points = if (readAt > 0) prefs.getFloat("loadPoints", 0f).roundToInt().toString() else "—"
             val guidance = when {
+                !readable -> tr("Pawse can’t read Health Connect. Open Pawse.", "Pawse가 헬스 커넥트를 읽지 못해요. Pawse를 열어 주세요.")
                 readAt == 0L -> context.getString(R.string.widget_empty)
                 old -> tr("From $age. Open Pawse to update.", "$age 기준이에요. Pawse를 열면 새로 읽어요.")
                 else -> prefs.getString("guidance", null).orEmpty()
@@ -380,6 +392,75 @@ class FoodWidget : AppWidgetProvider() {
             }
             manager.updateAppWidget(ids, views)
         }
+    }
+}
+
+/**
+ * This morning's summary at 4×2, word for word as in the app, with its tag. In the
+ * picker only once the model is on this phone; without it, one sentence and a way in.
+ */
+class SummaryWidget : AppWidgetProvider() {
+
+    override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
+        val pending = goAsync()
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            try {
+                render(context, manager, ids)
+            } finally {
+                pending.finish()
+            }
+        }
+    }
+
+    @EntryPoint
+    @InstallIn(SingletonComponent::class)
+    interface ModelEntryPoint {
+        fun model(): PawseModel
+    }
+
+    companion object {
+        fun refresh(context: Context) {
+            val ids = Widgets.ids(context, SummaryWidget::class.java)
+            if (ids.isEmpty()) return
+            CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { render(context, AppWidgetManager.getInstance(context), ids) }
+        }
+
+        private suspend fun render(context: Context, manager: AppWidgetManager, ids: IntArray) {
+            val model = EntryPointAccessors.fromApplication(context, ModelEntryPoint::class.java).model()
+            val on = model.state.first() is ModelState.Ready
+            val summary = model.summary(LocalDate.now()).first()
+            val text = when {
+                summary != null -> summary.text
+                !on -> tr("The summary needs the model on this phone. Turn it on in Pawse.", "요약에는 휴대폰 속 모델이 필요해요. Pawse에서 켜 주세요.")
+                else -> tr("This morning's summary comes once the night is read.", "오늘 아침 요약은 밤 기록을 읽은 뒤에 나와요.")
+            }
+            val views = RemoteViews(context.packageName, R.layout.widget_summary).apply {
+                setTextViewText(R.id.widget_read_at, summary?.let { Widgets.age(it.writtenAtEpochMs) }.orEmpty())
+                setTextViewText(R.id.widget_summary_text, text)
+                setTextColor(R.id.widget_summary_text, context.getColor(if (summary != null) R.color.widget_on else R.color.widget_faint))
+                setViewVisibility(R.id.widget_summary_tag, if (summary?.written == true) android.view.View.VISIBLE else android.view.View.GONE)
+                setOnClickPendingIntent(R.id.widget_root, openApp(context, route = null, requestCode = 15))
+            }
+            manager.updateAppWidget(ids, views)
+        }
+
+        /** The model's widgets join the picker when the model is on, and leave it when it is off. */
+        fun offer(context: Context, on: Boolean) {
+            val state = if (on) PackageManager.COMPONENT_ENABLED_STATE_ENABLED else PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+            listOf(SummaryWidget::class.java, AskWidget::class.java).forEach {
+                context.packageManager.setComponentEnabledSetting(ComponentName(context, it), state, PackageManager.DONT_KILL_APP)
+            }
+        }
+    }
+}
+
+/** Ask Pawse at 4×1: only a way in. It opens the chat, disclaimer first, and never answers here. */
+class AskWidget : AppWidgetProvider() {
+    override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
+        val views = RemoteViews(context.packageName, R.layout.widget_ask).apply {
+            setOnClickPendingIntent(R.id.widget_root, openApp(context, route = ROUTE_ASK, requestCode = 16))
+        }
+        manager.updateAppWidget(ids, views)
     }
 }
 

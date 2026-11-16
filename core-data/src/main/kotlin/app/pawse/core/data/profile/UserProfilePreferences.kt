@@ -120,6 +120,38 @@ class UserProfilePreferences @Inject constructor(
         store.edit { if (kg == null) it.remove(goalKey) else it[goalKey] = kg }
     }
 
+    private val hiddenOnKey = stringPreferencesKey("scores_hidden_on")
+
+    /** The day Scores' rings were hidden; they come back on their own the next morning. */
+    val scoresHiddenOn: Flow<LocalDate?> = store.data.map { prefs ->
+        prefs[hiddenOnKey]?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+    }
+
+    suspend fun setScoresHiddenOn(day: LocalDate?) {
+        store.edit { if (day == null) it.remove(hiddenOnKey) else it[hiddenOnKey] = day.toString() }
+    }
+
+    private val coachSeenKey = booleanPreferencesKey("coach_seen")
+    private val firstWeekKey = intPreferencesKey("first_week")
+
+    /** "Tap any ring to see why": shown on the first Scores visit, once ever. */
+    val coachSeen: Flow<Boolean> = store.data.map { it[coachSeenKey] ?: false }
+
+    suspend fun setCoachSeen() {
+        store.edit { it[coachSeenKey] = true }
+    }
+
+    /**
+     * The seventh night, once ever: [FIRST_WEEK_NONE] until Scores shows a learning
+     * week, [FIRST_WEEK_SEEN] while it does, [FIRST_WEEK_DONE] once the segments joined.
+     * Someone whose watch already had a week of nights never sees it.
+     */
+    val firstWeek: Flow<Int> = store.data.map { it[firstWeekKey] ?: FIRST_WEEK_NONE }
+
+    suspend fun setFirstWeek(stage: Int) {
+        store.edit { it[firstWeekKey] = stage }
+    }
+
     private val appearanceKey = stringPreferencesKey("appearance")
 
     /** Follows the phone unless the user picks; bedside is the near-black night palette. */
@@ -133,3 +165,7 @@ class UserProfilePreferences @Inject constructor(
 }
 
 enum class Appearance { SYSTEM, DARK, LIGHT, BEDSIDE }
+
+const val FIRST_WEEK_NONE = 0
+const val FIRST_WEEK_SEEN = 1
+const val FIRST_WEEK_DONE = 2

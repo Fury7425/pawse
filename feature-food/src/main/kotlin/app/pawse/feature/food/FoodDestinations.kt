@@ -12,7 +12,12 @@ object FoodDestinations {
 
     const val LOG = "food"
     const val SCAN = "food/scan"
-    const val MANUAL = "food/manual"
+
+    /** The day a manual entry belongs to, ISO; absent means now. The canvas's "Add to Wednesday". */
+    const val DAY_ARG = "day"
+    const val MANUAL = "food/manual?$DAY_ARG={$DAY_ARG}"
+
+    fun manual(day: java.time.LocalDate? = null): String = if (day == null) "food/manual" else "food/manual?$DAY_ARG=$day"
 
     const val PRODUCT_ARG = "productId"
     const val ADD = "food/add/{$PRODUCT_ARG}"

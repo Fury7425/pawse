@@ -81,6 +81,8 @@ object HealthPermissions {
         LeanBodyMassRecord::class,
         BodyWaterMassRecord::class,
         BoneMassRecord::class,
+        // InBody's result.
+        BasalMetabolicRateRecord::class,
     )
     val BODY_WRITE: Set<String> = BODY_WRITE_TYPES.map { HealthPermission.getWritePermission(it) }.toSet()
 

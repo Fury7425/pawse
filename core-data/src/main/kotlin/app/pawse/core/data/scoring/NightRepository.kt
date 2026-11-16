@@ -5,8 +5,10 @@ import androidx.health.connect.client.records.SkinTemperatureRecord
 import app.pawse.core.data.db.MetricSampleDao
 import app.pawse.core.data.db.SleepDao
 import app.pawse.core.data.health.HealthConnectGateway
+import app.pawse.core.data.sync.SyncPreferences
 import app.pawse.scoring.model.Metric
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.LocalDate
@@ -46,10 +48,13 @@ class NightRepository @Inject constructor(
     private val sleepDao: SleepDao,
     private val metricDao: MetricSampleDao,
     private val gateway: HealthConnectGateway,
+    private val syncPreferences: SyncPreferences,
 ) {
 
     suspend fun read(date: LocalDate): NightDetail? = withContext(Dispatchers.IO) {
-        val sessions = sleepDao.sessionsOn(date.toString()).filter { !it.isNap }
+        // The same writer the scores used, so the chart and the figures beside it agree.
+        val sessions = NightAssembler.oneWriter(sleepDao.sessionsOn(date.toString()), syncPreferences.sourcePriority.first())
+            .filter { !it.isNap }
         if (sessions.isEmpty()) return@withContext null
         val stages = sessions.associate { it.id to sleepDao.stagesFor(it.id) }
         val staged = NightAssembler.summarise(date.toString(), sessions, stages).hasStages

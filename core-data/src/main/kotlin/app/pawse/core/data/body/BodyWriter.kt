@@ -2,6 +2,7 @@ package app.pawse.core.data.body
 
 import android.content.Context
 import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.BasalMetabolicRateRecord
 import androidx.health.connect.client.records.BodyFatRecord
 import androidx.health.connect.client.records.BodyWaterMassRecord
 import androidx.health.connect.client.records.BoneMassRecord
@@ -11,6 +12,7 @@ import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.records.metadata.Metadata
 import androidx.health.connect.client.units.Mass
 import androidx.health.connect.client.units.Percentage
+import androidx.health.connect.client.units.Power
 import app.pawse.core.data.db.MetricSampleDao
 import app.pawse.core.data.health.HealthConnectGateway
 import app.pawse.core.data.sync.RecordMapper
@@ -34,6 +36,8 @@ data class WeighIn(
     val leanKg: Double? = null,
     val waterKg: Double? = null,
     val boneKg: Double? = null,
+    /** InBody's basal metabolic rate, kcal a day. */
+    val bmrKcal: Double? = null,
 )
 
 /** A weigh-in as the "Recent weigh-ins" list shows it. */
@@ -119,6 +123,7 @@ class BodyWriter @Inject constructor(
             leanKg = value(Metric.LEAN_MASS),
             waterKg = value(Metric.BODY_WATER),
             boneKg = value(Metric.BONE_MASS),
+            bmrKcal = value(Metric.BASAL_METABOLIC_RATE),
         )
     }
 
@@ -166,6 +171,9 @@ class BodyWriter @Inject constructor(
             weighIn.boneKg?.let {
                 BoneMassRecord(time = at, zoneOffset = offset, mass = Mass.kilograms(it), metadata = Metadata.manualEntry())
             },
+            weighIn.bmrKcal?.let {
+                BasalMetabolicRateRecord(time = at, zoneOffset = offset, basalMetabolicRate = Power.kilocaloriesPerDay(it), metadata = Metadata.manualEntry())
+            },
         )
     }
 
@@ -178,6 +186,7 @@ class BodyWriter @Inject constructor(
             Metric.LEAN_MASS to LeanBodyMassRecord::class,
             Metric.BODY_WATER to BodyWaterMassRecord::class,
             Metric.BONE_MASS to BoneMassRecord::class,
+            Metric.BASAL_METABOLIC_RATE to BasalMetabolicRateRecord::class,
         )
     }
 }

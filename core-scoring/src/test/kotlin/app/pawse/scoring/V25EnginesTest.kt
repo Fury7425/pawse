@@ -86,6 +86,10 @@ class V25EnginesTest {
         // Four hours off the usual weigh-in time is odd too.
         val late = Weight.trend(listOf(WeighInPoint(0, 70.0, 420.0), WeighInPoint(1, 70.0, 420.0), WeighInPoint(2, 71.0, 720.0)), config)
         late.last().likelyWater.shouldBeTrue()
+        // 26 days away, then 6% down: the trend is stale, so the reading counts fully.
+        val back = Weight.trend(listOf(WeighInPoint(0, 97.7), WeighInPoint(2, 96.8), WeighInPoint(28, 90.9)), config)
+        back.last().likelyWater.shouldBeFalse()
+        back.last().trend shouldBe (91.33 plusOrMinus 0.01)
     }
 
     @Test

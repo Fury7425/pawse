@@ -15,6 +15,12 @@
     <string name="widget_scan">스캔</string>
     <string name="widget_add">음식 기록</string>
     <string name="widget_empty">Pawse를 열어 지난밤 기록을 읽어 주세요</string>
+    <string name="widget_summary">오늘 아침</string>
+    <string name="widget_summary_tag">이 휴대폰에서 작성</string>
+    <string name="widget_summary_description">오늘 아침 요약을 앱과 같은 문장 그대로.</string>
+    <string name="widget_ask">오늘에 대해 Pawse에게 묻기</string>
+    <string name="widget_ask_note">작은 모델 · 틀릴 수 있음 · 의학적 조언 아님</string>
+    <string name="widget_ask_description">Pawse에게 묻는 입구. 홈 화면에서는 답하지 않아요.</string>
 
     <string name="health_permission_rationale">
         Pawse는 시계나 링이 이미 헬스 커넥트에 기록한 수면, 심박, 생리 주기 데이터를 읽고,

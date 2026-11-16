@@ -39,6 +39,9 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.hilt.navigation.compose)
 
+    // The 12 dp blur behind the detail header and day rail, as the dock's glass does it.
+    implementation(libs.haze)
+
     // Reads a photo of an InBody sheet on the phone. The same recognizer Food's label reader uses.
     implementation(libs.mlkit.text.recognition.korean)
 

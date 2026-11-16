@@ -22,6 +22,7 @@ import app.pawse.scoring.model.Metric
 import app.pawse.scoring.model.NightInput
 import app.pawse.scoring.model.UserProfile
 import app.pawse.scoring.tr
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -138,9 +139,13 @@ class ScoringRepository @Inject constructor(
         onStep: (SyncStep) -> Unit = {},
     ): ScoringState = mutex.withLock {
         val result = runCatching { compute(today, windowDays, onStep) }
+        // A cancelled recompute (the screen that asked went away) is not a failure.
+        result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+        val previous = _state.value
         val next = result.fold(
             onSuccess = { ScoringState.Ready(it) },
-            onFailure = { ScoringState.Failed(it.message ?: tr("Could not work out today", "오늘 값을 계산하지 못했어요")) },
+            // Something real stays on screen: a failed recompute keeps the last numbers.
+            onFailure = { previous as? ScoringState.Ready ?: ScoringState.Failed(it.message ?: tr("Could not work out today", "오늘 값을 계산하지 못했어요")) },
         )
         _state.value = next
         next
@@ -189,7 +194,8 @@ class ScoringRepository @Inject constructor(
             runCatching { nightEnricher.enrich(fromKey, toKey) }
 
             val samples = LOADED_METRICS.flatMap { metricDao.range(it.key, fromKey, toKey) }
-            val sessions = sleepDao.sessionsBetween(fromKey, toKey)
+            val priority = syncPreferences.sourcePriority.first()
+            val sessions = NightAssembler.oneWriter(sleepDao.sessionsBetween(fromKey, toKey), priority)
             val stagesBySession = sessions.associate { it.id to sleepDao.stagesFor(it.id) }
             val nights = sessions.groupBy { it.localDate }
                 .mapValues { (date, forDate) -> NightAssembler.summarise(date, forDate, stagesBySession) }
@@ -197,7 +203,7 @@ class ScoringRepository @Inject constructor(
             val profile = profilePreferences.current()
 
             val dates = generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(today) }.toList()
-            val input = DailyInputAssembler(config, syncPreferences.sourcePriority.first()).assemble(
+            val input = DailyInputAssembler(config, priority).assemble(
                 dates = dates,
                 samples = samples,
                 nights = nights,

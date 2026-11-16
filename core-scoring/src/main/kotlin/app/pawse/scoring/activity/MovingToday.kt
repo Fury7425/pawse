@@ -75,7 +75,7 @@ object MovingToday {
     }
 
     /** Linear-interpolated quantile, the definition spreadsheets use. */
-    internal fun quantile(values: List<Double>, q: Double): Double {
+    fun quantile(values: List<Double>, q: Double): Double {
         val s = values.sorted()
         val h = (s.size - 1) * q
         val lo = floor(h).toInt()

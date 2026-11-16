@@ -1,5 +1,6 @@
 package app.pawse.scoring
 
+import app.pawse.scoring.body.BodyMath
 import app.pawse.scoring.body.SignalFilter
 import app.pawse.scoring.config.BodyConfig
 import app.pawse.scoring.config.ContextConfig
@@ -134,6 +135,14 @@ class EngineTest {
         body.band shouldBe BodyBand.TYPICAL
         body.score shouldBeInRange body.low..body.high
         body.confidence shouldNotBe Confidence.LOW
+    }
+
+    @Test
+    fun `confidence is High with ten nights and both signals, otherwise Low`() {
+        val c = BodyConfig()
+        BodyMath.confidence(10, bothSignals = true, config = c) shouldBe Confidence.HIGH
+        BodyMath.confidence(9, bothSignals = true, config = c) shouldBe Confidence.LOW
+        BodyMath.confidence(40, bothSignals = false, config = c) shouldBe Confidence.LOW
     }
 
     @Test

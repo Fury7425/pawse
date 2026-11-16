@@ -188,11 +188,9 @@ object BodyMath {
     /** Body = 100 x Phi(z_B). Body 70 is roughly "better than 70% of your normal days". */
     fun score(z: Double): Int = (100.0 * Stats.phi(z)).roundToInt().coerceIn(0, 100)
 
-    fun confidence(zSd: Double, config: BodyConfig): Confidence = when {
-        zSd <= config.highConfidenceSd -> Confidence.HIGH
-        zSd <= config.mediumConfidenceSd -> Confidence.MEDIUM
-        else -> Confidence.LOW
-    }
+    /** v2.5: High with [BodyConfig.highConfidenceNights] or more nights in your normal and both signals; otherwise Low. */
+    fun confidence(nights: Int, bothSignals: Boolean, config: BodyConfig): Confidence =
+        if (bothSignals && nights >= config.highConfidenceNights) Confidence.HIGH else Confidence.LOW
 
     private fun denominator(w: Double, rho: Double): Double =
         sqrt(w * w + (1 - w) * (1 - w) + 2 * w * (1 - w) * rho)

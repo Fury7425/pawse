@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -82,6 +83,11 @@ class ScannerViewModel @Inject constructor(
     private val _meal = MutableStateFlow(mealNow())
     val meal: StateFlow<Meal> = _meal.asStateFlow()
 
+    /** Today's kcal so far, for the plate bar's "Day after". */
+    val todayKcal: StateFlow<Double?> = repository.observeDay(java.time.LocalDate.now())
+        .map { it.totals.totals.kcal }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
     init {
         viewModelScope.launch { _foods.value = repository.recentProducts(RECENT) }
     }
@@ -128,7 +134,10 @@ class ScannerViewModel @Inject constructor(
         _state.value = ScanState.LookingUp(raw)
 
         viewModelScope.launch {
-            when (val result = repository.lookup(raw)) {
+            val result = repository.lookup(raw)
+            // Cancelled while looking: the answer is still cached, but not shown.
+            if (_state.value != ScanState.LookingUp(raw)) return@launch
+            when (result) {
                 is FoodLookupResult.Found ->
                     _state.value = ScanState.Found(result.resolution.product, result.resolution.fromCache)
 
