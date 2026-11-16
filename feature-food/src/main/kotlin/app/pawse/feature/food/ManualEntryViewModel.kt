@@ -1,5 +1,6 @@
 package app.pawse.feature.food
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.pawse.core.data.food.FoodRepository
@@ -11,7 +12,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalTime
+import java.time.ZoneId
 import javax.inject.Inject
 
 data class ManualEntryUiState(
@@ -50,7 +54,13 @@ data class ManualEntryUiState(
 @HiltViewModel
 class ManualEntryViewModel @Inject constructor(
     private val repository: FoodRepository,
+    savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
+
+    /** A past day picked on the log: the entry lands there, at this time of day. Never the future. */
+    private val day: LocalDate? = savedStateHandle.get<String>(FoodDestinations.DAY_ARG)
+        ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+        ?.takeIf { it.isBefore(LocalDate.now()) }
 
     private val _state = MutableStateFlow(ManualEntryUiState(meal = mealForTimeOfDay()))
     val state: StateFlow<ManualEntryUiState> = _state.asStateFlow()
@@ -81,6 +91,7 @@ class ManualEntryViewModel @Inject constructor(
                 nutrients = current.nutrients,
                 meal = current.meal,
                 grams = current.grams,
+                eatenAt = day?.atTime(LocalTime.now())?.atZone(ZoneId.systemDefault())?.toInstant() ?: Instant.now(),
             )
             _state.update { it.copy(logged = true) }
         }

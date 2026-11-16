@@ -100,6 +100,8 @@ internal fun DayRail(
     onCompare: () -> Unit,
     onUnpin: () -> Unit,
     modifier: Modifier = Modifier,
+    /** What the rail sits on: the canvas's 92% fade with a 12 dp blur. A plain fade when not given. */
+    backdrop: Modifier? = null,
 ) {
     val s = PawseTheme.semantics
     val bg = MaterialTheme.colorScheme.background
@@ -171,7 +173,7 @@ internal fun DayRail(
                 val p = measurable.measure(constraints.copy(minHeight = h, maxHeight = h))
                 layout(p.width, h) { p.place(0, 0) }
             }
-            .background(bg.copy(alpha = 0.92f))
+            .then(backdrop ?: Modifier.background(bg.copy(alpha = 0.92f)))
             .drawBehind { if (lifted) drawLine(hair, Offset(0f, size.height - 0.5f), Offset(size.width, size.height - 0.5f), 1.dp.toPx()) }
             .nestedScroll(edge),
     ) {

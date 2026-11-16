@@ -101,6 +101,12 @@ import app.pawse.scoring.model.BodyBand
 import app.pawse.scoring.model.DayReport
 import app.pawse.scoring.model.IllnessLevel
 import app.pawse.scoring.model.Insight
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.haze
+import dev.chrisbanes.haze.hazeChild
+import app.pawse.scoring.model.ReasonKind
 import app.pawse.scoring.model.ScoreType
 import app.pawse.scoring.tr
 import kotlinx.coroutines.launch
@@ -184,8 +190,13 @@ fun ExplainScreen(
 
     Scaffold(modifier = modifier, containerColor = MaterialTheme.colorScheme.background) { padding ->
         val top = padding.calculateTopPadding()
+        // The canvas's .dhead.lift and .drail: a 92% fade over a 12 dp blur of the page behind,
+        // so text scrolling under them never ghosts through.
+        val haze = remember { HazeState() }
+        val bg = MaterialTheme.colorScheme.background
+        val glass = Modifier.hazeChild(haze, HazeStyle(backgroundColor = bg, tints = listOf(HazeTint(bg.copy(alpha = 0.92f))), blurRadius = 12.dp, noiseFactor = 0f))
         Box(Modifier.fillMaxSize().aura()) {
-            HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = if (warm) 1 else 0) { page ->
+            HorizontalPager(state = pager, modifier = Modifier.fillMaxSize().haze(haze), beyondViewportPageCount = if (warm) 1 else 0) { page ->
                 ScorePage(
                     look = look,
                     type = PAGES[page],
@@ -211,11 +222,10 @@ fun ExplainScreen(
             }
             // Pinned: back, the switch and the day rail stay while the pages swipe and scroll under them.
             Column(Modifier.fillMaxWidth()) {
-                val fade = MaterialTheme.colorScheme.background.copy(alpha = 0.92f)
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .background(if (lifted) fade else Color.Transparent)
+                        .then(if (lifted) glass else Modifier)
                         .padding(start = 12.dp, top = top, end = 12.dp, bottom = 8.dp)
                         .height(48.dp)
                         .lookIn(look, 0),
@@ -256,6 +266,7 @@ fun ExplainScreen(
                         onCompare = { daySheet = true },
                         onUnpin = { pin = null },
                         modifier = Modifier.lookIn(look, 1),
+                        backdrop = glass,
                     )
                 }
             }
@@ -810,6 +821,9 @@ private fun MicroLine(k: String, v: String) {
 }
 
 /** Body's cards under Over time, in the design's order: why, the week, the overnight pattern, what moves it. */
+/** Reasons "Why NN" already states from the two signals themselves. */
+private val SIGNAL_REASONS = setOf(ReasonKind.HRV_ABOVE, ReasonKind.HRV_BELOW, ReasonKind.SLEEPING_HR_ABOVE, ReasonKind.SLEEPING_HR_BELOW)
+
 @Composable
 private fun BodyCards(today: DayReport, insights: List<Insight>, hrvUsual: Double?, hrUsual: Double?) {
     val body = today.body ?: return
@@ -833,7 +847,12 @@ private fun BodyCards(today: DayReport, insights: List<Insight>, hrvUsual: Doubl
     PawseCard {
         CardHead(tr("Why ${body.score}", "왜 ${body.score}인가요"))
         Text(if (why.isEmpty()) tr("Your usual needs a few more nights before this score can be explained.", "이 점수를 설명하려면 평소 범위를 알 밤이 몇 개 더 필요해요.") else "$why.", style = PawseType.Body, modifier = Modifier.padding(top = 8.dp))
-        if (body.reasons.isNotEmpty()) Text(ScoreCopy.reasons(body.reasons), style = PawseType.Micro, color = faint, modifier = Modifier.padding(top = 8.dp))
+        // The canvas's second line is only what else was logged; HRV and heart rate are the line above.
+        val also = body.reasons.filter { it.kind !in SIGNAL_REASONS }
+        if (also.isNotEmpty()) {
+            val list = also.joinToString("; ") { ScoreCopy.reason(it) }
+            Text(tr("Also logged: $list.", "함께 기록됨: $list."), style = PawseType.Micro, color = faint, modifier = Modifier.padding(top = 8.dp))
+        }
     }
     today.weekly?.let { w ->
         PawseCard(Modifier.padding(top = 16.dp)) {

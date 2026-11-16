@@ -279,7 +279,7 @@ private fun PawseNavGraph(initialRoute: String?) {
             }
             ROUTE_ADD_FOOD -> {
                 navController.switchTab(FoodDestinations.LOG)
-                navController.navigate(FoodDestinations.MANUAL)
+                navController.navigate(FoodDestinations.manual())
             }
             ROUTE_EXPLAIN_BODY -> navController.navigate(HomeDestinations.explain(ScoreType.BODY))
         }
@@ -357,9 +357,10 @@ private fun PawseNavGraph(initialRoute: String?) {
 
             composable(FoodDestinations.LOG) {
                 FoodLogScreen(
-                    onManualEntry = { navController.navigate(FoodDestinations.MANUAL) },
+                    onManualEntry = { navController.navigate(FoodDestinations.manual()) },
                     onOpenBody = { navController.switchTab(BODY) },
                     onScan = { navController.navigate(FoodDestinations.SCAN) },
+                    onAddToDay = { navController.navigate(FoodDestinations.manual(it)) },
                 )
             }
 
@@ -384,7 +385,7 @@ private fun PawseNavGraph(initialRoute: String?) {
                         }
                     },
                     onManualEntry = {
-                        navController.navigate(FoodDestinations.MANUAL) {
+                        navController.navigate(FoodDestinations.manual()) {
                             popUpTo(FoodDestinations.SCAN) { inclusive = true }
                         }
                     },
@@ -409,7 +410,11 @@ private fun PawseNavGraph(initialRoute: String?) {
                 }
             }
 
-            composable(FoodDestinations.MANUAL, enterTransition = { push }) {
+            composable(
+                route = FoodDestinations.MANUAL,
+                arguments = listOf(navArgument(FoodDestinations.DAY_ARG) { type = NavType.StringType; nullable = true }),
+                enterTransition = { push },
+            ) {
                 val pop = popOnce(navController)
                 PredictiveBack(pop) {
                     ManualEntryScreen(

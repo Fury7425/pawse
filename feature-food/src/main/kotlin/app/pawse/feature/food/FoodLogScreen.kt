@@ -113,6 +113,8 @@ fun FoodLogScreen(
     onOpenBody: () -> Unit,
     modifier: Modifier = Modifier,
     onScan: () -> Unit = onManualEntry,
+    /** "Add to Wednesday" on an empty past day: a manual entry dated to it. */
+    onAddToDay: (LocalDate) -> Unit = { onManualEntry() },
     viewModel: FoodLogViewModel = hiltViewModel(),
 ) {
     val date by viewModel.date.collectAsStateWithLifecycle()
@@ -175,7 +177,7 @@ fun FoodLogScreen(
                 }
 
                 if (!has) {
-                    item { EmptyDay(isToday, date, onManualEntry, pad.padding(top = 12.dp)) }
+                    item { EmptyDay(isToday, date, onAdd = { onAddToDay(date) }, modifier = pad.padding(top = 12.dp)) }
                 } else {
                     item { Hero(day!!, if (isToday) burned else null, partly, pad.padding(top = 4.dp)) }
                     if (isToday && burned != null) item { EatenBurned(totals!!.totals.kcal ?: 0.0, burned!!, pad.padding(top = 24.dp)) }
@@ -498,26 +500,29 @@ private fun AgainChip(entry: FoodLogEntry, onClick: () -> Unit) {
 }
 
 @Composable
-private fun EmptyDay(isToday: Boolean, date: LocalDate, onManualEntry: () -> Unit, modifier: Modifier = Modifier) {
+private fun EmptyDay(isToday: Boolean, date: LocalDate, onAdd: () -> Unit, modifier: Modifier = Modifier) {
+    // The canvas: today is carried by the Again chips and the scan button, so its card has
+    // no button; an empty past day says gaps are fine and offers "Add to Wednesday".
+    val weekday = date.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.getDefault())
     PawseCard(modifier = modifier) {
         Text(
-            if (isToday) tr("Nothing logged yet", "아직 기록이 없어요") else tr("Nothing logged on ${dayTitle(date)}", "${dayTitle(date)}에는 기록이 없어요"),
+            if (isToday) tr("Nothing logged yet today", "오늘은 아직 기록이 없어요") else tr("Nothing logged on $weekday", "${weekday}에는 기록이 없어요"),
             style = PawseType.Heading,
         )
         Text(
             if (isToday) {
-                tr(
-                    "Scan a barcode, photograph a nutrition panel, or type it in. Everything you scan is saved on this phone, so the second time is instant.",
-                    "바코드를 스캔하거나, 영양성분표를 찍거나, 직접 입력하세요. 스캔한 건 모두 이 휴대폰에 저장되니 두 번째부터는 바로 나와요.",
-                )
+                tr("Scan a barcode, or tap one of your usual foods.", "바코드를 스캔하거나 평소 먹는 음식을 눌러 주세요.")
             } else {
-                tr("Gaps are fine. Pawse does not count streaks.", "빈 날도 괜찮아요. Pawse는 연속 기록을 세지 않아요.")
+                tr(
+                    "Gaps are fine. Pawse does not count streaks. Add something now if you remember it.",
+                    "빈 날도 괜찮아요. Pawse는 연속 기록을 세지 않아요. 기억나면 지금 추가해도 돼요.",
+                )
             },
             style = PawseType.Label,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 8.dp),
         )
-        if (isToday) SecondaryButton(tr("Add manually", "직접 추가"), onClick = onManualEntry, textStyle = PawseType.BodyStrong, modifier = Modifier.padding(top = 16.dp).fillMaxWidth())
+        if (!isToday) SecondaryButton(tr("Add to $weekday", "${weekday}에 추가"), onClick = onAdd, textStyle = PawseType.BodyStrong, modifier = Modifier.padding(top = 16.dp))
     }
 }
 

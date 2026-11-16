@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
@@ -228,7 +229,7 @@ private fun TrendSection(
     val gapDays = trend.takeLast(2).takeIf { it.size == 2 }?.let { (a, b) -> b.day - a.day } ?: 0L
     val flat = before != null && abs(latest.trend - before.trend) / 4.0 < 0.02
     Column(Modifier.padding(top = 24.dp)) {
-        Text(if (early) tr("Weight", "체중") else tr("Trend weight", "추세 체중"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(if (early) tr("Weight", "체중") else tr("Weight trend", "추세 체중"), style = PawseType.Label, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(verticalAlignment = Alignment.Bottom) {
             Text(oneDecimal(if (early) latest.kg else latest.trend), style = PawseType.Hero)
             Text("kg", style = PawseType.Heading.copy(fontWeight = PawseType.Body.fontWeight), color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp, bottom = 10.dp))
@@ -353,7 +354,6 @@ private fun WeightChart(trend: List<TrendPoint>, today: LocalDate, range: BodyRa
             val v = lo + (hi - lo) * (0.2 + 0.3 * i)
             val yy = y(v)
             drawLine(hair, Offset(0f, yy), Offset(size.width, yy), 1.dp.toPx())
-            drawText(measurer.measure(oneDecimal(v), label), topLeft = Offset(0f, yy - 16.dp.toPx()))
         }
         goal?.takeIf { it in lo..hi }?.let {
             drawLine(grey.copy(alpha = 0.7f), Offset(0f, y(it)), Offset(size.width, y(it)), 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 5.dp.toPx())))
@@ -370,6 +370,14 @@ private fun WeightChart(trend: List<TrendPoint>, today: LocalDate, range: BodyRa
             }
             drawPath(solid, on, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
             drawPath(dashed, on.copy(alpha = 0.6f), style = Stroke(2.dp.toPx(), cap = StrokeCap.Round, pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 5.dp.toPx()))))
+        }
+        // The kg labels go on last, over a patch of background, so the line never runs through one.
+        (0..2).forEach { i ->
+            val v = lo + (hi - lo) * (0.2 + 0.3 * i)
+            val text = measurer.measure(oneDecimal(v), label)
+            val at = Offset(0f, y(v) - 16.dp.toPx())
+            drawRect(bg, at, Size(text.size.width + 4.dp.toPx(), text.size.height.toFloat()))
+            drawText(text, topLeft = at)
         }
         val end = Offset(x(shown.last().day), y(shown.last().trend))
         drawCircle(bg, 7.dp.toPx(), end)
